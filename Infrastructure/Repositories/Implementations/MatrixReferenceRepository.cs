@@ -257,7 +257,8 @@ public sealed class MatrixReferenceRepository(
                 SchoolName = context.School.Name,
                 BranchName = context.SchoolBranch.Name,
                 SubjectName = context.Subject.Name,
-                GradeLevelName = context.GradeLevel.Name
+                GradeLevelName = context.GradeLevel.Name,
+                TextbookTitle = context.Textbook.Title
             })
             .OrderBy(context => context.Id)
             .ToListAsync(cancellationToken);
@@ -270,7 +271,11 @@ public sealed class MatrixReferenceRepository(
                 context.SchoolBranchId,
                 context.TextbookId,
                 context.SubjectId,
-                context.GradeLevelId))
+                context.GradeLevelId,
+                context.TextbookTitle,
+                context.SubjectName,
+                context.GradeLevelName,
+                context.AcademicYearName))
             .ToArray();
 
         var academicYearIds = contextRows

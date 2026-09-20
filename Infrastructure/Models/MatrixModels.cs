@@ -60,7 +60,13 @@ public sealed record MatrixAcademicContextOption(
     ulong SchoolBranchId,
     ulong TextbookId,
     ulong SubjectId,
-    ulong GradeLevelId);
+    ulong GradeLevelId,
+    // Display names so a client can show each dimension in its own field
+    // instead of parsing them back out of Label.
+    string TextbookTitle = "",
+    string SubjectName = "",
+    string GradeLevelName = "",
+    string AcademicYearName = "");
 
 public sealed record MatrixSemesterOption(
     ulong Id,

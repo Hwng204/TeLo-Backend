@@ -11,7 +11,9 @@ public static class DependencyInjection
         services.AddScoped<IAcademicYearService, AcademicYearService>();
         services.AddScoped<IProvinceCatalogService, ProvinceCatalogService>();
         services.AddScoped<IProvinceSyncService, ProvinceSyncService>();
-        services.AddScoped<IMatrixApplicationService, MatrixApplicationService>();
+        services.AddScoped<ISchoolDirectoryService, SchoolDirectoryService>();
+        services.AddScoped<ISchoolDirectoryAdminService, SchoolDirectoryAdminService>();
+        services.AddScoped<IMatrixApplicationService,MatrixApplicationService>();
         services.AddScoped<IMatrixTaskApplicationService, MatrixTaskApplicationService>();
 
         return services;

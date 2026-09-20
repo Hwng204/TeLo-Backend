@@ -3,6 +3,7 @@ using Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
 using WebAPI.ExceptionHandling;
+using WebAPI.Controllers;
 using WebAPI.Security;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,6 +56,18 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();
 builder.Services.AddAuthorization(options =>
 {
+    // Role codes live in config so a school can rename them without touching the controllers.
+    var schoolReadRoles = builder.Configuration
+        .GetSection("SchoolDirectoryAuth:SchoolReadRoleCodes").Get<string[]>()
+        ?? ["HIEU_TRUONG", "PRINCIPAL", "PHT", "GIAO_VIEN", "TEACHER", "TEAM_LEAD", "TO_TRUONG"];
+    var directoryAdminRoles = builder.Configuration
+        .GetSection("SchoolDirectoryAuth:AdminRoleCodes").Get<string[]>()
+        ?? ["OperationalAdmin"];
+    options.AddPolicy(SchoolDirectoryControllerBase.SchoolReadPolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(schoolReadRoles));
+    options.AddPolicy(SchoolDirectoryControllerBase.AdminPolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(directoryAdminRoles));
+
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
             context.User.IsInRole("OperationalAdmin") ||

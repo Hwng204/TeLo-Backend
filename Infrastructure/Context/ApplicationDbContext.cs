@@ -26,6 +26,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<AcademicContext> AcademicContexts => Set<AcademicContext>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Student> Students => Set<Student>();
+    public DbSet<StudentEnrollment> StudentEnrollments => Set<StudentEnrollment>();
     public DbSet<Teacher> Teachers => Set<Teacher>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<Module> Modules => Set<Module>();

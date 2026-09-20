@@ -88,7 +88,7 @@ public sealed class AcademicYearsControllerTests
     }
 
     [Fact]
-    public async Task StudentsEndpoint_ResolvesWithoutAnUnusedStudentServiceRegistration()
+    public async Task StudentsEndpoint_RequiresAuthenticationAndResolvesDirectoryService()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -105,7 +105,7 @@ public sealed class AcademicYearsControllerTests
 
         var response = await client.GetAsync("/api/students");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private sealed class FakeAcademicYearService : IAcademicYearService

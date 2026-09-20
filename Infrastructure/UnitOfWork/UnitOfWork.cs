@@ -13,13 +13,15 @@ public class UnitOfWork(
     IProvinceRepository provinces,
     IMatrixRepository matrices,
     IMatrixTaskRepository matrixTasks,
-    IMatrixReferenceRepository matrixReferences) : IUnitOfWork
+    IMatrixReferenceRepository matrixReferences,
+    IExamRepository exams) : IUnitOfWork
 {
     public IAcademicYearRepository AcademicYears { get; } = academicYears;
     public IProvinceRepository Provinces { get; } = provinces;
     public IMatrixRepository Matrices { get; } = matrices;
     public IMatrixTaskRepository MatrixTasks { get; } = matrixTasks;
     public IMatrixReferenceRepository MatrixReferences { get; } = matrixReferences;
+    public IExamRepository Exams { get; } = exams;
 
     public async Task<int> CompleteAsync(CancellationToken cancellationToken = default)
     {

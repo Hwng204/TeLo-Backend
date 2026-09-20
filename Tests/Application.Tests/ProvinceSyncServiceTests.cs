@@ -76,6 +76,8 @@ public sealed class ProvinceSyncServiceTests
             throw new InvalidOperationException("Matrix task repository is not used by these tests.");
         public IMatrixReferenceRepository MatrixReferences =>
             throw new InvalidOperationException("Matrix reference repository is not used by these tests.");
+        public IExamRepository Exams =>
+            throw new InvalidOperationException("Exam repository is not used by these tests.");
 
         public IReadOnlyList<ProvinceCatalogItem>? SynchronizedProvinces { get; private set; }
 

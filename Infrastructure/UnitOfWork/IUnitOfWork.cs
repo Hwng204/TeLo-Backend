@@ -9,6 +9,7 @@ public interface IUnitOfWork : IDisposable
     IMatrixRepository Matrices { get; }
     IMatrixTaskRepository MatrixTasks { get; }
     IMatrixReferenceRepository MatrixReferences { get; }
+    IExamRepository Exams { get; }
 
     // Writes every change tracked by the repositories in one SaveChanges call.
     Task<int> CompleteAsync(CancellationToken cancellationToken = default);

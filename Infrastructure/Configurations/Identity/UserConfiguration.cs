@@ -9,6 +9,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
     public void Configure(EntityTypeBuilder<User> builder)
     {
         builder.ToTable("users");
+        builder.Property(x => x.SecurityVersion).HasColumnName("security_version").HasDefaultValue(1u).IsConcurrencyToken();
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.Username).HasColumnName("username").HasMaxLength(100).IsRequired();

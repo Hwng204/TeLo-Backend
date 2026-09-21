@@ -12,6 +12,7 @@ public sealed class User
     public string FullName { get; set; } = string.Empty;
     public string? MoetIdentifier { get; set; }
     public string Status { get; set; } = "ACTIVE";
+    public uint SecurityVersion { get; set; } = 1;
     public DateTime CreatedAt { get; set; }
 
     public SchoolBranch? SchoolBranch { get; set; }

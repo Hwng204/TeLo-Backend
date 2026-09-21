@@ -28,7 +28,8 @@ public sealed class JwtTokenService(
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
-            new(ClaimTypes.Name, user.Username)
+            new(ClaimTypes.Name, user.Username),
+            new("security_version", user.SecurityVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
 
         if (user.BranchId is not null)

@@ -9,6 +9,15 @@ public sealed class TeacherConfiguration : IEntityTypeConfiguration<Teacher>
     public void Configure(EntityTypeBuilder<Teacher> builder)
     {
         builder.ToTable("teachers");
+        builder.Property(x => x.StaffCode).HasColumnName("staff_code").HasMaxLength(64);
+        builder.HasIndex(x => x.StaffCode).IsUnique().HasDatabaseName("uq_teachers_staff_code");
+        builder.Property(x => x.Department).HasColumnName("department").HasMaxLength(150);
+        builder.Property(x => x.MainSubjectId).HasColumnName("main_subject_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.JoinedOn).HasColumnName("joined_on").HasColumnType("date");
+        builder.Property(x => x.EmploymentStatus).HasColumnName("employment_status").HasMaxLength(32).HasDefaultValue("WORKING");
+        builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
+        builder.HasIndex(x => new { x.EmploymentStatus, x.Department });
+        builder.HasOne(x => x.MainSubject).WithMany().HasForeignKey(x => x.MainSubjectId).OnDelete(DeleteBehavior.Restrict);
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.UserId).HasColumnName("user_id").HasColumnType("bigint unsigned").IsRequired();

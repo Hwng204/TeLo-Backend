@@ -18,7 +18,9 @@ public sealed record MatrixTaskResponse(
     string Status,
     string TaskType,
     string? Description,
-    ulong? MatrixId)
+    ulong? MatrixId,
+    string Code = "",
+    MatrixPerson? CreatedBy = null)
 {
     public string StatusLabel => Application.Common.MatrixTaskStatusCodes.Label(Status);
 }
@@ -29,7 +31,9 @@ public sealed record MatrixTaskQuery(
     string? Status = null,
     ulong? AssignedToUserId = null,
     DateTime? DueBefore = null,
-    ulong? BranchId = null);
+    ulong? BranchId = null,
+    string? Keyword = null,
+    ulong? AcademicContextId = null);
 
 public sealed record MatrixTaskListItem(
     ulong Id,
@@ -41,7 +45,9 @@ public sealed record MatrixTaskListItem(
     string? Description,
     ulong? AcademicContextId,
     ulong? SemesterId,
-    ulong? MatrixId)
+    ulong? MatrixId,
+    string Code = "",
+    MatrixPerson? CreatedBy = null)
 {
     public string StatusLabel => Application.Common.MatrixTaskStatusCodes.Label(Status);
 }

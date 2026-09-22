@@ -20,6 +20,14 @@ public sealed class ExamMatrixConfiguration : IEntityTypeConfiguration<ExamMatri
         builder.Property(x => x.RejectComment).HasColumnName("reject_comment").HasMaxLength(1000);
         builder.Property(x => x.RejectedByUserId).HasColumnName("rejected_by_user_id").HasColumnType("bigint unsigned");
         builder.Property(x => x.RejectedAt).HasColumnName("rejected_at").HasColumnType("datetime(6)");
+        builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("datetime(6)").IsRequired();
+        builder.Property(x => x.ApprovedByUserId).HasColumnName("approved_by_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.ApprovedAt).HasColumnName("approved_at").HasColumnType("datetime(6)");
+        builder.HasIndex(x => x.Code).IsUnique().HasDatabaseName("uq_exam_matrices_code");
+        builder.HasIndex(x => x.CreatedByUserId).HasDatabaseName("idx_exam_matrices_creator");
+        builder.HasIndex(x => x.ApprovedByUserId).HasDatabaseName("idx_exam_matrices_approver");
         builder.HasIndex(x => x.TaskId).IsUnique().HasDatabaseName("uq_exam_matrices_task");
         builder.HasIndex(x => x.RejectedByUserId).HasDatabaseName("idx_exam_matrices_rejecter");
         builder.HasIndex(x => x.AcademicContextId).HasDatabaseName("idx_exam_matrices_context");
@@ -32,6 +40,12 @@ public sealed class ExamMatrixConfiguration : IEntityTypeConfiguration<ExamMatri
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<User>().WithMany()
             .HasForeignKey(x => x.RejectedByUserId).HasConstraintName("fk_exam_matrices_rejecter")
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<User>().WithMany()
+            .HasForeignKey(x => x.CreatedByUserId).HasConstraintName("fk_exam_matrices_creator")
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<User>().WithMany()
+            .HasForeignKey(x => x.ApprovedByUserId).HasConstraintName("fk_exam_matrices_approver")
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.AcademicContext).WithMany()
             .HasForeignKey(x => x.AcademicContextId).HasConstraintName("fk_exam_matrices_context")

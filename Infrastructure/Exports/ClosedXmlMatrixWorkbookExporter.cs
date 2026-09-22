@@ -68,11 +68,5 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
         return stream.ToArray();
     }
 
-    private static string SafeText(string value)
-    {
-        var normalized = value?.Trim() ?? string.Empty;
-        return normalized.Length > 0 && normalized[0] is '=' or '+' or '-' or '@'
-            ? $"'{normalized}"
-            : normalized;
-    }
+    private static string SafeText(string value) => WorkbookText.Safe(value);
 }

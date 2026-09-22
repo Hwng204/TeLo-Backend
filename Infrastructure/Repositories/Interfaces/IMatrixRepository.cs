@@ -24,6 +24,11 @@ public interface IMatrixRepository : IGenericRepository<ExamMatrix>
         string expectedStatus,
         CancellationToken cancellationToken);
 
+    // Names and role codes for a set of users, keyed by user id. Unknown ids are simply absent.
+    Task<IReadOnlyDictionary<ulong, MatrixPersonRow>> GetPeopleAsync(
+        IReadOnlyCollection<ulong> userIds,
+        CancellationToken cancellationToken);
+
     Task SetTaskStatusAsync(
         ulong taskId,
         string status,

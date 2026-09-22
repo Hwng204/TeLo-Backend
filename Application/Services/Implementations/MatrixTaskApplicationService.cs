@@ -10,7 +10,8 @@ namespace Application.Services.Implement;
 
 public sealed class MatrixTaskApplicationService(
     IUnitOfWork uow,
-    IMatrixCurrentUser currentUser) : IMatrixTaskApplicationService
+    IMatrixCurrentUser currentUser,
+    IMatrixPeopleResolver peopleResolver) : IMatrixTaskApplicationService
 {
     public async Task<MatrixTaskResponse> CreateAsync(
         CreateMatrixTaskRequest request,
@@ -59,7 +60,7 @@ public sealed class MatrixTaskApplicationService(
 
             await uow.MatrixTasks.AddAsync(task, ct);
             await uow.CompleteAsync(ct);
-            return task.ToResponse(null);
+            return task.ToResponse(null, await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, ct));
         }, cancellationToken);
     }
 
@@ -79,7 +80,7 @@ public sealed class MatrixTaskApplicationService(
         }).ToFilter();
 
         var page = await uow.MatrixTasks.ListAsync(filter, cancellationToken);
-        return page.ToDto();
+        return page.ToDto(await ResolveCreatorsAsync(page, cancellationToken));
     }
 
     public async Task<MatrixTaskPage> ListMineAsync(
@@ -97,7 +98,7 @@ public sealed class MatrixTaskApplicationService(
         var page = await uow.MatrixTasks.ListAsync(
             (query with { AssignedToUserId = actor.UserId }).ToFilter(),
             cancellationToken);
-        return page.ToDto();
+        return page.ToDto(await ResolveCreatorsAsync(page, cancellationToken));
     }
 
     public async Task<MatrixReferenceData> GetReferenceDataAsync(
@@ -140,7 +141,17 @@ public sealed class MatrixTaskApplicationService(
         }
 
         var matrixId = await uow.MatrixTasks.GetLinkedMatrixIdAsync(taskId, cancellationToken);
-        return task.ToResponse(matrixId);
+        var people = await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, cancellationToken);
+        return task.ToResponse(matrixId, people);
+    }
+
+    private Task<IReadOnlyDictionary<ulong, MatrixPerson>> ResolveCreatorsAsync(
+        Infrastructure.Models.PagedResult<Infrastructure.Models.MatrixTaskRow> page,
+        CancellationToken cancellationToken)
+    {
+        return peopleResolver.ResolveAsync(
+            page.Items.Select(row => (ulong?)row.CreatedByUserId),
+            cancellationToken);
     }
 
     // A PHT is limited to their own branch; the Principal and Team Leads are not branch-limited here.

@@ -14,6 +14,15 @@ public sealed class ExamMatrix
     public ulong? RejectedByUserId { get; set; }
     public DateTime? RejectedAt { get; set; }
 
+    // Human-readable identifier such as MT-2026-014 (year, then a per-year running number).
+    // Assigned by the repository when the matrix is first stored.
+    public string Code { get; set; } = string.Empty;
+    // Null for matrices that predate authorship tracking and had no task to infer it from.
+    public ulong? CreatedByUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public ulong? ApprovedByUserId { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+
     public WorkTask? Task { get; set; }
     public Semester? Semester { get; set; }
     public AcademicContext AcademicContext { get; set; } = null!;
@@ -23,6 +32,9 @@ public sealed class ExamMatrix
         Details.Aggregate(0u, (total, detail) => checked(total + detail.QuestionCount));
 
     public decimal TotalScore => Details.Sum(detail => detail.AllocatedScore);
+
+    // A matrix must add up to a full 10-point exam before it can be submitted, confirmed or edited in review.
+    public const decimal RequiredTotalScore = 10m;
 
     public bool CanEdit(MatrixActor actor)
     {
@@ -98,6 +110,14 @@ public sealed class ExamMatrix
             });
         }
 
+        // A Draft may be saved at any total, even empty, so it can be worked on in several sittings.
+        // A Submitted matrix is already in review, so editing it must keep it at exactly 10.
+        // Checked before Details.Clear() so a rejected save leaves the matrix untouched.
+        if (Status == MatrixStatusCodes.Submitted)
+        {
+            EnsureRequiredTotalScore(normalizedDetails.Sum(detail => detail.AllocatedScore));
+        }
+
         Details.Clear();
         foreach (var detail in normalizedDetails)
         {
@@ -121,6 +141,9 @@ public sealed class ExamMatrix
                 "EmptyMatrix",
                 "Ma trận phải có ít nhất một dòng chi tiết trước khi nộp hoặc xác nhận.");
         }
+
+        // Also covers ConfirmDirect, which submits before approving.
+        EnsureRequiredTotalScore(TotalScore);
 
         Status = MatrixStatusCodes.Submitted;
         ClearRejection();
@@ -147,7 +170,7 @@ public sealed class ExamMatrix
         RejectedAt = rejectedAtUtc;
     }
 
-    public void Approve(MatrixActor actor)
+    public void Approve(MatrixActor actor, DateTime? approvedAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -162,9 +185,11 @@ public sealed class ExamMatrix
         }
 
         Status = MatrixStatusCodes.Approved;
+        ApprovedByUserId = actor.UserId;
+        ApprovedAt = approvedAtUtc ?? DateTime.UtcNow;
     }
 
-    public void ConfirmDirect(MatrixActor actor)
+    public void ConfirmDirect(MatrixActor actor, DateTime? approvedAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -181,7 +206,7 @@ public sealed class ExamMatrix
         }
 
         Submit(actor);
-        Approve(actor);
+        Approve(actor, approvedAtUtc);
     }
 
     public void Archive(MatrixActor actor)
@@ -201,7 +226,7 @@ public sealed class ExamMatrix
         Status = MatrixStatusCodes.Archived;
     }
 
-    public ExamMatrix CloneAsDraft(MatrixActor actor)
+    public ExamMatrix CloneAsDraft(MatrixActor actor, DateTime? createdAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -222,7 +247,10 @@ public sealed class ExamMatrix
             Status = MatrixStatusCodes.Draft,
             TaskId = null,
             SemesterId = SemesterId,
-            AcademicContextId = AcademicContextId
+            AcademicContextId = AcademicContextId,
+            // The copy is a new matrix authored by whoever made the copy, not by the original author.
+            CreatedByUserId = actor.UserId,
+            CreatedAt = createdAtUtc ?? DateTime.UtcNow
         };
 
         foreach (var detail in Details)
@@ -242,6 +270,19 @@ public sealed class ExamMatrix
         }
 
         return clone;
+    }
+
+    // True when the matrix adds up to a full exam, i.e. it may be submitted or confirmed.
+    public bool HasRequiredTotalScore => TotalScore == RequiredTotalScore;
+
+    private static void EnsureRequiredTotalScore(decimal totalScore)
+    {
+        if (totalScore != RequiredTotalScore)
+        {
+            throw new MatrixDomainException(
+                "InvalidTotalScore",
+                $"Tổng điểm của ma trận phải bằng {RequiredTotalScore:0} (hiện là {totalScore:0.##}).");
+        }
     }
 
     private void ClearRejection()

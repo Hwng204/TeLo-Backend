@@ -39,6 +39,22 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             tasks = tasks.Where(task => task.Status == query.Status.Trim().ToUpperInvariant());
         }
 
+        if (query.AcademicContextId is not null)
+        {
+            tasks = tasks.Where(task => task.AcademicContextId == query.AcademicContextId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(query.Keyword))
+        {
+            var keyword = query.Keyword.Trim();
+            // Mã nhiệm vụ không có trong bảng (suy ra từ id), nên "9301" hay "NV-MT-9301" phải tìm theo id.
+            var digits = new string(keyword.Where(char.IsDigit).ToArray());
+            var byId = ulong.TryParse(digits, out var id) ? id : 0UL;
+            tasks = tasks.Where(task =>
+                (task.Description != null && EF.Functions.Like(task.Description, $"%{keyword}%")) ||
+                (byId != 0UL && task.Id == byId));
+        }
+
         if (query.DueBefore is not null)
         {
             tasks = tasks.Where(task => task.DueAt != null && task.DueAt <= query.DueBefore);

@@ -21,6 +21,9 @@ public sealed record MatrixDetailResponse(
     uint QuestionCount,
     decimal AllocatedScore);
 
+/// <summary>A user shown next to a matrix or task, with the role label the school uses for them.</summary>
+public sealed record MatrixPerson(ulong UserId, string FullName, string? RoleLabel);
+
 public sealed record MatrixResponse(
     ulong Id,
     string Name,
@@ -34,7 +37,12 @@ public sealed record MatrixResponse(
     IReadOnlyList<string> AllowedActions,
     string? RejectComment = null,
     DateTime? RejectedAt = null,
-    ulong? RejectedByUserId = null)
+    ulong? RejectedByUserId = null,
+    string Code = "",
+    MatrixPerson? CreatedBy = null,
+    DateTime? CreatedAt = null,
+    MatrixPerson? ApprovedBy = null,
+    DateTime? ApprovedAt = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

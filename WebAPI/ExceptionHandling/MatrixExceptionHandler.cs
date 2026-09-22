@@ -80,6 +80,7 @@ public sealed class MatrixExceptionHandler : IExceptionHandler
             "InvalidRequest" or
                 "EmptyMatrix" or
                 "InvalidDetail" or
+                "InvalidTotalScore" or
                 "DuplicateDetail" or
                 "InvalidReference" or
                 "InvalidAssignee" or

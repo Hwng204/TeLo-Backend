@@ -27,10 +27,12 @@ public sealed class MatrixTasksController(
         [FromQuery] string? status = null,
         [FromQuery] ulong? assignedToUserId = null,
         [FromQuery] DateTime? dueBefore = null,
+        [FromQuery] string? keyword = null,
+        [FromQuery] ulong? academicContextId = null,
         CancellationToken cancellationToken = default)
     {
         return service.ListAsync(
-            new MatrixTaskQuery(page, pageSize, status, assignedToUserId, dueBefore),
+            new MatrixTaskQuery(page, pageSize, status, assignedToUserId, dueBefore, null, keyword, academicContextId),
             cancellationToken);
     }
 
@@ -40,10 +42,12 @@ public sealed class MatrixTasksController(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? status = null,
         [FromQuery] DateTime? dueBefore = null,
+        [FromQuery] string? keyword = null,
+        [FromQuery] ulong? academicContextId = null,
         CancellationToken cancellationToken = default)
     {
         return service.ListMineAsync(
-            new MatrixTaskQuery(page, pageSize, status, null, dueBefore),
+            new MatrixTaskQuery(page, pageSize, status, null, dueBefore, null, keyword, academicContextId),
             cancellationToken);
     }
 

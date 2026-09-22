@@ -20,7 +20,9 @@ public static class MatrixMappingExtensions
             query.BranchId);
     }
 
-    public static MatrixPage ToDto(this PagedResult<MatrixListRow> page)
+    public static MatrixPage ToDto(
+        this PagedResult<MatrixListRow> page,
+        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
     {
         var items = page.Items
             .Select(row => new MatrixListItem(
@@ -31,7 +33,12 @@ public static class MatrixMappingExtensions
                 row.AcademicContextId,
                 row.SemesterId,
                 row.TotalQuestions,
-                row.TotalScore))
+                row.TotalScore,
+                row.Code,
+                Person(people, row.CreatedByUserId),
+                row.CreatedByUserId is null && row.CreatedAt == default ? null : row.CreatedAt,
+                Person(people, row.ApprovedByUserId),
+                row.ApprovedAt))
             .ToArray();
 
         return new MatrixPage(items, page.Page, page.PageSize, page.TotalCount);
@@ -76,7 +83,25 @@ public static class MatrixMappingExtensions
             .ToArray();
     }
 
-    public static MatrixResponse ToResponse(this ExamMatrix matrix, MatrixActor actor)
+    /// <summary>Looks a user up in a resolved set; null when there is no such id or it was not resolved.</summary>
+    public static MatrixPerson? Person(IReadOnlyDictionary<ulong, MatrixPerson>? people, ulong? userId)
+    {
+        return userId is not null && people is not null && people.TryGetValue(userId.Value, out var person)
+            ? person
+            : null;
+    }
+
+    /// <summary>Ids of the people a matrix response will show, for one batched lookup.</summary>
+    public static IEnumerable<ulong?> PeopleIds(this ExamMatrix matrix)
+    {
+        yield return matrix.CreatedByUserId;
+        yield return matrix.ApprovedByUserId;
+    }
+
+    public static MatrixResponse ToResponse(
+        this ExamMatrix matrix,
+        MatrixActor actor,
+        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
     {
         var details = matrix.Details
             .Select(detail => new MatrixDetailResponse(
@@ -101,7 +126,12 @@ public static class MatrixMappingExtensions
             AllowedActions(matrix, actor),
             matrix.RejectComment,
             matrix.RejectedAt,
-            matrix.RejectedByUserId);
+            matrix.RejectedByUserId,
+            matrix.Code,
+            Person(people, matrix.CreatedByUserId),
+            matrix.CreatedAt == default ? null : matrix.CreatedAt,
+            Person(people, matrix.ApprovedByUserId),
+            matrix.ApprovedAt);
     }
 
     private static IReadOnlyList<string> AllowedActions(
@@ -122,7 +152,9 @@ public static class MatrixMappingExtensions
 
         if (matrix.Status == MatrixStatusCodes.Draft)
         {
-            if (matrix.Details.Count > 0)
+            // Submit/Confirm are offered only once the matrix adds up to exactly 10, so the UI never
+            // shows a button the domain would reject with InvalidTotalScore.
+            if (matrix.Details.Count > 0 && matrix.HasRequiredTotalScore)
             {
                 if (actor.Role == MatrixActorRole.Pht && matrix.TaskId is null)
                 {
@@ -177,10 +209,17 @@ public static class MatrixTaskMappingExtensions
             query.Status,
             query.AssignedToUserId,
             query.DueBefore,
-            query.BranchId);
+            query.BranchId,
+            query.Keyword,
+            query.AcademicContextId);
     }
 
-    public static MatrixTaskPage ToDto(this PagedResult<MatrixTaskRow> page)
+    /// <summary>Tasks share the tasks table with other work, so their code is derived from the id.</summary>
+    public static string TaskCode(ulong taskId) => $"NV-MT-{taskId:D3}";
+
+    public static MatrixTaskPage ToDto(
+        this PagedResult<MatrixTaskRow> page,
+        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
     {
         var items = page.Items
             .Select(row => new MatrixTaskListItem(
@@ -193,7 +232,9 @@ public static class MatrixTaskMappingExtensions
                 row.Description,
                 row.AcademicContextId,
                 row.SemesterId,
-                row.MatrixId))
+                row.MatrixId,
+                TaskCode(row.Id),
+                MatrixMappingExtensions.Person(people, row.CreatedByUserId)))
             .ToArray();
 
         return new MatrixTaskPage(items, page.Page, page.PageSize, page.TotalCount);
@@ -213,7 +254,10 @@ public static class MatrixTaskMappingExtensions
             cognitiveLevels);
     }
 
-    public static MatrixTaskResponse ToResponse(this WorkTask task, ulong? matrixId)
+    public static MatrixTaskResponse ToResponse(
+        this WorkTask task,
+        ulong? matrixId,
+        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
     {
         return new MatrixTaskResponse(
             task.Id,
@@ -224,6 +268,8 @@ public static class MatrixTaskMappingExtensions
             task.Status,
             task.TaskType,
             task.Description,
-            matrixId);
+            matrixId,
+            TaskCode(task.Id),
+            MatrixMappingExtensions.Person(people, task.CreatedByUserId));
     }
 }

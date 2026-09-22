@@ -18,7 +18,12 @@ public sealed record MatrixListItem(
     ulong AcademicContextId,
     ulong? SemesterId,
     uint TotalQuestions,
-    decimal TotalScore)
+    decimal TotalScore,
+    string Code = "",
+    MatrixPerson? CreatedBy = null,
+    DateTime? CreatedAt = null,
+    MatrixPerson? ApprovedBy = null,
+    DateTime? ApprovedAt = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

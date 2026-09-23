@@ -227,6 +227,22 @@ public sealed class MatrixReferenceRepository(
                 "Tài khoản PHT chưa được gán chi nhánh.");
         }
 
+        if (academicContextId is not null && actorBranchId is not null)
+        {
+            var requestedBranchId = await db.AcademicContexts
+                .AsNoTracking()
+                .Where(context => context.Id == academicContextId.Value)
+                .Select(context => (ulong?)context.SchoolBranchId)
+                .SingleOrDefaultAsync(cancellationToken);
+
+            if (requestedBranchId is not null && requestedBranchId != actorBranchId)
+            {
+                throw new MatrixDomainException(
+                    "Forbidden",
+                    "Ngữ cảnh học thuật thuộc chi nhánh khác.");
+            }
+        }
+
         var contexts = db.AcademicContexts
             .AsNoTracking()
             .Where(context =>

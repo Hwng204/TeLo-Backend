@@ -5,7 +5,9 @@ public sealed record MatrixWorkbookRow(
     string CognitiveLevel,
     string QuestionType,
     uint QuestionCount,
-    decimal AllocatedScore);
+    decimal Percentage,
+    // Điểm ô suy ra = TotalScore * Percentage / 100, tính sẵn cho tiện xuất file.
+    decimal CellScore);
 
 public sealed record MatrixWorkbookModel(
     string Name,

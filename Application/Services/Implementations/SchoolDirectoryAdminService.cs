@@ -64,6 +64,27 @@ public sealed class SchoolDirectoryAdminService(
         return await StudentResultAsync(schoolId, updated, cancellationToken);
     }
 
+    public async Task<ServiceResult<StudentDetailDto>> TransferStudentClassAsync(
+        ulong schoolId,
+        ulong studentId,
+        TransferStudentClassRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request.SchoolClassId == 0)
+        {
+            return Invalid<StudentDetailDto>(new Dictionary<string, string[]>
+            {
+                ["schoolClassId"] = ["Giá trị là bắt buộc."]
+            });
+        }
+
+        var transferred = await repository.TransferStudentClassAsync(
+            new TransferStudentClassCommand(
+                schoolId, studentId, request.SchoolClassId, request.EffectiveOn),
+            cancellationToken);
+        return await StudentResultAsync(schoolId, transferred, cancellationToken);
+    }
+
     public async Task<ServiceResult<StudentDetailDto>> DeleteStudentAsync(
         ulong schoolId,
         ulong studentId,
@@ -239,6 +260,13 @@ public sealed class SchoolDirectoryAdminService(
         DirectoryWriteStatus.AcademicYearInvalid => Field<T>(
             "academicYearId",
             "Năm học không hợp lệ với trường này, hoặc lớp đã có học sinh nên không đổi được năm học."),
+        DirectoryWriteStatus.StudentNotEnrolledInYear => Field<T>(
+            "schoolClassId", "Học sinh chưa có lớp trong năm học của lớp đích."),
+        DirectoryWriteStatus.UseClassTransfer => Field<T>(
+            "schoolClassId",
+            "Học sinh đã có lớp trong năm học này. Dùng chức năng chuyển lớp để đổi lớp."),
+        DirectoryWriteStatus.InvalidEffectiveDate => Field<T>(
+            "effectiveOn", "Ngày chuyển không được trước ngày bắt đầu học lớp hiện tại."),
         _ => Field<T>("gradeLevelId", "Khối lớp không tồn tại.")
     };
 

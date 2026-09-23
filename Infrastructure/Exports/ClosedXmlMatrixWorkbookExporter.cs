@@ -33,6 +33,7 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
             "Mức nhận thức",
             "Loại câu hỏi",
             "Số câu",
+            "Tỷ lệ %",
             "Điểm"
         };
 
@@ -56,11 +57,12 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
                     ? "Trắc nghiệm"
                     : detail.QuestionType);
             sheet.Cell(row, 4).Value = detail.QuestionCount;
-            sheet.Cell(row, 5).Value = detail.AllocatedScore;
+            sheet.Cell(row, 5).Value = detail.Percentage;
+            sheet.Cell(row, 6).Value = detail.CellScore;
         }
 
         sheet.Range("A1:B1").Merge().Style.Font.SetBold();
-        sheet.Range($"A{headerRow}:E{headerRow}").Style.Font.SetBold();
+        sheet.Range($"A{headerRow}:F{headerRow}").Style.Font.SetBold();
         sheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -68,11 +70,5 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
         return stream.ToArray();
     }
 
-    private static string SafeText(string value)
-    {
-        var normalized = value?.Trim() ?? string.Empty;
-        return normalized.Length > 0 && normalized[0] is '=' or '+' or '-' or '@'
-            ? $"'{normalized}"
-            : normalized;
-    }
+    private static string SafeText(string value) => WorkbookText.Safe(value);
 }

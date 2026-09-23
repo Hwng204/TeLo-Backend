@@ -37,7 +37,7 @@ public sealed class JwtTokenService(
             claims.Add(new Claim(MatrixClaims.BranchId, user.BranchId.Value.ToString()));
         }
 
-        claims.AddRange(user.RoleCodes.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(user.RoleCodes.Select(role => new Claim("role", role)));
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),

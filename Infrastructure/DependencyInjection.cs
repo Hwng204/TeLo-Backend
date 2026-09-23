@@ -39,6 +39,7 @@ public static class DependencyInjection
         services.AddScoped<IMatrixReferenceRepository, MatrixReferenceRepository>();
         services.AddScoped<ISchoolDirectoryRepository, SchoolDirectoryRepository>();
         services.AddScoped<ISchoolDirectoryAdminRepository, SchoolDirectoryAdminRepository>();
+        services.AddScoped<IStudentImportRepository, StudentImportRepository>();
         services.AddScoped<IUnitOfWork,UnitOfWork.UnitOfWork>();
         services.AddSingleton<IProvinceProvider>(_ => CreateProvinceProvider(configuration));
         services.AddSingleton(TimeProvider.System);

@@ -11,6 +11,10 @@ public sealed class Student
     public DateOnly AdmissionDate { get; set; }
     public string Status { get; set; } = StudentStatusCodes.Active;
 
+    // Database-generated: the code while the student is not INACTIVE, otherwise NULL. Deleting a
+    // student therefore frees the code so another school can re-import the same person.
+    public string? ActiveCode { get; private set; }
+
     public User? User { get; set; }
     public ICollection<StudentEnrollment> Enrollments { get; set; } = new List<StudentEnrollment>();
 }

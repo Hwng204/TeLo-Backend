@@ -53,10 +53,34 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.SemesterId == query.SemesterId.Value);
         }
 
+        if (query.AcademicYearId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.AcademicYearId == query.AcademicYearId.Value);
+        }
+
+        if (query.SubjectId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.SubjectId == query.SubjectId.Value);
+        }
+
+        if (query.GradeLevelId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.GradeLevelId == query.GradeLevelId.Value);
+        }
+
         if (query.BranchId is not null)
         {
             matrices = matrices.Where(matrix =>
                 matrix.AcademicContext.SchoolBranchId == query.BranchId.Value);
+        }
+
+        if (query.HideTaskDrafts)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.TaskId == null || matrix.Status != MatrixStatusCodes.Draft);
         }
 
         if (query.AssignedToUserId is not null)
@@ -79,12 +103,14 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.TaskId,
                 matrix.AcademicContextId,
                 matrix.SemesterId,
+                matrix.CreatedByUserId,
+                matrix.CreatedAt,
+                matrix.ApprovedByUserId,
+                matrix.ApprovedAt,
                 TotalQuestions = matrix.Details
                     .Select(detail => (long?)detail.QuestionCount)
                     .Sum() ?? 0,
-                TotalScore = matrix.Details
-                    .Select(detail => (decimal?)detail.AllocatedScore)
-                    .Sum() ?? 0m
+                matrix.TotalScore
             })
             .ToListAsync(cancellationToken);
 
@@ -96,7 +122,11 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             row.AcademicContextId,
             row.SemesterId,
             checked((uint)row.TotalQuestions),
-            row.TotalScore)).ToArray();
+            row.TotalScore,
+            row.CreatedByUserId,
+            row.CreatedAt,
+            row.ApprovedByUserId,
+            row.ApprovedAt)).ToArray();
 
         return new PagedResult<MatrixListRow>(items, query.Page, query.PageSize, totalCount);
     }
@@ -146,7 +176,45 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             Db.Attach(matrix.Task);
         }
 
+        if (matrix.CreatedAt == default)
+        {
+            matrix.CreatedAt = DateTime.UtcNow;
+        }
+
         await Db.ExamMatrices.AddAsync(matrix, cancellationToken);
+    }
+
+    public async Task<IReadOnlyDictionary<ulong, MatrixPersonRow>> GetPeopleAsync(
+        IReadOnlyCollection<ulong> userIds,
+        CancellationToken cancellationToken)
+    {
+        if (userIds.Count == 0)
+        {
+            return new Dictionary<ulong, MatrixPersonRow>();
+        }
+
+        var users = await Db.Users
+            .AsNoTracking()
+            .Where(user => userIds.Contains(user.Id))
+            .Select(user => new { user.Id, user.FullName })
+            .ToListAsync(cancellationToken);
+
+        var roles = await Db.UserRoles
+            .AsNoTracking()
+            .Where(userRole => userIds.Contains(userRole.UserId))
+            .Select(userRole => new { userRole.UserId, userRole.Role.Code })
+            .ToListAsync(cancellationToken);
+
+        var rolesByUser = roles
+            .GroupBy(role => role.UserId)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<string>)group.Select(role => role.Code).ToArray());
+
+        return users.ToDictionary(
+            user => user.Id,
+            user => new MatrixPersonRow(
+                user.Id,
+                user.FullName,
+                rolesByUser.TryGetValue(user.Id, out var codes) ? codes : Array.Empty<string>()));
     }
 
     public async Task<bool> TryUpdateStatusAsync(
@@ -161,7 +229,9 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                     .SetProperty(item => item.Status, matrix.Status)
                     .SetProperty(item => item.RejectComment, matrix.RejectComment)
                     .SetProperty(item => item.RejectedByUserId, matrix.RejectedByUserId)
-                    .SetProperty(item => item.RejectedAt, matrix.RejectedAt),
+                    .SetProperty(item => item.RejectedAt, matrix.RejectedAt)
+                    .SetProperty(item => item.ApprovedByUserId, matrix.ApprovedByUserId)
+                    .SetProperty(item => item.ApprovedAt, matrix.ApprovedAt),
                 cancellationToken);
 
         if (affected != 1)
@@ -175,10 +245,14 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
         entry.Property(item => item.RejectComment).OriginalValue = matrix.RejectComment;
         entry.Property(item => item.RejectedByUserId).OriginalValue = matrix.RejectedByUserId;
         entry.Property(item => item.RejectedAt).OriginalValue = matrix.RejectedAt;
+        entry.Property(item => item.ApprovedByUserId).OriginalValue = matrix.ApprovedByUserId;
+        entry.Property(item => item.ApprovedAt).OriginalValue = matrix.ApprovedAt;
         entry.Property(item => item.Status).IsModified = false;
         entry.Property(item => item.RejectComment).IsModified = false;
         entry.Property(item => item.RejectedByUserId).IsModified = false;
         entry.Property(item => item.RejectedAt).IsModified = false;
+        entry.Property(item => item.ApprovedByUserId).IsModified = false;
+        entry.Property(item => item.ApprovedAt).IsModified = false;
         return true;
     }
 

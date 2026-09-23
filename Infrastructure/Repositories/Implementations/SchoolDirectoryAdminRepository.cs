@@ -28,7 +28,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
 
-        if (await db.Students.AnyAsync(s => s.Code == command.Code, cancellationToken))
+        if (await db.Students.AnyAsync(s => s.ActiveCode == command.Code, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
@@ -47,7 +47,8 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
                 {
                     SchoolClassId = target.Id,
                     AcademicYearId = target.AcademicYearId,
-                    Status = StudentEnrollmentStatusCodes.Active
+                    Status = StudentEnrollmentStatusCodes.Active,
+                    StartedOn = command.AdmissionDate
                 }
             }
         };
@@ -69,9 +70,13 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.StudentNotFound);
         }
 
-        if (student.Code != command.Code &&
+        // Bringing a deleted student back claims its code again, so check that case too, not only
+        // an edited code, instead of leaning on the unique index and catching its error.
+        var reactivating = student.Status == StudentStatusCodes.Inactive &&
+            command.Status != StudentStatusCodes.Inactive;
+        if ((student.Code != command.Code || reactivating) &&
             await db.Students.AnyAsync(
-                s => s.Code == command.Code && s.Id != student.Id, cancellationToken))
+                s => s.ActiveCode == command.Code && s.Id != student.Id, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
@@ -92,24 +97,83 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
                 return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
             }
 
-            // One enrollment per academic year: reuse the row for that year, otherwise add one.
-            var existing = student.Enrollments
-                .FirstOrDefault(e => e.AcademicYearId == target.AcademicYearId);
-            if (existing is null)
+            // Placing a student who has no live class in that year is fine. Moving one who does is
+            // a class transfer, which must keep the old period, so it is refused here instead of
+            // silently overwriting the enrollment row.
+            var current = student.Enrollments.FirstOrDefault(e =>
+                e.AcademicYearId == target.AcademicYearId &&
+                e.Status == StudentEnrollmentStatusCodes.Active);
+            if (current is null)
             {
                 student.Enrollments.Add(new StudentEnrollment
                 {
                     StudentId = student.Id,
                     SchoolClassId = target.Id,
                     AcademicYearId = target.AcademicYearId,
-                    Status = StudentEnrollmentStatusCodes.Active
+                    Status = StudentEnrollmentStatusCodes.Active,
+                    StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                 });
             }
-            else
+            else if (current.SchoolClassId != target.Id)
             {
-                existing.SchoolClassId = target.Id;
+                return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.UseClassTransfer);
             }
         }
+
+        return await SaveAsync(
+            () => student.Id, DirectoryWriteStatus.DuplicateStudentCode, cancellationToken);
+    }
+
+    public async Task<DirectoryWriteResult<ulong>> TransferStudentClassAsync(
+        TransferStudentClassCommand command,
+        CancellationToken cancellationToken)
+    {
+        var student = await FindStudentInSchoolAsync(
+            command.SchoolId, command.StudentId, cancellationToken);
+        if (student is null)
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.StudentNotFound);
+        }
+
+        var target = await FindClassInSchoolAsync(
+            command.SchoolId, command.SchoolClassId, cancellationToken);
+        if (target is null || target.Status != SchoolClassStatusCodes.Active)
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
+        }
+
+        var current = student.Enrollments.FirstOrDefault(e =>
+            e.AcademicYearId == target.AcademicYearId &&
+            e.Status == StudentEnrollmentStatusCodes.Active);
+        if (current is null)
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.StudentNotEnrolledInYear);
+        }
+
+        // Already in that class: nothing to do, so a retried request is harmless.
+        if (current.SchoolClassId == target.Id)
+        {
+            return DirectoryWriteResult<ulong>.Ok(student.Id);
+        }
+
+        var effectiveOn = command.EffectiveOn ?? DateOnly.FromDateTime(DateTime.UtcNow);
+        if (effectiveOn < current.StartedOn)
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.InvalidEffectiveDate);
+        }
+
+        // EF issues the UPDATE before the INSERT, so the old row has already left the ACTIVE
+        // state (and its generated unique key is NULL) when the new one is written.
+        current.Status = StudentEnrollmentStatusCodes.TransferredOut;
+        current.EndedOn = effectiveOn;
+        student.Enrollments.Add(new StudentEnrollment
+        {
+            StudentId = student.Id,
+            SchoolClassId = target.Id,
+            AcademicYearId = target.AcademicYearId,
+            Status = StudentEnrollmentStatusCodes.Active,
+            StartedOn = effectiveOn
+        });
 
         return await SaveAsync(
             () => student.Id, DirectoryWriteStatus.DuplicateStudentCode, cancellationToken);

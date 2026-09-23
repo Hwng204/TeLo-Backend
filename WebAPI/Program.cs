@@ -1,5 +1,6 @@
 using Application;
 using Infrastructure;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi.Models;
 using WebAPI.ExceptionHandling;
@@ -9,6 +10,13 @@ using WebAPI.Security;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+// Student import is the only upload endpoint and its actions cap the request at
+// StudentImportControllerBase.UploadRequestLimit (an oversize body is rejected before the service
+// runs; MVC reports it as 400 "Request body too large" because the form is read while binding).
+// This global ceiling sits above that cap but far below the 128 MB framework default, in case an
+// upload is ever added elsewhere without its own cap.
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = 8 * 1024 * 1024);
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.InvalidModelStateResponseFactory = context =>
@@ -68,6 +76,12 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(SchoolDirectoryControllerBase.AdminPolicy, policy =>
         policy.RequireAuthenticatedUser().RequireRole(directoryAdminRoles));
 
+    // Only principals and vice principals import; teachers and team leads can read but not upload.
+    var schoolImportRoles = builder.Configuration
+        .GetSection("SchoolDirectoryAuth:SchoolImportRoleCodes").Get<string[]>()
+        ?? ["HIEU_TRUONG", "PRINCIPAL", "PHT"];
+    options.AddPolicy(SchoolDirectoryControllerBase.ImportPolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(schoolImportRoles));
     var teacherReadRoles = new[] { "MatrixAuth:PrincipalRoleCodes", "MatrixAuth:PhtRoleCodes" }
         .SelectMany(key => builder.Configuration.GetSection(key).Get<string[]>() ??
             (key.Contains("Principal") ? ["HIEU_TRUONG", "PRINCIPAL"] : new[] { "PHT" })).ToArray();

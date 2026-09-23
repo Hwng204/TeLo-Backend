@@ -12,6 +12,9 @@ public abstract class SchoolDirectoryControllerBase : ControllerBase
     public const string SchoolReadPolicy = "SchoolDirectorySchoolRead";
     public const string AdminPolicy = "SchoolDirectoryAdmin";
 
+    // Narrower than SchoolReadPolicy: teachers and team leads may read but never import.
+    public const string ImportPolicy = "SchoolDirectorySchoolImport";
+
     protected ulong ActorUserId =>
         ulong.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
@@ -29,18 +32,22 @@ public abstract class SchoolDirectoryControllerBase : ControllerBase
         return error.Code switch
         {
             SchoolDirectoryErrorCodes.Validation or
+            SchoolDirectoryErrorCodes.ImportFileInvalid or
             SchoolDirectoryErrorCodes.ActiveAcademicYearNotFound =>
                 UnprocessableEntity(response),
             SchoolDirectoryErrorCodes.SchoolScopeRequired =>
                 StatusCode(StatusCodes.Status403Forbidden, response),
             SchoolDirectoryErrorCodes.StudentNotFound or
             SchoolDirectoryErrorCodes.ClassNotFound or
+            SchoolDirectoryErrorCodes.ImportBatchNotFound or
             SchoolDirectoryErrorCodes.SchoolNotFound =>
                 NotFound(response),
             SchoolDirectoryErrorCodes.StudentCodeDuplicate or
             SchoolDirectoryErrorCodes.ClassCodeDuplicate or
             SchoolDirectoryErrorCodes.TeacherAlreadyHomeroom or
-            SchoolDirectoryErrorCodes.ClassHasActiveStudents =>
+            SchoolDirectoryErrorCodes.ClassHasActiveStudents or
+            SchoolDirectoryErrorCodes.ImportBatchStateInvalid or
+            SchoolDirectoryErrorCodes.ImportHasInvalidRows =>
                 Conflict(response),
             SchoolDirectoryErrorCodes.Unauthorized => Unauthorized(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)

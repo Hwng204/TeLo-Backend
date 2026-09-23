@@ -27,10 +27,17 @@ public sealed class MatrixTasksController(
         [FromQuery] string? status = null,
         [FromQuery] ulong? assignedToUserId = null,
         [FromQuery] DateTime? dueBefore = null,
+        [FromQuery] string? keyword = null,
+        [FromQuery] ulong? academicContextId = null,
+        [FromQuery] ulong? academicYearId = null,
+        [FromQuery] ulong? subjectId = null,
+        [FromQuery] ulong? gradeLevelId = null,
+        [FromQuery] ulong? semesterId = null,
         CancellationToken cancellationToken = default)
     {
         return service.ListAsync(
-            new MatrixTaskQuery(page, pageSize, status, assignedToUserId, dueBefore),
+            new MatrixTaskQuery(page, pageSize, status, assignedToUserId, dueBefore, null, keyword, academicContextId,
+                academicYearId, subjectId, gradeLevelId, semesterId),
             cancellationToken);
     }
 
@@ -40,11 +47,27 @@ public sealed class MatrixTasksController(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? status = null,
         [FromQuery] DateTime? dueBefore = null,
+        [FromQuery] string? keyword = null,
+        [FromQuery] ulong? academicContextId = null,
+        [FromQuery] ulong? academicYearId = null,
+        [FromQuery] ulong? subjectId = null,
+        [FromQuery] ulong? gradeLevelId = null,
+        [FromQuery] ulong? semesterId = null,
         CancellationToken cancellationToken = default)
     {
         return service.ListMineAsync(
-            new MatrixTaskQuery(page, pageSize, status, null, dueBefore),
+            new MatrixTaskQuery(page, pageSize, status, null, dueBefore, null, keyword, academicContextId,
+                academicYearId, subjectId, gradeLevelId, semesterId),
             cancellationToken);
+    }
+
+    [HttpDelete("{taskId}")]
+    public async Task<IActionResult> Delete(
+        ulong taskId,
+        CancellationToken cancellationToken)
+    {
+        await service.DeleteAsync(taskId, cancellationToken);
+        return NoContent();
     }
 
     [HttpGet("{taskId}")]

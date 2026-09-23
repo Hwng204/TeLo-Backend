@@ -37,3 +37,9 @@ public sealed record UpdateClassRequest(
     ulong GradeLevelId,
     string? Status,
     ulong? HomeroomTeacherId);
+
+// Moves a student to another class of the same academic year while keeping the earlier class in
+// the history. EffectiveOn defaults to today.
+public sealed record TransferStudentClassRequest(
+    ulong SchoolClassId,
+    DateOnly? EffectiveOn);

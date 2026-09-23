@@ -9,6 +9,9 @@ public sealed class WorkTask
     public ulong AssignedToUserId { get; set; }
     public DateTime? DueAt { get; set; }
     public string Status { get; set; } = string.Empty;
+    // Nullable vì `tasks` là bảng dùng chung (ExamSet, QuestionTask cũng tham chiếu); nhiệm vụ ma
+    // trận bắt Name bắt buộc ở tầng Application (MatrixTaskApplicationService), không ở DB.
+    public string? Name { get; set; }
     public string? Description { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }

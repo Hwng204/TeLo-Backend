@@ -53,6 +53,24 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.SemesterId == query.SemesterId.Value);
         }
 
+        if (query.AcademicYearId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.AcademicYearId == query.AcademicYearId.Value);
+        }
+
+        if (query.SubjectId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.SubjectId == query.SubjectId.Value);
+        }
+
+        if (query.GradeLevelId is not null)
+        {
+            matrices = matrices.Where(matrix =>
+                matrix.AcademicContext.GradeLevelId == query.GradeLevelId.Value);
+        }
+
         if (query.BranchId is not null)
         {
             matrices = matrices.Where(matrix =>
@@ -85,7 +103,6 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.TaskId,
                 matrix.AcademicContextId,
                 matrix.SemesterId,
-                matrix.Code,
                 matrix.CreatedByUserId,
                 matrix.CreatedAt,
                 matrix.ApprovedByUserId,
@@ -93,9 +110,7 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 TotalQuestions = matrix.Details
                     .Select(detail => (long?)detail.QuestionCount)
                     .Sum() ?? 0,
-                TotalScore = matrix.Details
-                    .Select(detail => (decimal?)detail.AllocatedScore)
-                    .Sum() ?? 0m
+                matrix.TotalScore
             })
             .ToListAsync(cancellationToken);
 
@@ -108,7 +123,6 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             row.SemesterId,
             checked((uint)row.TotalQuestions),
             row.TotalScore,
-            row.Code,
             row.CreatedByUserId,
             row.CreatedAt,
             row.ApprovedByUserId,
@@ -167,54 +181,7 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             matrix.CreatedAt = DateTime.UtcNow;
         }
 
-        if (string.IsNullOrEmpty(matrix.Code))
-        {
-            matrix.Code = await NextCodeAsync(matrix.CreatedAt, cancellationToken);
-        }
-
         await Db.ExamMatrices.AddAsync(matrix, cancellationToken);
-    }
-
-    /// <summary>
-    /// Next code MT-{year}-{running number}. The counter row is bumped atomically with
-    /// LAST_INSERT_ID(expr), inside the caller's transaction: two concurrent creates can never read
-    /// the same number, and a rolled-back create gives its number back (no gaps).
-    /// </summary>
-    private async Task<string> NextCodeAsync(DateTime createdAtUtc, CancellationToken cancellationToken)
-    {
-        // Vietnam is UTC+7; the code year follows the local calendar year, not UTC.
-        var year = createdAtUtc.AddHours(7).Year;
-
-        // LAST_INSERT_ID() belongs to one connection. Inside the service's transaction that is guaranteed,
-        // but outside one EF would open a fresh connection per command and read back 0, so pin a single
-        // connection for the two statements when no transaction has already done so.
-        var connection = Db.Database.GetDbConnection();
-        var pinnedHere = connection.State != System.Data.ConnectionState.Open;
-        if (pinnedHere)
-        {
-            await Db.Database.OpenConnectionAsync(cancellationToken);
-        }
-
-        try
-        {
-            await Db.Database.ExecuteSqlInterpolatedAsync(
-                $@"INSERT INTO matrix_code_sequences (year_number, last_number) VALUES ({year}, LAST_INSERT_ID(1))
-                   ON DUPLICATE KEY UPDATE last_number = LAST_INSERT_ID(last_number + 1)",
-                cancellationToken);
-
-            var number = await Db.Database
-                .SqlQuery<ulong>($"SELECT LAST_INSERT_ID() AS Value")
-                .SingleAsync(cancellationToken);
-
-            return $"MT-{year}-{number:D3}";
-        }
-        finally
-        {
-            if (pinnedHere)
-            {
-                await Db.Database.CloseConnectionAsync();
-            }
-        }
     }
 
     public async Task<IReadOnlyDictionary<ulong, MatrixPersonRow>> GetPeopleAsync(

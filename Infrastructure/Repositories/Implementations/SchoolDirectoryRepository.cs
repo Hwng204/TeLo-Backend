@@ -435,10 +435,13 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .Select(y => (ulong?)y.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
+    // A student can hold several rows in one year once a class transfer keeps the old period, so
+    // only the ACTIVE row counts as "current". Without this a transferred student appears twice.
     private IQueryable<StudentEnrollment> CurrentEnrollments(ulong schoolId) =>
         db.StudentEnrollments.AsNoTracking().Where(e =>
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
-            e.AcademicYear.Status == ActiveYear);
+            e.AcademicYear.Status == ActiveYear &&
+            e.Status == StudentEnrollmentStatusCodes.Active);
 
     private async Task<Dictionary<ulong, (ulong Id, string Name)>> LoadTeachersAsync(
         ulong[] classIds,

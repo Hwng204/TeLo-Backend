@@ -17,6 +17,12 @@ public interface ISchoolDirectoryAdminService
         UpdateStudentRequest request,
         CancellationToken cancellationToken);
 
+    Task<ServiceResult<StudentDetailDto>> TransferStudentClassAsync(
+        ulong schoolId,
+        ulong studentId,
+        TransferStudentClassRequest request,
+        CancellationToken cancellationToken);
+
     Task<ServiceResult<StudentDetailDto>> DeleteStudentAsync(
         ulong schoolId,
         ulong studentId,

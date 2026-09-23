@@ -39,3 +39,9 @@ packages/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local cross-provider AI workspace
+.ai/
+AGENTS.md
+CLAUDE.md
+GEMINI.md

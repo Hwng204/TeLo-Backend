@@ -18,7 +18,11 @@ public sealed record MatrixListFilter(
     ulong? AssignedToUserId = null,
     ulong? BranchId = null,
     // Ẩn bản Nháp của ma trận gắn nhiệm vụ (Tổ trưởng đang soạn) khỏi người xem là PHT.
-    bool HideTaskDrafts = false);
+    bool HideTaskDrafts = false,
+    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
+    ulong? AcademicYearId = null,
+    ulong? SubjectId = null,
+    ulong? GradeLevelId = null);
 
 public sealed record MatrixListRow(
     ulong Id,
@@ -29,7 +33,6 @@ public sealed record MatrixListRow(
     ulong? SemesterId,
     uint TotalQuestions,
     decimal TotalScore,
-    string Code = "",
     ulong? CreatedByUserId = null,
     DateTime CreatedAt = default,
     ulong? ApprovedByUserId = null,
@@ -45,9 +48,14 @@ public sealed record MatrixTaskFilter(
     ulong? AssignedToUserId = null,
     DateTime? DueBefore = null,
     ulong? BranchId = null,
-    // Tìm theo yêu cầu công việc, hoặc theo mã nhiệm vụ (mã suy ra từ id, xem MatrixMappingExtensions.TaskCode).
+    // Tìm theo tên nhiệm vụ, yêu cầu công việc, hoặc id (gõ số thì khớp thẳng id).
     string? Keyword = null,
-    ulong? AcademicContextId = null);
+    ulong? AcademicContextId = null,
+    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
+    ulong? AcademicYearId = null,
+    ulong? SubjectId = null,
+    ulong? GradeLevelId = null,
+    ulong? SemesterId = null);
 
 public sealed record MatrixTaskRow(
     ulong Id,
@@ -56,6 +64,7 @@ public sealed record MatrixTaskRow(
     DateTime? DueAt,
     string Status,
     string TaskType,
+    string? Name,
     string? Description,
     ulong? AcademicContextId,
     ulong? SemesterId,

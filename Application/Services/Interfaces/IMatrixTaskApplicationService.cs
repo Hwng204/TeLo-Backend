@@ -21,6 +21,10 @@ public interface IMatrixTaskApplicationService
         ulong taskId,
         CancellationToken cancellationToken);
 
+    Task DeleteAsync(
+        ulong taskId,
+        CancellationToken cancellationToken);
+
     Task<MatrixReferenceData> GetReferenceDataAsync(
         ulong? academicContextId,
         CancellationToken cancellationToken);

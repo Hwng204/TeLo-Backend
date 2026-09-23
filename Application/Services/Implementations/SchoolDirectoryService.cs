@@ -22,6 +22,10 @@ public static class SchoolDirectoryErrorCodes
     public const string ClassCodeDuplicate = "CLASS_CODE_DUPLICATE";
     public const string TeacherAlreadyHomeroom = "TEACHER_ALREADY_HOMEROOM";
     public const string ClassHasActiveStudents = "CLASS_HAS_ACTIVE_STUDENTS";
+    public const string ImportBatchNotFound = "IMPORT_BATCH_NOT_FOUND";
+    public const string ImportFileInvalid = "IMPORT_FILE_INVALID";
+    public const string ImportBatchStateInvalid = "IMPORT_BATCH_STATE_INVALID";
+    public const string ImportHasInvalidRows = "IMPORT_HAS_INVALID_ROWS";
 }
 
 public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository)
@@ -85,8 +89,14 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
             h.ClassId, h.ClassName, h.HomeroomTeacherId, h.HomeroomTeacherName,
             h.EnrollmentStatus)).ToList();
 
-        // History is newest-first: the active-year enrollment wins, otherwise the most recent class.
-        var currentRow = student.History.FirstOrDefault(h => h.AcademicYearStatus == ActiveYearStatus)
+        // History is newest-first. The live enrollment of the active year wins; a year may hold
+        // several rows after a class transfer, so prefer the ACTIVE one, then any row of that year,
+        // otherwise the most recent class.
+        var currentRow =
+            student.History.FirstOrDefault(h =>
+                h.AcademicYearStatus == ActiveYearStatus &&
+                h.EnrollmentStatus == StudentEnrollmentStatusCodes.Active)
+            ?? student.History.FirstOrDefault(h => h.AcademicYearStatus == ActiveYearStatus)
             ?? student.History.FirstOrDefault();
         var current = currentRow is null
             ? null

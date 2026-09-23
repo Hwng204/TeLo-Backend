@@ -19,8 +19,18 @@ public sealed class StudentEnrollmentConfiguration : IEntityTypeConfiguration<St
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32)
             .HasDefaultValue(StudentEnrollmentStatusCodes.Active).IsRequired();
 
+        builder.Property(x => x.StartedOn).HasColumnName("started_on").HasColumnType("date").IsRequired();
+        builder.Property(x => x.EndedOn).HasColumnName("ended_on").HasColumnType("date");
+
+        // Many rows per (student, year) are allowed so a class transfer keeps the old period, but
+        // only one may be ACTIVE: the generated key is NULL for every other status.
+        builder.Property(x => x.ActiveYearKey).HasColumnName("active_year_key")
+            .HasColumnType("bigint unsigned")
+            .HasComputedColumnSql("CASE WHEN status = 'ACTIVE' THEN academic_year_id ELSE NULL END", stored: true);
+        builder.HasIndex(x => new { x.StudentId, x.ActiveYearKey })
+            .IsUnique().HasDatabaseName("uq_student_enrollments_student_active_year");
         builder.HasIndex(x => new { x.StudentId, x.AcademicYearId })
-            .IsUnique().HasDatabaseName("uq_student_enrollments_student_year");
+            .HasDatabaseName("idx_student_enrollments_student_year");
         builder.HasIndex(x => new { x.SchoolClassId, x.Status })
             .HasDatabaseName("idx_student_enrollments_class_status");
 

@@ -27,6 +27,15 @@ public sealed class StudentEnrollment
     public ulong AcademicYearId { get; set; }
     public string Status { get; set; } = StudentEnrollmentStatusCodes.Active;
 
+    // When this class period started and, once the student moves on, when it ended.
+    public DateOnly StartedOn { get; set; }
+    public DateOnly? EndedOn { get; set; }
+
+    // Database-generated: the academic year while this row is ACTIVE, otherwise NULL. A unique
+    // index over (StudentId, ActiveYearKey) lets one student hold many rows per year but only
+    // one active one.
+    public ulong? ActiveYearKey { get; private set; }
+
     public Student Student { get; set; } = null!;
     public Organization.SchoolClass SchoolClass { get; set; } = null!;
     public Academic.AcademicYear AcademicYear { get; set; } = null!;

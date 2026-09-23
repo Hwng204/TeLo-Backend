@@ -19,11 +19,19 @@ public sealed class MatrixTaskApplicationService(
     {
         if (request is null ||
             request.AssignedToUserId == 0 ||
-            request.AcademicContextId == 0)
+            request.AcademicContextId == 0 ||
+            string.IsNullOrWhiteSpace(request.Name))
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Người nhận và ngữ cảnh học thuật là bắt buộc.");
+                "Người nhận, ngữ cảnh học thuật và tên nhiệm vụ là bắt buộc.");
+        }
+
+        if (request.Name.Trim().Length > 255)
+        {
+            throw new MatrixApplicationException(
+                "InvalidRequest",
+                "Tên nhiệm vụ tối đa 255 ký tự.");
         }
 
         var actor = currentUser.Actor;
@@ -49,6 +57,7 @@ public sealed class MatrixTaskApplicationService(
                 AssignedToUserId = request.AssignedToUserId,
                 DueAt = request.DueAt,
                 Status = MatrixTaskStatusCodes.Assigned,
+                Name = request.Name.Trim(),
                 Description = string.IsNullOrWhiteSpace(request.Description)
                     ? null
                     : request.Description.Trim(),
@@ -130,6 +139,48 @@ public sealed class MatrixTaskApplicationService(
                 "Bạn không phải Tổ trưởng được giao nhiệm vụ này.");
         }
 
+        await EnsureSameBranchAsync(actor, task, cancellationToken);
+
+        var matrixId = await uow.MatrixTasks.GetLinkedMatrixIdAsync(taskId, cancellationToken);
+        var people = await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, cancellationToken);
+        return task.ToResponse(matrixId, people);
+    }
+
+    /// <summary>
+    /// PHT xoá nhiệm vụ đã giao khi Tổ trưởng chưa bắt đầu. "Đã bắt đầu" = đã có ma trận
+    /// (Tổ trưởng đã Lưu nháp hoặc đã nộp); lúc đó nhiệm vụ không xoá được nữa.
+    /// </summary>
+    public async Task DeleteAsync(
+        ulong taskId,
+        CancellationToken cancellationToken)
+    {
+        var actor = currentUser.Actor;
+        if (actor.Role != MatrixActorRole.Pht)
+        {
+            throw new MatrixApplicationException(
+                "Forbidden",
+                "Chỉ PHT mới được xoá nhiệm vụ ma trận.");
+        }
+
+        var task = await uow.MatrixTasks.GetMatrixTaskAsync(taskId, cancellationToken)
+            ?? throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
+        await EnsureSameBranchAsync(actor, task, cancellationToken);
+
+        if (!await uow.MatrixTasks.DeleteIfNotStartedAsync(taskId, cancellationToken))
+        {
+            // Không xoá được: hoặc người khác vừa xoá, hoặc Tổ trưởng đã có ma trận cho nhiệm vụ này.
+            var stillExists = await uow.MatrixTasks.GetMatrixTaskAsync(taskId, cancellationToken) is not null;
+            throw stillExists
+                ? new MatrixApplicationException("TaskStarted", "Nhiệm vụ đã được thực hiện, không thể xóa.")
+                : new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
+        }
+    }
+
+    private async Task EnsureSameBranchAsync(
+        MatrixActor actor,
+        WorkTask task,
+        CancellationToken cancellationToken)
+    {
         var branchScope = BranchScope(actor);
         if (branchScope is not null &&
             (task.AcademicContextId is null ||
@@ -139,10 +190,6 @@ public sealed class MatrixTaskApplicationService(
                 "Forbidden",
                 "Nhiệm vụ ma trận thuộc chi nhánh khác.");
         }
-
-        var matrixId = await uow.MatrixTasks.GetLinkedMatrixIdAsync(taskId, cancellationToken);
-        var people = await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, cancellationToken);
-        return task.ToResponse(matrixId, people);
     }
 
     private Task<IReadOnlyDictionary<ulong, MatrixPerson>> ResolveCreatorsAsync(

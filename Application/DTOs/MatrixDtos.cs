@@ -4,13 +4,16 @@ public sealed record MatrixDetailRequest(
     ulong LessonId,
     string CognitiveLevel,
     uint QuestionCount,
-    decimal AllocatedScore);
+    // Tỷ lệ % điểm của dòng này (0, 100], không phải điểm tuyệt đối.
+    decimal Percentage);
 
 public sealed record SaveMatrixRequest(
     string Name,
     ulong AcademicContextId,
     ulong? SemesterId,
     ulong? TaskId,
+    // Số nguyên dương do người lập tự đặt.
+    int TotalScore,
     IReadOnlyList<MatrixDetailRequest> Details);
 
 public sealed record MatrixDetailResponse(
@@ -19,7 +22,9 @@ public sealed record MatrixDetailResponse(
     string CognitiveLevel,
     string QuestionType,
     uint QuestionCount,
-    decimal AllocatedScore);
+    decimal Percentage,
+    // Điểm ô suy ra = MatrixResponse.TotalScore * Percentage / 100, tính sẵn để frontend khỏi làm tròn lệch.
+    decimal CellScore);
 
 /// <summary>A user shown next to a matrix or task, with the role label the school uses for them.</summary>
 public sealed record MatrixPerson(ulong UserId, string FullName, string? RoleLabel);
@@ -38,7 +43,6 @@ public sealed record MatrixResponse(
     string? RejectComment = null,
     DateTime? RejectedAt = null,
     ulong? RejectedByUserId = null,
-    string Code = "",
     MatrixPerson? CreatedBy = null,
     DateTime? CreatedAt = null,
     MatrixPerson? ApprovedBy = null,

@@ -55,6 +55,17 @@ public sealed class StudentsAdminController(
         ToActionResult(await adminService.UpdateStudentAsync(
             schoolId, studentId, request, cancellationToken));
 
+    // Mid-year class change. The old class stays in the student's history (TRANSFERRED_OUT) and
+    // scores keep following the student, so nothing earned in the earlier class is lost.
+    [HttpPost("{studentId:min(1)}/transfer-class")]
+    public async Task<IActionResult> TransferClass(
+        ulong schoolId,
+        ulong studentId,
+        [FromBody] TransferStudentClassRequest request,
+        CancellationToken cancellationToken) =>
+        ToActionResult(await adminService.TransferStudentClassAsync(
+            schoolId, studentId, request, cancellationToken));
+
     // Logical delete: the profile turns INACTIVE and keeps its history and exam results.
     [HttpDelete("{studentId:min(1)}")]
     public async Task<IActionResult> Delete(

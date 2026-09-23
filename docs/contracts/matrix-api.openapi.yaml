@@ -1,0 +1,451 @@
+openapi: 3.0.3
+info:
+  title: LeTo Matrix API
+  version: 1.0.0
+  description: |
+    Matrix API for lesson-based exam matrices. totalScore is set directly by the creator (a positive
+    integer); each detail row carries a percentage of it, and the sum of percentages must equal 100
+    to Submit/Confirm. totalQuestions is derived from details and response-only; delegated matrix
+    scope is resolved from the task.
+servers:
+  - url: /api
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      security: []
+      summary: Issue a JWT access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Access token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoginResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /matrices:
+    get:
+      summary: View matrix list
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+        - { name: keyword, in: query, schema: { type: string } }
+        - { name: academicContextId, in: query, schema: { type: integer, format: int64 } }
+        - { name: academicYearId, in: query, schema: { type: integer, format: int64 }, description: Lọc độc lập theo năm học của ngữ cảnh }
+        - { name: subjectId, in: query, schema: { type: integer, format: int64 } }
+        - { name: gradeLevelId, in: query, schema: { type: integer, format: int64 } }
+        - { name: semesterId, in: query, schema: { type: integer, format: int64, nullable: true } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/MatrixStatus' } }
+      responses:
+        '200':
+          description: Paged matrix list
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      summary: Create a Draft matrix
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveMatrixRequest' }
+      responses:
+        '201':
+          description: Created Draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /matrices/{matrixId}:
+    parameters:
+      - { $ref: '#/components/parameters/MatrixId' }
+    get:
+      summary: View matrix detail
+      responses:
+        '200':
+          description: Matrix detail and derived totals
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      summary: Replace a Draft or Submitted matrix content
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveMatrixRequest' }
+      responses:
+        '200':
+          description: Updated matrix
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      summary: Delete an editable Draft
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /matrices/{matrixId}/submit:
+    post: { $ref: '#/x-actions/submit' }
+  /matrices/{matrixId}/withdraw:
+    post: { $ref: '#/x-actions/withdraw' }
+  /matrices/{matrixId}/approve:
+    post: { $ref: '#/x-actions/approve' }
+  /matrices/{matrixId}/confirm:
+    post: { $ref: '#/x-actions/confirm' }
+  /matrices/{matrixId}/archive:
+    post: { $ref: '#/x-actions/archive' }
+  /matrices/{matrixId}/clone:
+    post: { $ref: '#/x-actions/clone' }
+  /matrices/{matrixId}/export.xlsx:
+    get:
+      summary: Export matrix workbook
+      responses:
+        '200':
+          description: XLSX attachment
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /matrix-tasks:
+    post:
+      summary: Assign a Matrix task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateMatrixTaskRequest' }
+      responses:
+        '201':
+          description: Created Matrix task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixTaskResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    get:
+      summary: List Matrix tasks
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string, enum: [ASSIGNED, SUBMITTED, COMPLETED] } }
+        - { name: dueBefore, in: query, schema: { type: string, format: date-time } }
+        - name: keyword
+          in: query
+          description: Matches the task name or work description, or its id (a plain number).
+          schema: { type: string }
+        - { name: academicContextId, in: query, schema: { type: integer, format: int64 } }
+        - { name: academicYearId, in: query, schema: { type: integer, format: int64 }, description: Lọc độc lập theo năm học của ngữ cảnh }
+        - { name: subjectId, in: query, schema: { type: integer, format: int64 } }
+        - { name: gradeLevelId, in: query, schema: { type: integer, format: int64 } }
+        - { name: semesterId, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Paged Matrix tasks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixTaskPage' }
+  /my/matrix-tasks:
+    get:
+      summary: List Matrix tasks assigned to the current Team Lead
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string, enum: [ASSIGNED, SUBMITTED, COMPLETED] } }
+        - { name: dueBefore, in: query, schema: { type: string, format: date-time } }
+        - name: keyword
+          in: query
+          description: Matches the task name or work description, or its id (a plain number).
+          schema: { type: string }
+        - { name: academicContextId, in: query, schema: { type: integer, format: int64 } }
+        - { name: academicYearId, in: query, schema: { type: integer, format: int64 }, description: Lọc độc lập theo năm học của ngữ cảnh }
+        - { name: subjectId, in: query, schema: { type: integer, format: int64 } }
+        - { name: gradeLevelId, in: query, schema: { type: integer, format: int64 } }
+        - { name: semesterId, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Paged assigned tasks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixTaskPage' }
+  /matrix-tasks/{taskId}:
+    get:
+      summary: View a Matrix task
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '200':
+          description: Matrix task
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixTaskResponse' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Delete an assigned Matrix task the Team Lead has not started
+      description: >
+        PHT only (same branch; the Principal any branch). A task counts as started once any matrix exists for it
+        (the Team Lead saved a draft or submitted); it can then no longer be deleted.
+      parameters:
+        - { name: taskId, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        '204': { description: Deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: 'TaskStarted — "Nhiệm vụ đã được thực hiện, không thể xóa."'
+  /matrix-reference-data:
+    get:
+      summary: Load selectors and eligible Team Leads
+      parameters:
+        - { name: academicContextId, in: query, schema: { type: integer, format: int64, nullable: true } }
+      responses:
+        '200':
+          description: Reference data
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MatrixReferenceData' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    PageSize: { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    MatrixId: { name: matrixId, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/ProblemDetails' } } }
+    Forbidden:
+      description: Authenticated actor lacks permission
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/ProblemDetails' } } }
+    NotFound:
+      description: Resource not found
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/ProblemDetails' } } }
+    Conflict:
+      description: State, concurrency, or uniqueness conflict
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/ProblemDetails' } } }
+    ValidationError:
+      description: Request validation failed
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/ProblemDetails' } } }
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string, format: password }
+    LoginResponse:
+      type: object
+      properties:
+        accessToken: { type: string }
+        tokenType: { type: string, example: Bearer }
+        expiresAtUtc: { type: string, format: date-time }
+    MatrixStatus:
+      type: string
+      enum: [DRAFT, SUBMITTED, APPROVED, ARCHIVED]
+    SaveMatrixRequest:
+      type: object
+      required: [name, academicContextId, totalScore, details]
+      properties:
+        name: { type: string, maxLength: 255 }
+        academicContextId: { type: integer, format: int64 }
+        semesterId: { type: integer, format: int64, nullable: true }
+        taskId: { type: integer, format: int64, nullable: true }
+        totalScore:
+          type: integer
+          format: int32
+          exclusiveMinimum: true
+          description: The exam's total score, a positive integer the creator sets directly (no longer computed from the detail rows).
+        details:
+          type: array
+          items: { $ref: '#/components/schemas/MatrixDetailRequest' }
+    MatrixDetailRequest:
+      type: object
+      required: [lessonId, cognitiveLevel, questionType, questionCount, percentage]
+      properties:
+        lessonId: { type: integer, format: int64 }
+        cognitiveLevel: { type: string }
+        questionType: { type: string }
+        questionCount: { type: integer, format: int32, minimum: 1 }
+        percentage:
+          type: number
+          format: decimal
+          exclusiveMinimum: true
+          maximum: 100
+          description: This row's share of the matrix's total score, in percent (0, 100]. The sum over all details must equal exactly 100 to Submit, Confirm, or edit a Submitted matrix (422 InvalidTotalScore otherwise). A Draft may be saved at any total, including empty. The cell's absolute score (cellScore = totalScore * percentage / 100) and score per question are derived, never sent by the client.
+    MatrixPerson:
+      type: object
+      description: A user shown next to a matrix or task.
+      properties:
+        userId: { type: integer, format: int64 }
+        fullName: { type: string }
+        roleLabel:
+          type: string
+          nullable: true
+          description: Hiệu trưởng, Phó Hiệu trưởng or Tổ trưởng; null when the user has no matrix role.
+    MatrixDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/MatrixDetailRequest'
+        - type: object
+          properties:
+            id: { type: integer, format: int64 }
+            cellScore:
+              type: number
+              format: decimal
+              readOnly: true
+              description: Derived = matrix.totalScore * percentage / 100. Included so the client never has to recompute it (and risk a rounding mismatch with the server).
+    MatrixResponse:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/MatrixStatus' }
+        taskId: { type: integer, format: int64, nullable: true }
+        academicContextId: { type: integer, format: int64 }
+        semesterId: { type: integer, format: int64, nullable: true }
+        details: { type: array, items: { $ref: '#/components/schemas/MatrixDetailResponse' } }
+        totalQuestions: { type: integer, format: int64, readOnly: true }
+        totalScore: { type: number, format: decimal, readOnly: true, description: 'Stored value set at creation/update, not computed from the detail rows.' }
+        allowedActions: { type: array, items: { type: string } }
+        createdBy: { allOf: [{ $ref: '#/components/schemas/MatrixPerson' }], nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        approvedBy: { allOf: [{ $ref: '#/components/schemas/MatrixPerson' }], nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+    MatrixListItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/MatrixStatus' }
+        taskId: { type: integer, format: int64, nullable: true }
+        academicContextId: { type: integer, format: int64 }
+        semesterId: { type: integer, format: int64, nullable: true }
+        totalQuestions: { type: integer, format: int64, readOnly: true }
+        totalScore: { type: number, format: decimal, readOnly: true, description: 'Stored value set at creation/update, not computed from the detail rows.' }
+        createdBy: { allOf: [{ $ref: '#/components/schemas/MatrixPerson' }], nullable: true }
+        createdAt: { type: string, format: date-time, nullable: true }
+        approvedBy: { allOf: [{ $ref: '#/components/schemas/MatrixPerson' }], nullable: true }
+        approvedAt: { type: string, format: date-time, nullable: true }
+    MatrixPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MatrixListItem' } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+    CreateMatrixTaskRequest:
+      type: object
+      required: [assignedToUserId, academicContextId, name]
+      properties:
+        assignedToUserId: { type: integer, format: int64 }
+        academicContextId: { type: integer, format: int64 }
+        semesterId: { type: integer, format: int64, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true }
+        name: { type: string, maxLength: 255, description: 'Task name, required — separate from the free-text work description below.' }
+        description: { type: string, nullable: true }
+    MatrixTaskResponse:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        assignedToUserId: { type: integer, format: int64 }
+        academicContextId: { type: integer, format: int64 }
+        semesterId: { type: integer, format: int64, nullable: true }
+        dueAt: { type: string, format: date-time, nullable: true }
+        status: { type: string, example: ASSIGNED }
+        taskType: { type: string, example: MATRIX }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        matrixId: { type: integer, format: int64, nullable: true }
+        createdBy: { allOf: [{ $ref: '#/components/schemas/MatrixPerson' }], nullable: true, description: The user who assigned the task }
+    MatrixTaskPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/MatrixTaskResponse' } }
+        page: { type: integer }
+        pageSize: { type: integer }
+        totalCount: { type: integer }
+    MatrixReferenceData:
+      type: object
+      description: >-
+        lessons is empty unless the request supplies academicContextId, because the
+        lesson list is scoped to that context's textbook.
+      properties:
+        academicContexts: { type: array, items: { $ref: '#/components/schemas/MatrixAcademicContextOption' } }
+        semesters: { type: array, items: { type: object, additionalProperties: true } }
+        lessons: { type: array, items: { type: object, additionalProperties: true } }
+        teamLeads: { type: array, items: { type: object, additionalProperties: true } }
+        cognitiveLevels: { type: array, nullable: true, items: { type: object, additionalProperties: true } }
+    MatrixAcademicContextOption:
+      type: object
+      description: >-
+        label keeps the combined "Subject - Grade - Year - School / Branch" form. The
+        individual display names let a client render one field per dimension without
+        parsing label.
+      properties:
+        id: { type: integer, format: int64 }
+        label: { type: string }
+        academicYearId: { type: integer, format: int64 }
+        schoolBranchId: { type: integer, format: int64 }
+        textbookId: { type: integer, format: int64 }
+        subjectId: { type: integer, format: int64 }
+        gradeLevelId: { type: integer, format: int64 }
+        textbookTitle: { type: string }
+        subjectName: { type: string }
+        gradeLevelName: { type: string }
+        academicYearName: { type: string }
+    ProblemDetails:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        code: { type: string }
+x-actions:
+  submit:
+    summary: Submit a Draft matrix
+    responses:
+      '200': { description: Updated matrix, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }
+      '409': { $ref: '#/components/responses/Conflict' }
+  withdraw:
+    summary: Withdraw a Submitted matrix
+    responses:
+      '200': { description: Updated matrix, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }
+  approve:
+    summary: Approve a Submitted matrix
+    responses:
+      '200': { description: Updated matrix, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }
+  confirm:
+    summary: Confirm a direct matrix atomically
+    responses:
+      '200': { description: Approved matrix, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }
+  archive:
+    summary: Archive an Approved matrix
+    responses:
+      '200': { description: Archived matrix, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }
+  clone:
+    summary: Clone an Approved or Archived matrix into a new Draft
+    responses:
+      '201': { description: New Draft, content: { application/json: { schema: { $ref: '#/components/schemas/MatrixResponse' } } } }

@@ -22,7 +22,12 @@ public sealed class StudentConfiguration : IEntityTypeConfiguration<Student>
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32)
             .HasDefaultValue(StudentStatusCodes.Active).IsRequired();
         builder.HasIndex(x => x.UserId).IsUnique().HasDatabaseName("uq_students_user");
-        builder.HasIndex(x => x.Code).IsUnique().HasDatabaseName("uq_students_code");
+        // Generated: the code while the student is not INACTIVE. Uniqueness over it (NULLs never
+        // collide) frees the code of a deleted student for re-import at another school.
+        builder.Property(x => x.ActiveCode).HasColumnName("active_code").HasMaxLength(64)
+            .HasComputedColumnSql("CASE WHEN status <> 'INACTIVE' THEN code ELSE NULL END", stored: true);
+        builder.HasIndex(x => x.ActiveCode).IsUnique().HasDatabaseName("uq_students_active_code");
+        builder.HasIndex(x => x.Code).HasDatabaseName("idx_students_code");
         builder.HasIndex(x => x.Status).HasDatabaseName("idx_students_status");
         builder.HasOne(x => x.User).WithMany(x => x.Students)
             .HasForeignKey(x => x.UserId).HasConstraintName("fk_students_user")

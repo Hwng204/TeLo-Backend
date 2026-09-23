@@ -110,6 +110,7 @@ public sealed class MatrixApplicationService(
             matrix.Name = request.Name.Trim();
             matrix.AcademicContextId = academicContextId;
             matrix.SemesterId = semesterId;
+            matrix.TotalScore = request.TotalScore;
             ReplaceDetails(matrix, request.Details, actor);
             await uow.CompleteAsync(ct);
             return await ToResponseAsync(matrix, actor, ct);
@@ -356,6 +357,7 @@ public sealed class MatrixApplicationService(
                 TaskId = null,
                 SemesterId = request.SemesterId,
                 AcademicContextId = request.AcademicContextId,
+                TotalScore = request.TotalScore,
                 CreatedByUserId = actor.UserId,
                 CreatedAt = DateTime.UtcNow
             };
@@ -404,6 +406,7 @@ public sealed class MatrixApplicationService(
             Task = task,
             SemesterId = task.SemesterId,
             AcademicContextId = taskContextId,
+            TotalScore = request.TotalScore,
             CreatedByUserId = actor.UserId,
             CreatedAt = DateTime.UtcNow
         };
@@ -520,15 +523,23 @@ public sealed class MatrixApplicationService(
                 "Chi tiết ma trận là bắt buộc.");
         }
 
+        if (request.TotalScore <= 0)
+        {
+            throw new MatrixApplicationException(
+                "InvalidRequest",
+                "Tổng điểm ma trận phải là số nguyên dương.");
+        }
+
         if (request.Name.Trim().Length > 255 ||
             request.Details.Any(detail =>
                 detail is null ||
                 detail.CognitiveLevel?.Trim().Length > 50 ||
-                detail.AllocatedScore > 999.99m))
+                detail.Percentage <= 0 ||
+                detail.Percentage > 100))
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc điểm (tối đa 999,99) vượt quá giới hạn cho phép.");
+                "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc tỷ lệ điểm (phải trong khoảng (0, 100]) vượt quá giới hạn cho phép.");
         }
     }
 }

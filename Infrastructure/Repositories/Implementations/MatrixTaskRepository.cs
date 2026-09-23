@@ -44,13 +44,28 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             tasks = tasks.Where(task => task.AcademicContextId == query.AcademicContextId.Value);
         }
 
+        if (query.AcademicYearId is not null || query.SubjectId is not null || query.GradeLevelId is not null)
+        {
+            var contexts = Db.AcademicContexts.AsQueryable();
+            if (query.AcademicYearId is not null) contexts = contexts.Where(context => context.AcademicYearId == query.AcademicYearId.Value);
+            if (query.SubjectId is not null) contexts = contexts.Where(context => context.SubjectId == query.SubjectId.Value);
+            if (query.GradeLevelId is not null) contexts = contexts.Where(context => context.GradeLevelId == query.GradeLevelId.Value);
+            tasks = tasks.Where(task => contexts.Any(context => context.Id == task.AcademicContextId));
+        }
+
+        if (query.SemesterId is not null)
+        {
+            tasks = tasks.Where(task => task.SemesterId == query.SemesterId.Value);
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Keyword))
         {
             var keyword = query.Keyword.Trim();
-            // Mã nhiệm vụ không có trong bảng (suy ra từ id), nên "9301" hay "NV-MT-9301" phải tìm theo id.
+            // Gõ toàn số thì cũng khớp thẳng theo id, tiện khi biết id mà quên tên.
             var digits = new string(keyword.Where(char.IsDigit).ToArray());
             var byId = ulong.TryParse(digits, out var id) ? id : 0UL;
             tasks = tasks.Where(task =>
+                (task.Name != null && EF.Functions.Like(task.Name, $"%{keyword}%")) ||
                 (task.Description != null && EF.Functions.Like(task.Description, $"%{keyword}%")) ||
                 (byId != 0UL && task.Id == byId));
         }
@@ -73,6 +88,7 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
                 task.DueAt,
                 task.Status,
                 task.TaskType,
+                task.Name,
                 task.Description,
                 task.AcademicContextId,
                 task.SemesterId,
@@ -91,6 +107,7 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
                 task.DueAt,
                 task.Status,
                 task.TaskType,
+                task.Name,
                 task.Description,
                 task.AcademicContextId,
                 task.SemesterId,
@@ -140,6 +157,22 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             .Where(context => context.Id == academicContextId)
             .Select(context => (ulong?)context.SchoolBranchId)
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<bool> DeleteIfNotStartedAsync(
+        ulong taskId,
+        CancellationToken cancellationToken)
+    {
+        // Kiểm tra "chưa có ma trận" và xoá trong cùng một câu lệnh: Tổ trưởng vừa lưu ma trận
+        // (dù chỉ trước đó một khoảnh khắc) thì câu lệnh không xoá gì. Chiều ngược lại do
+        // fk_exam_matrices_task chặn: nhiệm vụ đã xoá thì không lưu ma trận vào được nữa.
+        var deleted = await Db.WorkTasks
+            .Where(task =>
+                task.Id == taskId &&
+                task.TaskType == "MATRIX" &&
+                !Db.ExamMatrices.Any(matrix => matrix.TaskId == taskId))
+            .ExecuteDeleteAsync(cancellationToken);
+        return deleted > 0;
     }
 
     private static void ValidatePage(MatrixTaskFilter query)

@@ -13,7 +13,10 @@ public enum DirectoryWriteStatus
     DuplicateClassCode,
     TeacherNotInSchool,
     TeacherAlreadyHomeroom,
-    ClassHasActiveStudents
+    ClassHasActiveStudents,
+    StudentNotEnrolledInYear,
+    UseClassTransfer,
+    InvalidEffectiveDate
 }
 
 public sealed record DirectoryWriteResult<T>(DirectoryWriteStatus Status, T? Value)
@@ -43,6 +46,12 @@ public sealed record UpdateStudentCommand(
     DateOnly AdmissionDate,
     string Status,
     ulong? SchoolClassId);
+
+public sealed record TransferStudentClassCommand(
+    ulong SchoolId,
+    ulong StudentId,
+    ulong SchoolClassId,
+    DateOnly? EffectiveOn);
 
 public sealed record CreateClassCommand(
     ulong SchoolId,
@@ -75,6 +84,12 @@ public interface ISchoolDirectoryAdminRepository
 
     Task<DirectoryWriteResult<ulong>> UpdateStudentAsync(
         UpdateStudentCommand command,
+        CancellationToken cancellationToken);
+
+    // Closes the student's live enrollment of the target class's year and opens a new one, so the
+    // earlier class stays in the history instead of being overwritten.
+    Task<DirectoryWriteResult<ulong>> TransferStudentClassAsync(
+        TransferStudentClassCommand command,
         CancellationToken cancellationToken);
 
     Task<DirectoryWriteResult<ulong>> DeactivateStudentAsync(

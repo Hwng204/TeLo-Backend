@@ -8,7 +8,11 @@ public sealed record MatrixListQuery(
     ulong? SemesterId = null,
     string? Status = null,
     ulong? AssignedToUserId = null,
-    ulong? BranchId = null);
+    ulong? BranchId = null,
+    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
+    ulong? AcademicYearId = null,
+    ulong? SubjectId = null,
+    ulong? GradeLevelId = null);
 
 public sealed record MatrixListItem(
     ulong Id,
@@ -19,7 +23,6 @@ public sealed record MatrixListItem(
     ulong? SemesterId,
     uint TotalQuestions,
     decimal TotalScore,
-    string Code = "",
     MatrixPerson? CreatedBy = null,
     DateTime? CreatedAt = null,
     MatrixPerson? ApprovedBy = null,

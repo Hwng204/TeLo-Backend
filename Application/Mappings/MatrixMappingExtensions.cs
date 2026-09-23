@@ -17,7 +17,10 @@ public static class MatrixMappingExtensions
             query.SemesterId,
             query.Status,
             query.AssignedToUserId,
-            query.BranchId);
+            query.BranchId,
+            AcademicYearId: query.AcademicYearId,
+            SubjectId: query.SubjectId,
+            GradeLevelId: query.GradeLevelId);
     }
 
     public static MatrixPage ToDto(
@@ -34,7 +37,6 @@ public static class MatrixMappingExtensions
                 row.SemesterId,
                 row.TotalQuestions,
                 row.TotalScore,
-                row.Code,
                 Person(people, row.CreatedByUserId),
                 row.CreatedByUserId is null && row.CreatedAt == default ? null : row.CreatedAt,
                 Person(people, row.ApprovedByUserId),
@@ -56,7 +58,8 @@ public static class MatrixMappingExtensions
                 detail.CognitiveLevel,
                 detail.QuestionType,
                 detail.QuestionCount,
-                detail.AllocatedScore))
+                detail.Percentage,
+                detail.CellScore))
             .ToArray();
 
         return new MatrixWorkbookModel(
@@ -79,7 +82,7 @@ public static class MatrixMappingExtensions
                 detail.CognitiveLevel,
                 MatrixQuestionTypes.MultipleChoice,
                 detail.QuestionCount,
-                detail.AllocatedScore))
+                detail.Percentage))
             .ToArray();
     }
 
@@ -110,7 +113,8 @@ public static class MatrixMappingExtensions
                 detail.CognitiveLevel,
                 detail.QuestionType,
                 detail.QuestionCount,
-                detail.AllocatedScore))
+                detail.Percentage,
+                matrix.TotalScore * detail.Percentage / 100m))
             .ToArray();
 
         return new MatrixResponse(
@@ -127,7 +131,6 @@ public static class MatrixMappingExtensions
             matrix.RejectComment,
             matrix.RejectedAt,
             matrix.RejectedByUserId,
-            matrix.Code,
             Person(people, matrix.CreatedByUserId),
             matrix.CreatedAt == default ? null : matrix.CreatedAt,
             Person(people, matrix.ApprovedByUserId),
@@ -152,9 +155,9 @@ public static class MatrixMappingExtensions
 
         if (matrix.Status == MatrixStatusCodes.Draft)
         {
-            // Submit/Confirm are offered only once the matrix adds up to exactly 10, so the UI never
-            // shows a button the domain would reject with InvalidTotalScore.
-            if (matrix.Details.Count > 0 && matrix.HasRequiredTotalScore)
+            // Submit/Confirm are offered only once the matrix's rows add up to exactly 100%, so the
+            // UI never shows a button the domain would reject with InvalidTotalScore.
+            if (matrix.Details.Count > 0 && matrix.HasRequiredTotalPercentage)
             {
                 if (actor.Role == MatrixActorRole.Pht && matrix.TaskId is null)
                 {
@@ -211,11 +214,12 @@ public static class MatrixTaskMappingExtensions
             query.DueBefore,
             query.BranchId,
             query.Keyword,
-            query.AcademicContextId);
+            query.AcademicContextId,
+            query.AcademicYearId,
+            query.SubjectId,
+            query.GradeLevelId,
+            query.SemesterId);
     }
-
-    /// <summary>Tasks share the tasks table with other work, so their code is derived from the id.</summary>
-    public static string TaskCode(ulong taskId) => $"NV-MT-{taskId:D3}";
 
     public static MatrixTaskPage ToDto(
         this PagedResult<MatrixTaskRow> page,
@@ -233,7 +237,7 @@ public static class MatrixTaskMappingExtensions
                 row.AcademicContextId,
                 row.SemesterId,
                 row.MatrixId,
-                TaskCode(row.Id),
+                row.Name ?? "",
                 MatrixMappingExtensions.Person(people, row.CreatedByUserId)))
             .ToArray();
 
@@ -269,7 +273,7 @@ public static class MatrixTaskMappingExtensions
             task.TaskType,
             task.Description,
             matrixId,
-            TaskCode(task.Id),
+            task.Name ?? "",
             MatrixMappingExtensions.Person(people, task.CreatedByUserId));
     }
 }

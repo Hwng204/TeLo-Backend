@@ -7,6 +7,7 @@ public sealed record CreateMatrixTaskRequest(
     ulong AcademicContextId,
     ulong? SemesterId,
     DateTime? DueAt,
+    string Name,
     string? Description);
 
 public sealed record MatrixTaskResponse(
@@ -19,7 +20,7 @@ public sealed record MatrixTaskResponse(
     string TaskType,
     string? Description,
     ulong? MatrixId,
-    string Code = "",
+    string Name = "",
     MatrixPerson? CreatedBy = null)
 {
     public string StatusLabel => Application.Common.MatrixTaskStatusCodes.Label(Status);
@@ -33,7 +34,12 @@ public sealed record MatrixTaskQuery(
     DateTime? DueBefore = null,
     ulong? BranchId = null,
     string? Keyword = null,
-    ulong? AcademicContextId = null);
+    ulong? AcademicContextId = null,
+    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
+    ulong? AcademicYearId = null,
+    ulong? SubjectId = null,
+    ulong? GradeLevelId = null,
+    ulong? SemesterId = null);
 
 public sealed record MatrixTaskListItem(
     ulong Id,
@@ -46,7 +52,7 @@ public sealed record MatrixTaskListItem(
     ulong? AcademicContextId,
     ulong? SemesterId,
     ulong? MatrixId,
-    string Code = "",
+    string Name = "",
     MatrixPerson? CreatedBy = null)
 {
     public string StatusLabel => Application.Common.MatrixTaskStatusCodes.Label(Status);

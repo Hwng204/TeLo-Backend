@@ -161,3 +161,153 @@ dotnet tool run dotnet-ef database update `
 7. Không chia sẻ database local; chỉ chia sẻ migration và seed data không nhạy cảm.
 8. Dùng lệnh `migrations list` để xem danh sách migration hiện tại, tránh ghi cố định danh sách trong README vì có thể nhanh chóng lỗi thời.
 ````
+
+## 10. Backend quản lý giáo viên (Manage Teacher)
+
+Phạm vi đợt này: hồ sơ và tài khoản giáo viên do admin vận hành quản lý thủ công sau khi
+đối chiếu danh sách ngoài hệ thống. Chưa có upload/import Excel, nghiệp vụ nhân sự hoặc
+phân công giảng dạy theo năm học. Chi tiết giáo viên trả lớp chủ nhiệm hiện có;
+không tự tạo lịch sử phân công từ dữ liệu không tồn tại.
+
+### Các phase đã triển khai
+
+1. Đối chiếu backlog `Sheet1!A48:G51` và mô hình `Teacher`/`User`, quyền, trường/phân hiệu hiện có.
+2. Bổ sung DTO, validation, mapping, service, repository, controller và migration trong các thư mục sẵn có.
+3. Quản lý hồ sơ/tài khoản, ngừng hoạt động, khóa/mở, đặt lại mật khẩu và thu hồi token.
+4. Kiểm thử HTTP với MySQL riêng ngoài repository và chạy lại bộ test hiện có.
+
+### Cấu hình và migration
+
+Áp dụng migration `AddTeacherManagement` trước khi chạy phiên bản API mới (đăng nhập/JWT
+cũng dùng cột `users.security_version`). Migration giữ nguyên bản ghi cũ; các trường hồ sơ
+mới có thể null, phiên bản ban đầu là 1. Không tự động áp dụng migration lúc khởi động API.
+
+```powershell
+dotnet tool restore
+dotnet ef database update --project Infrastructure --startup-project WebAPI
+```
+
+EF design-time factory hiện đọc `ConnectionStrings__DefaultConnection` hoặc
+`WebAPI/appsettings.Development.json`. Nếu dùng user secrets, có thể nạp connection string
+vào biến môi trường của terminal mà không in giá trị ra màn hình:
+
+```powershell
+$localSecretsPath = Join-Path $env:APPDATA 'Microsoft/UserSecrets/telo-school-management-webapi-local/secrets.json'
+$localSettings = Get-Content -LiteralPath $localSecretsPath -Raw | ConvertFrom-Json
+$env:ConnectionStrings__DefaultConnection = $localSettings.'ConnectionStrings:DefaultConnection'
+dotnet ef database update --project Infrastructure --startup-project WebAPI
+Remove-Item Env:ConnectionStrings__DefaultConnection
+```
+
+`TeacherManagement:TeacherRoleCode` mặc định là `TEACHER`. Bảng `roles` phải có role tương ứng.
+Nếu dữ liệu hiện dùng `GIAO_VIEN`, cấu hình giá trị này thành `GIAO_VIEN`. API không tự tạo
+role hoặc nhận danh sách quyền tùy ý từ request; thiếu role trả `503 TEACHER_ROLE_MISSING`.
+Các tài khoản giáo viên kiêm quyền quản trị/hiệu trưởng/hiệu phó không được sửa qua module này.
+Cấu hình role giáo viên trùng với role admin/hiệu trưởng/hiệu phó cũng bị từ chối (503).
+
+### Phạm vi và endpoint
+
+Admin dùng role trong `SchoolDirectoryAuth:AdminRoleCodes` (mặc định `OperationalAdmin`).
+Hiệu trưởng dùng `MatrixAuth:PrincipalRoleCodes`, xem các phân hiệu trong trường mình.
+Hiệu phó dùng `MatrixAuth:PhtRoleCodes`, xem phân hiệu gắn với tài khoản.
+Phạm vi đọc lấy từ tài khoản đang hoạt động trong database, không nhận schoolId tùy ý
+từ phía hiệu trưởng/hiệu phó. Giáo viên, tổ trưởng và học sinh không có quyền xem danh bạ này.
+
+Luồng admin: chọn trường → chọn phân hiệu → quản lý giáo viên.
+
+| Method | URL | Chức năng |
+| --- | --- | --- |
+| GET | `/api/admin/teacher-schools` | Tìm kiếm/phân trang trường |
+| GET | `/api/admin/schools/{schoolId}/teacher-branches` | Tìm kiếm/phân trang phân hiệu |
+| GET | `/api/admin/schools/{schoolId}/branches/{branchId}/teachers` | Danh sách giáo viên trong phân hiệu |
+| GET | `.../teachers/reference-data` | Môn học, tổ, phân hiệu, trạng thái dùng cho bộ lọc/form |
+| GET | `.../teachers/{id}` | Hồ sơ chi tiết |
+| POST | `.../teachers` | Tạo đồng thời hồ sơ và tài khoản |
+| PUT | `.../teachers/{id}` | Thay thế thông tin hồ sơ |
+| DELETE | `.../teachers/{id}?version={version}` | Ngừng hoạt động, giữ lịch sử |
+| GET | `.../teachers/{id}/account` | Thông tin đăng nhập, chỉ admin |
+| PATCH | `.../teachers/{id}/account` | Đổi username/email, khóa/mở/ngừng tài khoản |
+| POST | `.../teachers/{id}/reset-password` | Admin đặt lại mật khẩu |
+| GET | `/api/teachers` | Danh sách trong phạm vi hiệu trưởng/hiệu phó |
+| GET | `/api/teachers/reference-data` | Bộ lọc trong phạm vi hiệu trưởng/hiệu phó |
+| GET | `/api/teachers/{id}` | Chi tiết trong phạm vi hiệu trưởng/hiệu phó |
+
+Các endpoint cần Bearer token từ `POST /api/auth/login`.
+Selector trường/phân hiệu nhận `search`, `page`, `pageSize`.
+Danh sách giáo viên nhận `search` (tên hoặc mã cán bộ), `department`, `mainSubjectId`,
+`employmentStatus`, `accountStatus`, `gender`, `schoolBranchId`, `sortBy`, `sortDirection`,
+`page`, `pageSize`. `schoolBranchId` chỉ thu hẹp phạm vi; không thể vượt scope trong URL/tài khoản.
+
+`page` mặc định 1, `pageSize` mặc định 20, tối đa 100. `sortBy` gồm `fullName` (mặc định),
+`staffCode`, `joinedOn`, `createdAt`; `sortDirection` là `asc` hoặc `desc`. Luôn có ID làm
+khóa sắp xếp phụ. Response danh sách: `data.items`, `page`, `pageSize`, `totalCount`, `totalPages`.
+Không truyền trạng thái nghĩa là xem tất cả trạng thái trong phạm vi cho phép.
+
+### Request mẫu
+
+Tạo giáo viên (`POST .../teachers`, trả 201 và Location):
+
+```json
+{
+  "profile": {
+    "staffCode": "GV-PCB-018",
+    "fullName": "Nguyễn Thị Lan",
+    "department": "Tổ 4-5",
+    "mainSubjectId": 1,
+    "specialization": "Giáo dục tiểu học",
+    "position": "Giáo viên",
+    "gender": false,
+    "phone": "0901234567",
+    "workEmail": "lan.work@example.test",
+    "dateOfBirth": "1990-01-01",
+    "joinedOn": "2015-08-01",
+    "employmentStatus": "WORKING"
+  },
+  "username": "lan.nguyen",
+  "email": "lan.login@example.test",
+  "password": "ReplaceWithAStrong!Password123"
+}
+```
+
+`gender`: true = nam, false = nữ, null = chưa xác định. Mã cán bộ duy nhất toàn hệ thống
+(nên có tiền tố trường như ví dụ); cho phép chữ Latin, số, `_`, `-`. Username/email đăng nhập
+duy nhất toàn hệ thống. Tổ chuyên môn là tên trong hồ sơ, chưa tạo hệ thống quản lý tổ riêng.
+Môn dạy chính được gán mới phải thuộc danh mục môn đang hoạt động; hồ sơ cũ được giữ
+nguyên môn đã ngừng dùng khi sửa các thông tin khác. `workEmail` là email công tác và
+độc lập với `email` dùng cho tài khoản. Thông tin tùy chọn được xóa khi gửi null trong PUT.
+
+Sửa hồ sơ: gửi toàn bộ `profile` như trên và `version` lấy từ `data.teacher.version`.
+Đổi tài khoản/khóa/mở:
+
+```json
+{ "username": "lan.nguyen", "email": "lan.login@example.test", "status": "LOCKED", "version": 1 }
+```
+
+Đặt lại mật khẩu:
+
+```json
+{ "newPassword": "ReplaceWithANew!Password123", "version": 2 }
+```
+
+Sau mỗi lần sửa, lấy version mới từ response. API account trả version tại `data.version`.
+Version cũ trả `409 CONCURRENCY_CONFLICT`; thiếu/0 trả 422. Không có endpoint đọc mật khẩu
+hoặc password hash. Mật khẩu phải dài 12–128 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt.
+
+Trạng thái công tác: `WORKING`, `ON_LEAVE`, `RESIGNED`, `INACTIVE`.
+Trạng thái tài khoản: `ACTIVE`, `LOCKED`, `INACTIVE`.
+Chuyển công tác sang `RESIGNED`/`INACTIVE` cũng vô hiệu hóa tài khoản. Khôi phục công tác
+không tự mở lại tài khoản; admin phải mở rõ ràng bằng API account. Khi xóa logic,
+không xóa User, Teacher hay liên kết lớp/lịch sử đã phát sinh.
+
+Sửa hồ sơ thông thường không làm giáo viên bị đăng xuất. Thay đổi tài khoản, reset mật khẩu
+hoặc vô hiệu hóa giáo viên tăng security version để thu hồi token đã cấp. JWT kiểm tra
+trạng thái và version từ database trên mỗi request. Giáo viên không được đăng nhập/sử dụng
+token khi trường hoặc phân hiệu đã ngừng hoạt động. Admin vẫn được sửa hồ sơ, khóa,
+reset mật khẩu và ngừng tài khoản ở đơn vị này, nhưng không được tạo mới hoặc mở tài khoản.
+Token cũ chưa có claim version được xem là version 1 và bị vô hiệu hóa sau thay đổi bảo mật đầu tiên.
+Client phải đăng nhập lại khi nhận 401. Các thao tác ghi log action, actor, school, branch,
+teacher ID; không log mật khẩu hoặc toàn bộ request body.
+
+Mã phản hồi: 400 (JSON/binding), 401 (chưa đăng nhập/token bị thu hồi), 403 (sai quyền/phạm vi),
+404 (không tìm thấy trong scope), 409 (trùng, version cũ, trạng thái xung đột), 422 (validation),
+503 (role giáo viên chưa cấu hình). Lỗi nghiệp vụ trả `ApiResponse` cùng error code.

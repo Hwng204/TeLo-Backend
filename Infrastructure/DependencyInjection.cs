@@ -31,6 +31,7 @@ public static class DependencyInjection
                 mysql => mysql.MigrationsAssembly(
                     typeof(ApplicationDbContext).Assembly.GetName().Name)));
 
+        services.AddScoped<ITeacherRepository, TeacherRepository>();
         services.AddScoped<IAcademicYearRepository, AcademicYearRepository>();
         services.AddScoped<IProvinceRepository, ProvinceRepository>();
         services.AddScoped<IMatrixRepository, ExamMatrixRepository>();

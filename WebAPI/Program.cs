@@ -82,6 +82,10 @@ builder.Services.AddAuthorization(options =>
         ?? ["HIEU_TRUONG", "PRINCIPAL", "PHT"];
     options.AddPolicy(SchoolDirectoryControllerBase.ImportPolicy, policy =>
         policy.RequireAuthenticatedUser().RequireRole(schoolImportRoles));
+    var teacherReadRoles = new[] { "MatrixAuth:PrincipalRoleCodes", "MatrixAuth:PhtRoleCodes" }
+        .SelectMany(key => builder.Configuration.GetSection(key).Get<string[]>() ??
+            (key.Contains("Principal") ? ["HIEU_TRUONG", "PRINCIPAL"] : new[] { "PHT" })).ToArray();
+    options.AddPolicy("TeacherRead", policy => policy.RequireAuthenticatedUser().RequireRole(teacherReadRoles));
 
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
@@ -98,6 +102,7 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .AllowAnyMethod()
     .WithExposedHeaders("Content-Disposition")));
 builder.Services.AddExceptionHandler<MatrixExceptionHandler>();
+builder.Services.AddExceptionHandler<TeacherExceptionHandler>();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
 var app = builder.Build();

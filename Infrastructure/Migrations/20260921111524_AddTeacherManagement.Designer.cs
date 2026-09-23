@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260921111524_AddTeacherManagement")]
+    partial class AddTeacherManagement
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1142,13 +1145,6 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
-                    b.Property<string>("ActiveCode")
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
-                        .HasColumnName("active_code")
-                        .HasComputedColumnSql("CASE WHEN status <> 'INACTIVE' THEN code ELSE NULL END", true);
-
                     b.Property<DateOnly>("AdmissionDate")
                         .HasColumnType("date")
                         .HasColumnName("admission_date");
@@ -1188,12 +1184,9 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ActiveCode")
-                        .IsUnique()
-                        .HasDatabaseName("uq_students_active_code");
-
                     b.HasIndex("Code")
-                        .HasDatabaseName("idx_students_code");
+                        .IsUnique()
+                        .HasDatabaseName("uq_students_code");
 
                     b.HasIndex("Status")
                         .HasDatabaseName("idx_students_status");
@@ -1221,23 +1214,9 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("academic_year_id");
 
-                    b.Property<ulong?>("ActiveYearKey")
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("active_year_key")
-                        .HasComputedColumnSql("CASE WHEN status = 'ACTIVE' THEN academic_year_id ELSE NULL END", true);
-
-                    b.Property<DateOnly?>("EndedOn")
-                        .HasColumnType("date")
-                        .HasColumnName("ended_on");
-
                     b.Property<ulong>("SchoolClassId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("school_class_id");
-
-                    b.Property<DateOnly>("StartedOn")
-                        .HasColumnType("date")
-                        .HasColumnName("started_on");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1261,208 +1240,13 @@ namespace Infrastructure.Migrations
                         .HasDatabaseName("idx_student_enrollments_class_status");
 
                     b.HasIndex("StudentId", "AcademicYearId")
-                        .HasDatabaseName("idx_student_enrollments_student_year");
-
-                    b.HasIndex("StudentId", "ActiveYearKey")
                         .IsUnique()
-                        .HasDatabaseName("uq_student_enrollments_student_active_year");
+                        .HasDatabaseName("uq_student_enrollments_student_year");
 
                     b.ToTable("student_class_enrollments", null, t =>
                         {
                             t.HasCheckConstraint("ck_student_enrollments_status", "status IN ('ACTIVE', 'COMPLETED', 'TRANSFERRED_OUT')");
                         });
-                });
-
-            modelBuilder.Entity("Domain.Entities.Identity.StudentImportBatch", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<ulong>("AcademicYearId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("academic_year_id");
-
-                    b.Property<DateTime?>("AppliedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("applied_at");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
-
-                    b.Property<ulong>("CreatedByUserId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<byte[]>("FileContent")
-                        .IsRequired()
-                        .HasColumnType("longblob")
-                        .HasColumnName("file_content");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("file_name");
-
-                    b.Property<uint>("FileSize")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("file_size");
-
-                    b.Property<uint>("InvalidRows")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("invalid_rows");
-
-                    b.Property<string>("ReviewComment")
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)")
-                        .HasColumnName("review_comment");
-
-                    b.Property<DateTime?>("ReviewedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("reviewed_at");
-
-                    b.Property<ulong?>("ReviewedByUserId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("reviewed_by_user_id");
-
-                    b.Property<ulong>("SchoolId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("school_id");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(16)
-                        .HasColumnType("varchar(16)")
-                        .HasColumnName("source");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
-                        .HasDefaultValue("DRAFT")
-                        .HasColumnName("status");
-
-                    b.Property<uint>("TotalRows")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("total_rows");
-
-                    b.Property<uint>("ValidRows")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("valid_rows");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AcademicYearId");
-
-                    b.HasIndex("CreatedByUserId")
-                        .HasDatabaseName("idx_student_import_batches_creator");
-
-                    b.HasIndex("ReviewedByUserId")
-                        .HasDatabaseName("idx_student_import_batches_reviewer");
-
-                    b.HasIndex("SchoolId", "Status")
-                        .HasDatabaseName("idx_student_import_batches_school_status");
-
-                    b.ToTable("student_import_batches", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_student_import_batches_source", "source IN ('ADMIN', 'SCHOOL')");
-
-                            t.HasCheckConstraint("ck_student_import_batches_status", "status IN ('DRAFT', 'SUBMITTED', 'REJECTED', 'APPLIED', 'CANCELLED')");
-                        });
-                });
-
-            modelBuilder.Entity("Domain.Entities.Identity.StudentImportRow", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<ulong>("BatchId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("batch_id");
-
-                    b.Property<ulong?>("CreatedStudentId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("created_student_id");
-
-                    b.Property<string>("ErrorJson")
-                        .HasMaxLength(2000)
-                        .HasColumnType("varchar(2000)")
-                        .HasColumnName("error_json");
-
-                    b.Property<bool>("IsValid")
-                        .HasColumnType("tinyint(1)")
-                        .HasColumnName("is_valid");
-
-                    b.Property<string>("RawAdmissionDate")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_admission_date");
-
-                    b.Property<string>("RawClassCode")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_class_code");
-
-                    b.Property<string>("RawCode")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_code");
-
-                    b.Property<string>("RawDateOfBirth")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_date_of_birth");
-
-                    b.Property<string>("RawFullName")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_full_name");
-
-                    b.Property<string>("RawGender")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("raw_gender");
-
-                    b.Property<ulong?>("ResolvedSchoolClassId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("resolved_school_class_id");
-
-                    b.Property<uint>("RowNumber")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("row_number");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedStudentId")
-                        .HasDatabaseName("idx_student_import_rows_student");
-
-                    b.HasIndex("ResolvedSchoolClassId")
-                        .HasDatabaseName("idx_student_import_rows_class");
-
-                    b.HasIndex("BatchId", "IsValid")
-                        .HasDatabaseName("idx_student_import_rows_batch_valid");
-
-                    b.HasIndex("BatchId", "RowNumber")
-                        .IsUnique()
-                        .HasDatabaseName("uq_student_import_rows_batch_row");
-
-                    b.ToTable("student_import_rows", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Entities.Identity.Teacher", b =>
@@ -2217,22 +2001,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("academic_context_id");
 
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("approved_at");
-
-                    b.Property<ulong?>("ApprovedByUserId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("approved_by_user_id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("created_at");
-
-                    b.Property<ulong?>("CreatedByUserId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("created_by_user_id");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -2266,20 +2034,10 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("task_id");
 
-                    b.Property<uint>("TotalScore")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("total_score");
-
                     b.HasKey("Id");
 
                     b.HasIndex("AcademicContextId")
                         .HasDatabaseName("idx_exam_matrices_context");
-
-                    b.HasIndex("ApprovedByUserId")
-                        .HasDatabaseName("idx_exam_matrices_approver");
-
-                    b.HasIndex("CreatedByUserId")
-                        .HasDatabaseName("idx_exam_matrices_creator");
 
                     b.HasIndex("RejectedByUserId")
                         .HasDatabaseName("idx_exam_matrices_rejecter");
@@ -2291,10 +2049,7 @@ namespace Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("uq_exam_matrices_task");
 
-                    b.ToTable("exam_matrices", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_exam_matrices_total_score", "total_score > 0");
-                        });
+                    b.ToTable("exam_matrices", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Entities.QuestionBank.ExamSet", b =>
@@ -2484,6 +2239,11 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
+                    b.Property<decimal>("AllocatedScore")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)")
+                        .HasColumnName("allocated_score");
+
                     b.Property<string>("CognitiveLevel")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -2497,11 +2257,6 @@ namespace Infrastructure.Migrations
                     b.Property<ulong>("LessonId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("lesson_id");
-
-                    b.Property<decimal>("Percentage")
-                        .HasPrecision(5, 2)
-                        .HasColumnType("decimal(5,2)")
-                        .HasColumnName("percentage");
 
                     b.Property<uint>("QuestionCount")
                         .HasColumnType("int unsigned")
@@ -2526,7 +2281,7 @@ namespace Infrastructure.Migrations
                         {
                             t.HasCheckConstraint("ck_matrix_details_count", "question_count > 0");
 
-                            t.HasCheckConstraint("ck_matrix_details_percentage", "percentage > 0 AND percentage <= 100");
+                            t.HasCheckConstraint("ck_matrix_details_score", "allocated_score > 0");
                         });
                 });
 
@@ -2813,11 +2568,6 @@ namespace Infrastructure.Migrations
                     b.Property<DateTime?>("DueAt")
                         .HasColumnType("datetime(6)")
                         .HasColumnName("due_at");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("name");
 
                     b.Property<ulong?>("SemesterId")
                         .HasColumnType("bigint unsigned")
@@ -3363,72 +3113,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("Student");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Identity.StudentImportBatch", b =>
-                {
-                    b.HasOne("Domain.Entities.Academic.AcademicYear", "AcademicYear")
-                        .WithMany()
-                        .HasForeignKey("AcademicYearId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_student_import_batches_year");
-
-                    b.HasOne("Domain.Entities.Identity.User", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_student_import_batches_creator");
-
-                    b.HasOne("Domain.Entities.Identity.User", "ReviewedByUser")
-                        .WithMany()
-                        .HasForeignKey("ReviewedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_student_import_batches_reviewer");
-
-                    b.HasOne("Domain.Entities.Organization.School", "School")
-                        .WithMany()
-                        .HasForeignKey("SchoolId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_student_import_batches_school");
-
-                    b.Navigation("AcademicYear");
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("ReviewedByUser");
-
-                    b.Navigation("School");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Identity.StudentImportRow", b =>
-                {
-                    b.HasOne("Domain.Entities.Identity.StudentImportBatch", "Batch")
-                        .WithMany("Rows")
-                        .HasForeignKey("BatchId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_student_import_rows_batch");
-
-                    b.HasOne("Domain.Entities.Identity.Student", "CreatedStudent")
-                        .WithMany()
-                        .HasForeignKey("CreatedStudentId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_student_import_rows_student");
-
-                    b.HasOne("Domain.Entities.Organization.SchoolClass", "ResolvedSchoolClass")
-                        .WithMany()
-                        .HasForeignKey("ResolvedSchoolClassId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_student_import_rows_class");
-
-                    b.Navigation("Batch");
-
-                    b.Navigation("CreatedStudent");
-
-                    b.Navigation("ResolvedSchoolClass");
-                });
-
             modelBuilder.Entity("Domain.Entities.Identity.Teacher", b =>
                 {
                     b.HasOne("Domain.Entities.Organization.SchoolClass", "SchoolClass")
@@ -3667,18 +3351,6 @@ namespace Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_exam_matrices_context");
-
-                    b.HasOne("Domain.Entities.Identity.User", null)
-                        .WithMany()
-                        .HasForeignKey("ApprovedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_exam_matrices_approver");
-
-                    b.HasOne("Domain.Entities.Identity.User", null)
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_exam_matrices_creator");
 
                     b.HasOne("Domain.Entities.Identity.User", null)
                         .WithMany()
@@ -4079,11 +3751,6 @@ namespace Infrastructure.Migrations
             modelBuilder.Entity("Domain.Entities.Identity.Student", b =>
                 {
                     b.Navigation("Enrollments");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Identity.StudentImportBatch", b =>
-                {
-                    b.Navigation("Rows");
                 });
 
             modelBuilder.Entity("Domain.Entities.Identity.User", b =>

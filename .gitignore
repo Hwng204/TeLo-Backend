@@ -45,3 +45,10 @@ desktop.ini
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+
+# Local test projects and working documents
+/Application.Tests/
+/Domain.Tests/
+/Infrastructure.Tests/
+/WebAPI.IntegrationTests/
+/docs/

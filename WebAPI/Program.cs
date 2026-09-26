@@ -99,6 +99,10 @@ builder.Services.AddAuthorization(options =>
             context.User.IsInRole("OperationalAdmin") ||
             context.User.IsInRole("ADMIN") ||
             context.User.HasClaim("permission", "academic_calendar.manage")));
+    options.AddPolicy("ExamSubjectManager", policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(context =>
+            context.User.IsInRole("PHT") ||
+            context.User.HasClaim("permission", "exam_subject.manage")));
 });
 builder.Services.AddProblemDetails();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
@@ -133,7 +137,10 @@ app.MapControllers();
 
 
 
-app.SeedIdentityData();
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    app.SeedIdentityData();
+}
 
 app.Run();
 

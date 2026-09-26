@@ -70,6 +70,7 @@ public sealed class AcademicYearsControllerTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseEnvironment("Testing");
                 builder.UseSetting(
                     "ConnectionStrings:DefaultConnection",
                     "Server=127.0.0.1;Database=unused;User=unused;Password=unused;");
@@ -91,6 +92,7 @@ public sealed class AcademicYearsControllerTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseEnvironment("Testing");
                 builder.UseSetting(
                     "ConnectionStrings:DefaultConnection",
                     "Server=127.0.0.1;Database=unused;User=unused;Password=unused;");

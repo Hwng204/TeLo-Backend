@@ -56,7 +56,7 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
 
         branch.Name = request.Name.Trim();
         branch.Address = request.Address?.Trim();
-        
+
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             branch.Status = request.Status.Trim();

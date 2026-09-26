@@ -64,6 +64,13 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();
 builder.Services.AddAuthorization(options =>
 {
+    // Policy dùng cho SchoolsController và các controller quản trị hệ thống
+    options.AddPolicy("Admin", policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(context =>
+            context.User.IsInRole("ADMIN") ||
+            context.User.IsInRole("Admin")));
+
+    // Policy cho OperationalAdmin (academic calendar, v.v.)
     // Role codes live in config so a school can rename them without touching the controllers.
     var schoolReadRoles = builder.Configuration
         .GetSection("SchoolDirectoryAuth:SchoolReadRoleCodes").Get<string[]>()
@@ -90,6 +97,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
             context.User.IsInRole("OperationalAdmin") ||
+            context.User.IsInRole("ADMIN") ||
             context.User.HasClaim("permission", "academic_calendar.manage")));
 });
 builder.Services.AddProblemDetails();
@@ -97,7 +105,7 @@ var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy => policy
     .WithOrigins(allowedOrigins is { Length: > 0 }
         ? allowedOrigins
-        : ["http://localhost:5173", "http://localhost:3000"])
+        : ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"])
     .AllowAnyHeader()
     .AllowAnyMethod()
     .WithExposedHeaders("Content-Disposition")));
@@ -113,12 +121,19 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
 app.UseCors();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+
+
+
+app.SeedIdentityData();
 
 app.Run();
 

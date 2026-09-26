@@ -17,6 +17,8 @@ public static class DependencyInjection
         services.AddScoped<IStudentImportService, StudentImportService>();
         services.AddScoped<IMatrixApplicationService,MatrixApplicationService>();
         services.AddScoped<IMatrixTaskApplicationService, MatrixTaskApplicationService>();
+        services.AddScoped<ISchoolService, SchoolService>();
+        services.AddScoped<ISchoolBranchService, SchoolBranchService>();
         services.AddScoped<IMatrixPeopleResolver, MatrixPeopleResolver>();
 
         return services;

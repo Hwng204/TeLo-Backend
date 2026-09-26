@@ -1,7 +1,6 @@
 namespace Application.DTOs;
 
 public sealed record CreateAcademicYearRequest(
-    string ProvinceCode,
     string Name,
     DateOnly StartDate,
     DateOnly EndDate);
@@ -9,12 +8,12 @@ public sealed record CreateAcademicYearRequest(
 public sealed record AcademicYearListItem(
     ulong Id,
     string Code,
-    string ProvinceCode,
     string Name,
     DateOnly StartDate,
     DateOnly EndDate,
     string Status,
-    uint Version);
+    uint Version,
+    int SemesterCount);
 
 public sealed record AcademicYearPage(
     IReadOnlyList<AcademicYearListItem> Items,
@@ -26,7 +25,6 @@ public sealed record AcademicYearPage(
 }
 
 public sealed record AcademicYearListQuery(
-    string ProvinceCode,
     string? Status,
     string? Search,
     int Page,
@@ -44,7 +42,6 @@ public sealed record SemesterDto(
 public sealed record AcademicYearDetailDto(
     ulong Id,
     string Code,
-    string ProvinceCode,
     string Name,
     DateOnly StartDate,
     DateOnly EndDate,

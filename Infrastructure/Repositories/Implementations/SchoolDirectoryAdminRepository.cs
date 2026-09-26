@@ -412,11 +412,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         ulong gradeLevelId,
         CancellationToken cancellationToken)
     {
-        var school = await db.Schools.AsNoTracking()
-            .Where(s => s.Id == schoolId)
-            .Select(s => new { s.Id, s.ProvinceCode })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (school is null)
+        if (!await db.Schools.AsNoTracking().AnyAsync(s => s.Id == schoolId, cancellationToken))
         {
             return DirectoryWriteStatus.SchoolNotFound;
         }
@@ -428,7 +424,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         }
 
         if (!await db.AcademicYears.AsNoTracking().AnyAsync(
-            y => y.Id == academicYearId && y.ProvinceCode == school.ProvinceCode,
+            y => y.Id == academicYearId,
             cancellationToken))
         {
             return DirectoryWriteStatus.AcademicYearInvalid;

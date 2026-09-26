@@ -5,12 +5,10 @@ namespace Infrastructure.Repositories.Interface;
 public enum AcademicYearCreateOutcome
 {
     Created,
-    ProvinceNotFound,
     Conflict
 }
 
 public sealed record AcademicYearListFilter(
-    string ProvinceCode,
     string? Status,
     string? Search,
     int Page,
@@ -31,20 +29,17 @@ public interface IAcademicYearRepository
         CancellationToken cancellationToken);
 
     Task<bool> HasConflictExceptCurrentAsync(
-        string provinceCode,
         ulong currentYearId,
         string name,
         DateOnly startDate,
         DateOnly endDate,
         CancellationToken cancellationToken);
 
-    Task<bool> HasActiveYearInProvinceAsync(
-        string provinceCode,
+    Task<bool> HasActiveYearAsync(
         ulong exceptYearId,
         CancellationToken cancellationToken);
 
     Task<bool> UpdateAsync(
         AcademicYear academicYear,
         CancellationToken cancellationToken);
-
 }

@@ -19,7 +19,7 @@ public sealed class AcademicYearsControllerTests
         var service = new FakeAcademicYearService();
         var controller = new AcademicYearsController(service);
 
-        var result = await controller.List("1", null, null, 0, 101, CancellationToken.None);
+        var result = await controller.List(null, null, 0, 101, CancellationToken.None);
 
         var response = Assert.IsType<UnprocessableEntityObjectResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, response.StatusCode);
@@ -33,7 +33,6 @@ public sealed class AcademicYearsControllerTests
         var controller = new AcademicYearsController(service);
 
         var result = await controller.List(
-            "01",
             "DELETED",
             new string('a', 101),
             1,
@@ -56,7 +55,6 @@ public sealed class AcademicYearsControllerTests
         };
         var controller = new AcademicYearsController(service);
         var request = new CreateAcademicYearRequest(
-            "01",
             "2026-2027",
             new DateOnly(2026, 8, 15),
             new DateOnly(2027, 5, 31));

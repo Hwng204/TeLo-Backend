@@ -23,36 +23,28 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 validation.Errors);
         }
 
-        var provinceCode = request.ProvinceCode.Trim();
         var name = request.Name.Trim();
         var academicYear = new AcademicYear
         {
-            ProvinceCode = provinceCode,
             Name = name,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             Status = "DRAFT",
             Semesters =
             [
-                new Semester { Order = 1, Name = "Học kỳ 1", Status = "PLANNED" },
-                new Semester { Order = 2, Name = "Học kỳ 2", Status = "PLANNED" }
+                new Semester { Order = 1, Name = "Học kỳ I", Status = "PLANNED" },
+                new Semester { Order = 2, Name = "Học kỳ II", Status = "PLANNED" }
             ]
         };
-        academicYear.AssignCode($"{provinceCode}-{name}");
+        academicYear.AssignCode(name);
 
         var createOutcome = await uow.AcademicYears.TryAddAsync(academicYear, cancellationToken);
-        if (createOutcome == AcademicYearCreateOutcome.ProvinceNotFound)
-        {
-            return ServiceResult<AcademicYearListItem>.Failure(
-                "PROVINCE_NOT_FOUND",
-                "Tỉnh đã chọn không tồn tại hoặc không còn hoạt động.");
-        }
 
         if (createOutcome == AcademicYearCreateOutcome.Conflict)
         {
             return ServiceResult<AcademicYearListItem>.Failure(
                 "ACADEMIC_YEAR_CONFLICT",
-                "Năm học bị trùng tên hoặc chồng lấn thời gian trong cùng tỉnh.");
+                "Năm học bị trùng tên hoặc chồng lấn thời gian với năm học đã có.");
         }
 
         return ServiceResult<AcademicYearListItem>.Success(academicYear.ToListItem());
@@ -64,7 +56,6 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
     {
         var normalizedQuery = query with
         {
-            ProvinceCode = query.ProvinceCode.Trim(),
             Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim()
         };
         var (items, totalCount) = await uow.AcademicYears.ListAsync(
@@ -122,9 +113,7 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
         }
 
         var name = request.Name.Trim();
-        var provinceCode = year.ProvinceCode ?? string.Empty;
         if (await uow.AcademicYears.HasConflictExceptCurrentAsync(
-                provinceCode,
                 year.Id,
                 name,
                 request.StartDate,
@@ -133,7 +122,7 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
         {
             return ServiceResult<AcademicYearDetailDto>.Failure(
                 "ACADEMIC_YEAR_CONFLICT",
-                "Năm học bị trùng tên hoặc chồng lấn thời gian với năm học khác trong cùng tỉnh.");
+                "Năm học bị trùng tên hoặc chồng lấn thời gian với năm học khác.");
         }
 
         year.UpdateSchedule(name, request.StartDate, request.EndDate);
@@ -168,15 +157,11 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
             return DomainFailure<AcademicYearDetailDto>(exception);
         }
 
-        var provinceCode = year.ProvinceCode ?? string.Empty;
-        if (await uow.AcademicYears.HasActiveYearInProvinceAsync(
-                provinceCode,
-                year.Id,
-                cancellationToken))
+        if (await uow.AcademicYears.HasActiveYearAsync(year.Id, cancellationToken))
         {
             return ServiceResult<AcademicYearDetailDto>.Failure(
                 "ACTIVE_YEAR_CONFLICT",
-                "Tỉnh này đã có một năm học khác đang ở trạng thái áp dụng.");
+                "Hệ thống đã có một năm học khác đang ở trạng thái áp dụng.");
         }
 
         year.Activate();

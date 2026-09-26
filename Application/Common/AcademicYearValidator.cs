@@ -15,11 +15,6 @@ public static partial class AcademicYearValidator
     {
         var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
-        if (!ProvinceCodePattern().IsMatch(request.ProvinceCode.Trim()))
-        {
-            AddError(errors, "provinceCode", "Mã tỉnh phải gồm đúng 2 chữ số.");
-        }
-
         var name = request.Name.Trim();
         var nameMatch = AcademicYearNamePattern().Match(name);
         if (name.Length == 0)
@@ -241,9 +236,6 @@ public static partial class AcademicYearValidator
 
         fieldErrors.Add(message);
     }
-
-    [GeneratedRegex(@"^\d{2}$", RegexOptions.CultureInvariant)]
-    private static partial Regex ProvinceCodePattern();
 
     [GeneratedRegex(@"^(\d{4})-(\d{4})$", RegexOptions.CultureInvariant)]
     private static partial Regex AcademicYearNamePattern();

@@ -8,7 +8,6 @@ public static class AcademicYearMappingExtensions
 {
     public static AcademicYearListFilter ToFilter(this AcademicYearListQuery query) =>
         new(
-            query.ProvinceCode,
             query.Status,
             query.Search,
             query.Page,
@@ -18,7 +17,6 @@ public static class AcademicYearMappingExtensions
         new(
             academicYear.Id,
             academicYear.Code ?? string.Empty,
-            academicYear.ProvinceCode ?? string.Empty,
             academicYear.Name,
             academicYear.StartDate,
             academicYear.EndDate,
@@ -43,10 +41,10 @@ public static class AcademicYearMappingExtensions
         new(
             academicYear.Id,
             academicYear.Code ?? string.Empty,
-            academicYear.ProvinceCode ?? string.Empty,
             academicYear.Name,
             academicYear.StartDate,
             academicYear.EndDate,
             academicYear.Status,
-            academicYear.Version);
+            academicYear.Version,
+            academicYear.Semesters.Count);
 }

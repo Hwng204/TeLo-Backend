@@ -38,18 +38,12 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
         IReadOnlyCollection<string> codes,
         CancellationToken cancellationToken)
     {
-        var school = await db.Schools.AsNoTracking()
-            .Where(s => s.Id == schoolId)
-            .Select(s => new { s.ProvinceCode })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (school is null)
+        if (!await db.Schools.AsNoTracking().AnyAsync(s => s.Id == schoolId, cancellationToken))
         {
             return DirectoryReadResult<ImportLookup>.Fail(DirectoryReadStatus.SchoolNotFound);
         }
 
-        // Years are per province, so a school can only import into its own province's years.
-        var yearQuery = db.AcademicYears.AsNoTracking()
-            .Where(y => y.ProvinceCode == school.ProvinceCode);
+        var yearQuery = db.AcademicYears.AsNoTracking();
         var year = academicYearId is { } requested
             ? await yearQuery.Where(y => y.Id == requested)
                 .Select(y => new { y.Id, y.Name }).SingleOrDefaultAsync(cancellationToken)

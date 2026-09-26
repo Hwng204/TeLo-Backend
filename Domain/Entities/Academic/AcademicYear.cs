@@ -1,5 +1,3 @@
-using Domain.Entities.Organization;
-
 namespace Domain.Entities.Academic;
 
 public sealed class AcademicYear
@@ -10,11 +8,10 @@ public sealed class AcademicYear
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
     public string Status { get; set; } = "DRAFT";
-    public string? ProvinceCode { get; set; }
-    public string? ActiveProvinceCode { get; private set; }
+    /// <summary>Computed column: non-null only when status is ACTIVE; enforces one active year system-wide.</summary>
+    public string? ActiveSystemKey { get; private set; }
     public uint Version { get; set; } = 1;
 
-    public Province? Province { get; set; }
     public ICollection<Semester> Semesters { get; set; } = new List<Semester>();
 
     public void AssignCode(string code)

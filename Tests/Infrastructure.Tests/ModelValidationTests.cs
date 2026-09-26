@@ -15,12 +15,12 @@ public sealed class ModelValidationTests
         var academicYear = context.Model.FindEntityType(typeof(AcademicYear));
 
         Assert.NotNull(academicYear);
-        var activeProvinceCode = academicYear.FindProperty(nameof(AcademicYear.ActiveProvinceCode));
-        Assert.NotNull(activeProvinceCode);
-        Assert.NotNull(activeProvinceCode.GetComputedColumnSql());
+        var activeSystemKey = academicYear.FindProperty(nameof(AcademicYear.ActiveSystemKey));
+        Assert.NotNull(activeSystemKey);
+        Assert.NotNull(activeSystemKey.GetComputedColumnSql());
         var uniqueIndex = Assert.Single(
             academicYear.GetIndexes(),
-            index => index.Properties.SequenceEqual([activeProvinceCode]));
+            index => index.Properties.SequenceEqual([activeSystemKey]));
         Assert.True(uniqueIndex.IsUnique);
     }
 

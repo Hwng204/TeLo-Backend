@@ -48,6 +48,28 @@ public sealed class AcademicYearDomainTests
         Assert.Equal("SEMESTER_OUT_OF_BOUNDS", exception.Code);
     }
 
+    [Theory]
+    [InlineData("DRAFT")]
+    [InlineData("ACTIVE")]
+    public void EnsureCanUpdateSchedule_AllowsDraftAndActiveYears(string status)
+    {
+        var year = CreateYear(status);
+
+        year.EnsureCanUpdateSchedule(
+            new DateOnly(2026, 8, 15),
+            new DateOnly(2027, 5, 31));
+    }
+
+    [Fact]
+    public void EnsureCanConfigureTerms_RejectsAClosedAcademicYear()
+    {
+        var year = CreateYear("CLOSED");
+
+        var exception = Assert.Throws<AcademicCalendarDomainException>(year.EnsureCanConfigureTerms);
+
+        Assert.Equal("ACADEMIC_YEAR_CLOSED", exception.Code);
+    }
+
     [Fact]
     public void EnsureCanConfigureTerm_RejectsAClosedSemester()
     {
@@ -66,7 +88,6 @@ public sealed class AcademicYearDomainTests
         Name = "2026-2027",
         StartDate = new DateOnly(2026, 8, 15),
         EndDate = new DateOnly(2027, 5, 31),
-        ProvinceCode = "01",
         Status = status
     };
 }

@@ -430,7 +430,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         ResolvedScope scope,
         CancellationToken cancellationToken) =>
         db.AcademicYears.AsNoTracking()
-            .Where(y => y.Status == ActiveYear && y.ProvinceCode == scope.ProvinceCode)
+            .Where(y => y.Status == ActiveYear)
             .OrderByDescending(y => y.StartDate)
             .Select(y => (ulong?)y.Id)
             .FirstOrDefaultAsync(cancellationToken);

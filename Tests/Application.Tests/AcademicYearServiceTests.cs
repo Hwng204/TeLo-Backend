@@ -21,17 +21,16 @@ public sealed class AcademicYearServiceTests
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value);
         Assert.Equal("DRAFT", result.Value.Status);
-        Assert.Equal("01-2026-2027", result.Value.Code);
+        Assert.Equal("2026-2027", result.Value.Code);
         var year = Assert.Single(repository.AddedYears);
-        Assert.Equal("01", year.ProvinceCode);
-        Assert.Equal("01-2026-2027", year.Code);
+        Assert.Equal("2026-2027", year.Code);
         Assert.Throws<InvalidOperationException>(() => year.AssignCode("01-2027-2028"));
         Assert.Collection(
             year.Semesters.OrderBy(term => term.Order),
             first =>
             {
                 Assert.Equal((byte)1, first.Order);
-                Assert.Equal("Học kỳ 1", first.Name);
+                Assert.Equal("Học kỳ I", first.Name);
                 Assert.Equal("PLANNED", first.Status);
                 Assert.Null(first.StartDate);
                 Assert.Null(first.EndDate);
@@ -39,7 +38,7 @@ public sealed class AcademicYearServiceTests
             second =>
             {
                 Assert.Equal((byte)2, second.Order);
-                Assert.Equal("Học kỳ 2", second.Name);
+                Assert.Equal("Học kỳ II", second.Name);
                 Assert.Equal("PLANNED", second.Status);
                 Assert.Null(second.StartDate);
                 Assert.Null(second.EndDate);
@@ -59,22 +58,6 @@ public sealed class AcademicYearServiceTests
         Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
         Assert.Contains("name", result.Error?.Details?.Keys ?? []);
         Assert.Equal(0, repository.CreateCallCount);
-    }
-
-    [Fact]
-    public async Task CreateAsync_RejectsAnUnknownProvince()
-    {
-        var repository = new FakeAcademicYearRepository
-        {
-            CreateOutcome = AcademicYearCreateOutcome.ProvinceNotFound
-        };
-        var service = new AcademicYearService(repository);
-
-        var result = await service.CreateAsync(ValidRequest(), CancellationToken.None);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal("PROVINCE_NOT_FOUND", result.Error?.Code);
-        Assert.Empty(repository.AddedYears);
     }
 
     [Fact]
@@ -130,8 +113,7 @@ public sealed class AcademicYearServiceTests
             Name = "2025-2026",
             StartDate = new DateOnly(2025, 9, 1),
             EndDate = new DateOnly(2026, 5, 31),
-            Status = "CLOSED",
-            ProvinceCode = "01"
+            Status = "CLOSED"
         };
         repository.AddedYears.Add(closedYear);
         var service = new AcademicYearService(repository);
@@ -155,8 +137,7 @@ public sealed class AcademicYearServiceTests
             Name = "2026-2027",
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
-            Status = "DRAFT",
-            ProvinceCode = "01"
+            Status = "DRAFT"
         };
         repository.AddedYears.Add(year);
         var service = new AcademicYearService(repository);
@@ -182,8 +163,7 @@ public sealed class AcademicYearServiceTests
             Name = "2026-2027",
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
-            Status = "DRAFT",
-            ProvinceCode = "01"
+            Status = "DRAFT"
         };
         repository.AddedYears.Add(year);
         var service = new AcademicYearService(repository);
@@ -205,7 +185,6 @@ public sealed class AcademicYearServiceTests
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
             Status = "DRAFT",
-            ProvinceCode = "01",
             Semesters = new List<Semester>
             {
                 new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "PLANNED" },
@@ -232,7 +211,6 @@ public sealed class AcademicYearServiceTests
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
             Status = "ACTIVE",
-            ProvinceCode = "01",
             Semesters = new List<Semester>
             {
                 new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "ACTIVE" },
@@ -260,7 +238,6 @@ public sealed class AcademicYearServiceTests
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
             Status = "DRAFT",
-            ProvinceCode = "01",
             Semesters = new List<Semester>
             {
                 new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "PLANNED" },
@@ -294,7 +271,6 @@ public sealed class AcademicYearServiceTests
             StartDate = new DateOnly(2026, 9, 1),
             EndDate = new DateOnly(2027, 5, 31),
             Status = "ACTIVE",
-            ProvinceCode = "01",
             Semesters = new List<Semester>
             {
                 new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "ACTIVE" },
@@ -311,7 +287,7 @@ public sealed class AcademicYearServiceTests
     }
 
     private static CreateAcademicYearRequest ValidRequest() =>
-        new("01", "2026-2027", new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+        new("2026-2027", new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
 
     private sealed class FakeAcademicYearRepository : IAcademicYearRepository, IUnitOfWork
     {
@@ -355,7 +331,6 @@ public sealed class AcademicYearServiceTests
             Task.FromResult(AddedYears.FirstOrDefault(y => y.Id == id));
 
         public Task<bool> HasConflictExceptCurrentAsync(
-            string provinceCode,
             ulong currentId,
             string name,
             DateOnly startDate,
@@ -363,8 +338,7 @@ public sealed class AcademicYearServiceTests
             CancellationToken cancellationToken) =>
             Task.FromResult(false);
 
-        public Task<bool> HasActiveYearInProvinceAsync(
-            string provinceCode,
+        public Task<bool> HasActiveYearAsync(
             ulong currentId,
             CancellationToken cancellationToken) =>
             Task.FromResult(false);

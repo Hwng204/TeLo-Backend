@@ -1,6 +1,7 @@
 using Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using WebAPI.Security;
 
 namespace WebAPI.Controllers;
@@ -20,7 +21,7 @@ public sealed class AuthController(
         var user = await authenticationService.AuthenticateAsync(request, cancellationToken);
         if (user is null)
         {
-            throw new UnauthorizedAccessException("Tên đăng nhập hoặc mật khẩu không đúng.");
+            return Unauthorized(new { message = "Tên đăng nhập hoặc mật khẩu không đúng." });
         }
 
         return Ok(tokenService.CreateToken(user));

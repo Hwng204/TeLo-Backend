@@ -248,6 +248,7 @@ public sealed class ExamServiceTests
         public IMatrixTaskRepository MatrixTasks => throw Unused();
         public IMatrixReferenceRepository MatrixReferences => throw Unused();
         public IExamRepository Exams => this;
+        public IExamSubjectRepository ExamSubjects => throw Unused();
 
         public Dictionary<ulong, Exam> ExamsById { get; } = [];
         public ExamReferenceData References { get; init; } = new(true, true);

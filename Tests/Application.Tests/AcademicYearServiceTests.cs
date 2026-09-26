@@ -326,6 +326,8 @@ public sealed class AcademicYearServiceTests
             throw new InvalidOperationException("Matrix reference repository is not used by these tests.");
         public IExamRepository Exams =>
             throw new InvalidOperationException("Exam repository is not used by these tests.");
+        public IExamSubjectRepository ExamSubjects =>
+            throw new InvalidOperationException("Exam-subject repository is not used by these tests.");
 
         public AcademicYearCreateOutcome CreateOutcome { get; init; } =
             AcademicYearCreateOutcome.Created;

@@ -37,6 +37,7 @@ public static class DependencyInjection
         services.AddScoped<IMatrixTaskRepository, MatrixTaskRepository>();
         services.AddScoped<IMatrixReferenceRepository, MatrixReferenceRepository>();
         services.AddScoped<IExamRepository, ExamRepository>();
+        services.AddScoped<IExamSubjectRepository, ExamSubjectRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
         services.AddSingleton<IProvinceProvider>(_ => CreateProvinceProvider(configuration));
         services.AddSingleton(TimeProvider.System);

@@ -14,6 +14,12 @@ public sealed class ExamMatrix
     public ulong? RejectedByUserId { get; set; }
     public DateTime? RejectedAt { get; set; }
 
+    // Null for matrices that predate authorship tracking and had no task to infer it from.
+    public ulong? CreatedByUserId { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public ulong? ApprovedByUserId { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+
     public WorkTask? Task { get; set; }
     public Semester? Semester { get; set; }
     public AcademicContext AcademicContext { get; set; } = null!;
@@ -22,7 +28,13 @@ public sealed class ExamMatrix
     public uint TotalQuestions =>
         Details.Aggregate(0u, (total, detail) => checked(total + detail.QuestionCount));
 
-    public decimal TotalScore => Details.Sum(detail => detail.AllocatedScore);
+    // Số nguyên dương do người lập tự đặt (không còn tính từ tổng chi tiết). Điểm mỗi ô là
+    // TotalScore * Percentage / 100, suy ra khi hiển thị/xuất file, không lưu ở MatrixDetail.
+    public int TotalScore { get; set; }
+
+    // A matrix must add up to 100% of its declared TotalScore before it can be submitted, confirmed
+    // or edited in review.
+    public const decimal RequiredTotalPercentage = 100m;
 
     public bool CanEdit(MatrixActor actor)
     {
@@ -56,11 +68,12 @@ public sealed class ExamMatrix
         {
             if (value.LessonId == 0 ||
                 value.QuestionCount == 0 ||
-                value.AllocatedScore <= 0)
+                value.Percentage <= 0 ||
+                value.Percentage > 100)
             {
                 throw new MatrixDomainException(
                     "InvalidDetail",
-                    "Mỗi dòng chi tiết phải có bài học, số câu và điểm lớn hơn 0.");
+                    "Mỗi dòng chi tiết phải có bài học, số câu lớn hơn 0 và tỷ lệ điểm trong khoảng (0, 100].");
             }
 
             var cognitiveLevel = Normalize(value.CognitiveLevel);
@@ -93,9 +106,17 @@ public sealed class ExamMatrix
                 CognitiveLevel = cognitiveLevel,
                 QuestionType = questionType,
                 QuestionCount = value.QuestionCount,
-                AllocatedScore = value.AllocatedScore,
+                Percentage = value.Percentage,
                 ExamMatrix = this
             });
+        }
+
+        // A Draft may be saved at any percentage total, even empty, so it can be worked on in several
+        // sittings. A Submitted matrix is already in review, so editing it must keep it at exactly 100%.
+        // Checked before Details.Clear() so a rejected save leaves the matrix untouched.
+        if (Status == MatrixStatusCodes.Submitted)
+        {
+            EnsureRequiredTotalPercentage(normalizedDetails.Sum(detail => detail.Percentage));
         }
 
         Details.Clear();
@@ -122,6 +143,9 @@ public sealed class ExamMatrix
                 "Ma trận phải có ít nhất một dòng chi tiết trước khi nộp hoặc xác nhận.");
         }
 
+        // Also covers ConfirmDirect, which submits before approving.
+        EnsureRequiredTotalPercentage(Details.Sum(detail => detail.Percentage));
+
         Status = MatrixStatusCodes.Submitted;
         ClearRejection();
     }
@@ -147,7 +171,7 @@ public sealed class ExamMatrix
         RejectedAt = rejectedAtUtc;
     }
 
-    public void Approve(MatrixActor actor)
+    public void Approve(MatrixActor actor, DateTime? approvedAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -162,9 +186,11 @@ public sealed class ExamMatrix
         }
 
         Status = MatrixStatusCodes.Approved;
+        ApprovedByUserId = actor.UserId;
+        ApprovedAt = approvedAtUtc ?? DateTime.UtcNow;
     }
 
-    public void ConfirmDirect(MatrixActor actor)
+    public void ConfirmDirect(MatrixActor actor, DateTime? approvedAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -181,7 +207,7 @@ public sealed class ExamMatrix
         }
 
         Submit(actor);
-        Approve(actor);
+        Approve(actor, approvedAtUtc);
     }
 
     public void Archive(MatrixActor actor)
@@ -201,7 +227,7 @@ public sealed class ExamMatrix
         Status = MatrixStatusCodes.Archived;
     }
 
-    public ExamMatrix CloneAsDraft(MatrixActor actor)
+    public ExamMatrix CloneAsDraft(MatrixActor actor, DateTime? createdAtUtc = null)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -222,7 +248,11 @@ public sealed class ExamMatrix
             Status = MatrixStatusCodes.Draft,
             TaskId = null,
             SemesterId = SemesterId,
-            AcademicContextId = AcademicContextId
+            AcademicContextId = AcademicContextId,
+            TotalScore = TotalScore,
+            // The copy is a new matrix authored by whoever made the copy, not by the original author.
+            CreatedByUserId = actor.UserId,
+            CreatedAt = createdAtUtc ?? DateTime.UtcNow
         };
 
         foreach (var detail in Details)
@@ -235,13 +265,27 @@ public sealed class ExamMatrix
                 CognitiveLevel = detail.CognitiveLevel,
                 QuestionType = detail.QuestionType,
                 QuestionCount = detail.QuestionCount,
-                AllocatedScore = detail.AllocatedScore,
+                Percentage = detail.Percentage,
                 ExamMatrix = clone,
                 Lesson = detail.Lesson
             });
         }
 
         return clone;
+    }
+
+    // True when the matrix's detail rows add up to 100% of its declared TotalScore, i.e. it may be
+    // submitted or confirmed.
+    public bool HasRequiredTotalPercentage => Details.Sum(detail => detail.Percentage) == RequiredTotalPercentage;
+
+    private static void EnsureRequiredTotalPercentage(decimal totalPercentage)
+    {
+        if (totalPercentage != RequiredTotalPercentage)
+        {
+            throw new MatrixDomainException(
+                "InvalidTotalScore",
+                $"Tổng tỷ lệ điểm của ma trận phải bằng {RequiredTotalPercentage:0}% (hiện là {totalPercentage:0.##}%).");
+        }
     }
 
     private void ClearRejection()

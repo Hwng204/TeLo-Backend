@@ -1,5 +1,3 @@
-using Domain.Entities.Academic;
-
 namespace Domain.Entities.Organization;
 
 public sealed class Province
@@ -12,5 +10,4 @@ public sealed class Province
     public DateTimeOffset LastSyncedAt { get; set; }
 
     public ICollection<School> Schools { get; set; } = new List<School>();
-    public ICollection<AcademicYear> AcademicYears { get; set; } = new List<AcademicYear>();
 }

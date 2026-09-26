@@ -12,28 +12,12 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         AcademicYear academicYear,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
-        var lockedProvinces = await context.Provinces
-            .FromSqlInterpolated($"""
-                SELECT *
-                FROM provinces
-                WHERE code = {academicYear.ProvinceCode} AND is_active = TRUE
-                FOR UPDATE
-                """)
-            .ToListAsync(cancellationToken);
-        var province = lockedProvinces.SingleOrDefault();
-
-        if (province is null)
-        {
-            return AcademicYearCreateOutcome.ProvinceNotFound;
-        }
-
         var hasConflict = await context.AcademicYears.AsNoTracking().AnyAsync(
-            year => year.ProvinceCode == academicYear.ProvinceCode &&
-                    (year.Name == academicYear.Name ||
-                     (year.StartDate <= academicYear.EndDate &&
-                      academicYear.StartDate <= year.EndDate)),
+            year => year.Name == academicYear.Name ||
+                    (year.StartDate <= academicYear.EndDate &&
+                     academicYear.StartDate <= year.EndDate),
             cancellationToken);
+
         if (hasConflict)
         {
             return AcademicYearCreateOutcome.Conflict;
@@ -44,7 +28,6 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         try
         {
             await context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
             return AcademicYearCreateOutcome.Created;
         }
         catch (DbUpdateException exception)
@@ -59,8 +42,9 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         CancellationToken cancellationToken)
     {
         var query = context.AcademicYears
+            .Include(y => y.Semesters)
             .AsNoTracking()
-            .Where(year => year.ProvinceCode == filter.ProvinceCode);
+            .AsQueryable();
 
         if (filter.Status is not null)
         {
@@ -91,27 +75,22 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
             .FirstOrDefaultAsync(year => year.Id == id, cancellationToken);
 
     public Task<bool> HasConflictExceptCurrentAsync(
-        string provinceCode,
         ulong currentYearId,
         string name,
         DateOnly startDate,
         DateOnly endDate,
         CancellationToken cancellationToken) =>
         context.AcademicYears.AsNoTracking().AnyAsync(
-            year => year.ProvinceCode == provinceCode &&
-                    year.Id != currentYearId &&
+            year => year.Id != currentYearId &&
                     (year.Name == name ||
                      (year.StartDate <= endDate && startDate <= year.EndDate)),
             cancellationToken);
 
-    public Task<bool> HasActiveYearInProvinceAsync(
-        string provinceCode,
+    public Task<bool> HasActiveYearAsync(
         ulong exceptYearId,
         CancellationToken cancellationToken) =>
         context.AcademicYears.AsNoTracking().AnyAsync(
-            year => year.ProvinceCode == provinceCode &&
-                    year.Id != exceptYearId &&
-                    year.Status == "ACTIVE",
+            year => year.Id != exceptYearId && year.Status == "ACTIVE",
             cancellationToken);
 
     public async Task<bool> UpdateAsync(
@@ -133,5 +112,4 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
             return false;
         }
     }
-
 }

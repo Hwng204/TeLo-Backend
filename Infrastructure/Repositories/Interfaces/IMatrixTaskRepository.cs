@@ -18,4 +18,7 @@ public interface IMatrixTaskRepository : IGenericRepository<WorkTask>
     Task<ulong?> GetLinkedMatrixIdAsync(ulong taskId, CancellationToken cancellationToken);
 
     Task<ulong?> GetContextBranchIdAsync(ulong academicContextId, CancellationToken cancellationToken);
+
+    // Deletes a MATRIX task only while no matrix exists for it; false when nothing was deleted.
+    Task<bool> DeleteIfNotStartedAsync(ulong taskId, CancellationToken cancellationToken);
 }

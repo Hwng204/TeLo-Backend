@@ -42,6 +42,29 @@ public static class JwtAuthenticationExtensions
                     NameClaimType = ClaimTypes.NameIdentifier,
                     RoleClaimType = ClaimTypes.Role
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        var principal = context.Principal!;
+                        if (!ulong.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var userId))
+                        {
+                            context.Fail("Invalid user identity.");
+                            return;
+                        }
+                        // Tokens issued before this migration have version 1. Any account change
+                        // increments the persisted version, revoking those legacy tokens as well.
+                        var value = principal.FindFirstValue("security_version") ?? "1";
+                        if (!uint.TryParse(value, out var version))
+                        {
+                            context.Fail("Invalid security version.");
+                            return;
+                        }
+                        var authentication = context.HttpContext.RequestServices.GetRequiredService<IUserAuthenticationService>();
+                        if (!await authentication.IsSessionValidAsync(userId, version, context.HttpContext.RequestAborted))
+                            context.Fail("Account disabled or token revoked.");
+                    }
+                };
             });
         services.AddAuthorization();
         return services;

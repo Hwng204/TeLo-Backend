@@ -31,14 +31,19 @@ public static class DependencyInjection
                 mysql => mysql.MigrationsAssembly(
                     typeof(ApplicationDbContext).Assembly.GetName().Name)));
 
+        services.AddScoped<ITeacherRepository, TeacherRepository>();
         services.AddScoped<IAcademicYearRepository, AcademicYearRepository>();
         services.AddScoped<IProvinceRepository, ProvinceRepository>();
         services.AddScoped<IMatrixRepository, ExamMatrixRepository>();
         services.AddScoped<IMatrixTaskRepository, MatrixTaskRepository>();
         services.AddScoped<IMatrixReferenceRepository, MatrixReferenceRepository>();
+        services.AddScoped<ISchoolDirectoryRepository, SchoolDirectoryRepository>();
+        services.AddScoped<ISchoolDirectoryAdminRepository, SchoolDirectoryAdminRepository>();
+        services.AddScoped<IStudentImportRepository, StudentImportRepository>();
+        services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
         services.AddScoped<IExamRepository, ExamRepository>();
         services.AddScoped<IExamSubjectRepository, ExamSubjectRepository>();
-        services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
+
         services.AddSingleton<IProvinceProvider>(_ => CreateProvinceProvider(configuration));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IMatrixRoleCatalog, ConfiguredMatrixRoleCatalog>();

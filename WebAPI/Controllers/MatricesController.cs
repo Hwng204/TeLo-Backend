@@ -20,6 +20,9 @@ public sealed class MatricesController(
         [FromQuery] ulong? academicContextId = null,
         [FromQuery] ulong? semesterId = null,
         [FromQuery] string? status = null,
+        [FromQuery] ulong? academicYearId = null,
+        [FromQuery] ulong? subjectId = null,
+        [FromQuery] ulong? gradeLevelId = null,
         CancellationToken cancellationToken = default)
     {
         return service.ListAsync(
@@ -29,7 +32,10 @@ public sealed class MatricesController(
                 keyword,
                 academicContextId,
                 semesterId,
-                status),
+                status,
+                AcademicYearId: academicYearId,
+                SubjectId: subjectId,
+                GradeLevelId: gradeLevelId),
             cancellationToken);
     }
 

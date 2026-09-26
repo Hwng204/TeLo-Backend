@@ -19,7 +19,7 @@ public sealed class AcademicYearsControllerTests
         var service = new FakeAcademicYearService();
         var controller = new AcademicYearsController(service);
 
-        var result = await controller.List("1", null, null, 0, 101, CancellationToken.None);
+        var result = await controller.List(null, null, 0, 101, CancellationToken.None);
 
         var response = Assert.IsType<UnprocessableEntityObjectResult>(result);
         Assert.Equal(StatusCodes.Status422UnprocessableEntity, response.StatusCode);
@@ -33,7 +33,6 @@ public sealed class AcademicYearsControllerTests
         var controller = new AcademicYearsController(service);
 
         var result = await controller.List(
-            "01",
             "DELETED",
             new string('a', 101),
             1,
@@ -56,7 +55,6 @@ public sealed class AcademicYearsControllerTests
         };
         var controller = new AcademicYearsController(service);
         var request = new CreateAcademicYearRequest(
-            "01",
             "2026-2027",
             new DateOnly(2026, 8, 15),
             new DateOnly(2027, 5, 31));
@@ -72,6 +70,7 @@ public sealed class AcademicYearsControllerTests
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseEnvironment("Testing");
                 builder.UseSetting(
                     "ConnectionStrings:DefaultConnection",
                     "Server=127.0.0.1;Database=unused;User=unused;Password=unused;");
@@ -88,11 +87,12 @@ public sealed class AcademicYearsControllerTests
     }
 
     [Fact]
-    public async Task StudentsEndpoint_ResolvesWithoutAnUnusedStudentServiceRegistration()
+    public async Task StudentsEndpoint_RequiresAuthenticationAndResolvesDirectoryService()
     {
         await using var factory = new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
+                builder.UseEnvironment("Testing");
                 builder.UseSetting(
                     "ConnectionStrings:DefaultConnection",
                     "Server=127.0.0.1;Database=unused;User=unused;Password=unused;");
@@ -105,7 +105,7 @@ public sealed class AcademicYearsControllerTests
 
         var response = await client.GetAsync("/api/students");
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     private sealed class FakeAcademicYearService : IAcademicYearService

@@ -37,7 +37,6 @@ public sealed class HttpMatrixCurrentUser(
 
             if (roleCodes.Any(roleCatalog.IsPrincipal))
             {
-                // The Principal manages every branch, so no branch limit applies.
                 return new MatrixActor(userId, MatrixActorRole.Pht, null, true);
             }
 

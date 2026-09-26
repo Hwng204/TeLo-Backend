@@ -5,5 +5,7 @@ public sealed record MatrixDetailValue(
     string CognitiveLevel,
     string QuestionType,
     uint QuestionCount,
-    decimal AllocatedScore);
+    // Tỷ lệ % điểm của dòng này trong tổng điểm ma trận (0, 100]. Điểm ô/điểm mỗi câu là giá trị
+    // suy ra (TotalScore * Percentage / 100), không lưu trực tiếp.
+    decimal Percentage);
 

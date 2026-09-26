@@ -20,22 +20,18 @@ public sealed class AcademicYearConfiguration : IEntityTypeConfiguration<Academi
         builder.Property(x => x.StartDate).HasColumnName("start_date").HasColumnType("date").IsRequired();
         builder.Property(x => x.EndDate).HasColumnName("end_date").HasColumnType("date").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("DRAFT").IsRequired();
-        builder.Property(x => x.ProvinceCode).HasColumnName("province_code").HasMaxLength(2);
-        builder.Property(x => x.ActiveProvinceCode)
-            .HasColumnName("active_province_code")
-            .HasMaxLength(2)
+        builder.Property(x => x.ActiveSystemKey)
+            .HasColumnName("active_system_key")
+            .HasMaxLength(16)
             .HasComputedColumnSql(
-                "CASE WHEN status = 'ACTIVE' THEN province_code ELSE NULL END",
+                "CASE WHEN status = 'ACTIVE' THEN 'SYSTEM' ELSE NULL END",
                 stored: true);
         builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
-        builder.HasIndex(x => new { x.ProvinceCode, x.Name })
-            .IsUnique().HasDatabaseName("uq_academic_years_province_name");
+        builder.HasIndex(x => x.Name)
+            .HasDatabaseName("ix_academic_years_name");
         builder.HasIndex(x => x.Code)
             .IsUnique().HasDatabaseName("uq_academic_years_code");
-        builder.HasIndex(x => x.ActiveProvinceCode)
-            .IsUnique().HasDatabaseName("uq_academic_years_active_province");
-        builder.HasOne(x => x.Province).WithMany(x => x.AcademicYears)
-            .HasForeignKey(x => x.ProvinceCode).HasConstraintName("fk_academic_years_province")
-            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasIndex(x => x.ActiveSystemKey)
+            .IsUnique().HasDatabaseName("uq_academic_years_active_system");
     }
 }

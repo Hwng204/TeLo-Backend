@@ -12,7 +12,8 @@ namespace Application.Services.Implement;
 public sealed class MatrixApplicationService(
     IUnitOfWork uow,
     IMatrixCurrentUser currentUser,
-    IMatrixWorkbookExporter exporter) : IMatrixApplicationService
+    IMatrixWorkbookExporter exporter,
+    IMatrixPeopleResolver peopleResolver) : IMatrixApplicationService
 {
     public async Task<MatrixPage> ListAsync(
         MatrixListQuery query,
@@ -23,8 +24,12 @@ public sealed class MatrixApplicationService(
             ? query with { AssignedToUserId = actor.UserId }
             : query with { BranchId = BranchScope(actor) };
 
-        var page = await uow.Matrices.ListAsync(scopedQuery.ToFilter(), cancellationToken);
-        return page.ToDto();
+        var filter = scopedQuery.ToFilter() with { HideTaskDrafts = actor.Role == MatrixActorRole.Pht };
+        var page = await uow.Matrices.ListAsync(filter, cancellationToken);
+        var people = await peopleResolver.ResolveAsync(
+            page.Items.SelectMany(item => new[] { item.CreatedByUserId, item.ApprovedByUserId }),
+            cancellationToken);
+        return page.ToDto(people);
     }
 
     public async Task<MatrixResponse> CreateAsync(
@@ -39,7 +44,7 @@ public sealed class MatrixApplicationService(
             var matrix = await BuildNewMatrixAsync(request, actor, ct);
             await uow.Matrices.AddAsync(matrix, ct);
             await uow.CompleteAsync(ct);
-            return matrix.ToResponse(actor);
+            return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
 
@@ -50,7 +55,7 @@ public sealed class MatrixApplicationService(
         var actor = currentUser.Actor;
         var matrix = await GetRequiredAsync(matrixId, actor, cancellationToken);
         EnsureViewAccess(matrix, actor);
-        return matrix.ToResponse(actor);
+        return await ToResponseAsync(matrix, actor, cancellationToken);
     }
 
     public async Task<MatrixResponse> UpdateAsync(
@@ -105,9 +110,10 @@ public sealed class MatrixApplicationService(
             matrix.Name = request.Name.Trim();
             matrix.AcademicContextId = academicContextId;
             matrix.SemesterId = semesterId;
+            matrix.TotalScore = request.TotalScore;
             ReplaceDetails(matrix, request.Details, actor);
             await uow.CompleteAsync(ct);
-            return matrix.ToResponse(actor);
+            return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
 
@@ -217,7 +223,7 @@ public sealed class MatrixApplicationService(
             var clone = matrix.CloneAsDraft(actor);
             await uow.Matrices.AddAsync(clone, ct);
             await uow.CompleteAsync(ct);
-            return clone.ToResponse(actor);
+            return await ToResponseAsync(clone, actor, ct);
         }, cancellationToken);
     }
 
@@ -258,7 +264,7 @@ public sealed class MatrixApplicationService(
                     ct);
             }
 
-            return matrix.ToResponse(actor);
+            return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
 
@@ -281,25 +287,23 @@ public sealed class MatrixApplicationService(
             cancellationToken);
 
         return new MatrixExportFile(
-            $"{SafeFileName(matrix.Name)}.xlsx",
+            $"{FileNames.Safe(matrix.Name, "matrix")}.xlsx",
             exporter.Create(matrix.ToWorkbookModel(info)));
+    }
+
+    // Names the people a matrix response shows (author, approver) with one batched lookup.
+    private async Task<MatrixResponse> ToResponseAsync(
+        ExamMatrix matrix,
+        MatrixActor actor,
+        CancellationToken cancellationToken)
+    {
+        var people = await peopleResolver.ResolveAsync(matrix.PeopleIds(), cancellationToken);
+        return matrix.ToResponse(actor, people);
     }
 
     private static IReadOnlyCollection<ulong> LessonIds(IEnumerable<MatrixDetailRequest> details)
     {
         return details.Select(detail => detail.LessonId).ToArray();
-    }
-
-    private static string SafeFileName(string value)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = new string(value
-            .Trim()
-            .Select(character => invalid.Contains(character) ? '_' : character)
-            .ToArray())
-            .Trim('.', ' ');
-
-        return string.IsNullOrWhiteSpace(sanitized) ? "matrix" : sanitized;
     }
 
     // A PHT is limited to their own branch; the Principal and Team Leads are not branch-limited here.
@@ -352,7 +356,10 @@ public sealed class MatrixApplicationService(
                 Status = MatrixStatusCodes.Draft,
                 TaskId = null,
                 SemesterId = request.SemesterId,
-                AcademicContextId = request.AcademicContextId
+                AcademicContextId = request.AcademicContextId,
+                TotalScore = request.TotalScore,
+                CreatedByUserId = actor.UserId,
+                CreatedAt = DateTime.UtcNow
             };
 
             ReplaceDetails(directMatrix, request.Details, actor);
@@ -398,7 +405,10 @@ public sealed class MatrixApplicationService(
             TaskId = task.Id,
             Task = task,
             SemesterId = task.SemesterId,
-            AcademicContextId = taskContextId
+            AcademicContextId = taskContextId,
+            TotalScore = request.TotalScore,
+            CreatedByUserId = actor.UserId,
+            CreatedAt = DateTime.UtcNow
         };
 
         ReplaceDetails(delegatedMatrix, request.Details, actor);
@@ -425,6 +435,16 @@ public sealed class MatrixApplicationService(
             throw new MatrixApplicationException(
                 "Forbidden",
                 "Ma trận thuộc chi nhánh khác.");
+        }
+
+        // Bản Nháp của Tổ trưởng là việc riêng của họ cho tới khi nộp: PHT không xem, sửa, xoá được.
+        if (actor.Role == MatrixActorRole.Pht &&
+            matrix.Status == MatrixStatusCodes.Draft &&
+            matrix.TaskId is not null)
+        {
+            throw new MatrixApplicationException(
+                "Forbidden",
+                "Ma trận đang được Tổ trưởng soạn, chỉ xem được sau khi nộp.");
         }
 
         return matrix;
@@ -503,15 +523,23 @@ public sealed class MatrixApplicationService(
                 "Chi tiết ma trận là bắt buộc.");
         }
 
+        if (request.TotalScore <= 0)
+        {
+            throw new MatrixApplicationException(
+                "InvalidRequest",
+                "Tổng điểm ma trận phải là số nguyên dương.");
+        }
+
         if (request.Name.Trim().Length > 255 ||
             request.Details.Any(detail =>
                 detail is null ||
                 detail.CognitiveLevel?.Trim().Length > 50 ||
-                detail.AllocatedScore > 999.99m))
+                detail.Percentage <= 0 ||
+                detail.Percentage > 100))
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc điểm (tối đa 999,99) vượt quá giới hạn cho phép.");
+                "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc tỷ lệ điểm (phải trong khoảng (0, 100]) vượt quá giới hạn cho phép.");
         }
     }
 }

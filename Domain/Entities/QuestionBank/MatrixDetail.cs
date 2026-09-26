@@ -10,7 +10,9 @@ public sealed class MatrixDetail
     public string CognitiveLevel { get; set; } = string.Empty;
     public string QuestionType { get; set; } = string.Empty;
     public uint QuestionCount { get; set; }
-    public decimal AllocatedScore { get; set; }
+    // Tỷ lệ % điểm của dòng này trong tổng điểm ma trận (0, 100]. Điểm ô = ExamMatrix.TotalScore *
+    // Percentage / 100 — suy ra, không lưu ở đây.
+    public decimal Percentage { get; set; }
 
     public ExamMatrix ExamMatrix { get; set; } = null!;
     public TextbookLesson Lesson { get; set; } = null!;

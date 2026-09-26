@@ -9,10 +9,15 @@ public sealed class ExamMatrixConfiguration : IEntityTypeConfiguration<ExamMatri
 {
     public void Configure(EntityTypeBuilder<ExamMatrix> builder)
     {
-        builder.ToTable("exam_matrices");
+        builder.ToTable("exam_matrices", table =>
+        {
+            table.HasCheckConstraint("ck_exam_matrices_total_score", "total_score > 0");
+        });
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(255).IsRequired();
+        // Số nguyên dương do người lập tự đặt; điểm mỗi ô = total_score * matrix_details.percentage / 100.
+        builder.Property(x => x.TotalScore).HasColumnName("total_score").HasColumnType("int unsigned").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).IsRequired();
         builder.Property(x => x.TaskId).HasColumnName("task_id").HasColumnType("bigint unsigned");
         builder.Property(x => x.SemesterId).HasColumnName("semester_id").HasColumnType("bigint unsigned");
@@ -20,6 +25,12 @@ public sealed class ExamMatrixConfiguration : IEntityTypeConfiguration<ExamMatri
         builder.Property(x => x.RejectComment).HasColumnName("reject_comment").HasMaxLength(1000);
         builder.Property(x => x.RejectedByUserId).HasColumnName("rejected_by_user_id").HasColumnType("bigint unsigned");
         builder.Property(x => x.RejectedAt).HasColumnName("rejected_at").HasColumnType("datetime(6)");
+        builder.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("datetime(6)").IsRequired();
+        builder.Property(x => x.ApprovedByUserId).HasColumnName("approved_by_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.ApprovedAt).HasColumnName("approved_at").HasColumnType("datetime(6)");
+        builder.HasIndex(x => x.CreatedByUserId).HasDatabaseName("idx_exam_matrices_creator");
+        builder.HasIndex(x => x.ApprovedByUserId).HasDatabaseName("idx_exam_matrices_approver");
         builder.HasIndex(x => x.TaskId).IsUnique().HasDatabaseName("uq_exam_matrices_task");
         builder.HasIndex(x => x.RejectedByUserId).HasDatabaseName("idx_exam_matrices_rejecter");
         builder.HasIndex(x => x.AcademicContextId).HasDatabaseName("idx_exam_matrices_context");
@@ -32,6 +43,12 @@ public sealed class ExamMatrixConfiguration : IEntityTypeConfiguration<ExamMatri
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<User>().WithMany()
             .HasForeignKey(x => x.RejectedByUserId).HasConstraintName("fk_exam_matrices_rejecter")
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<User>().WithMany()
+            .HasForeignKey(x => x.CreatedByUserId).HasConstraintName("fk_exam_matrices_creator")
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<User>().WithMany()
+            .HasForeignKey(x => x.ApprovedByUserId).HasConstraintName("fk_exam_matrices_approver")
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.AcademicContext).WithMany()
             .HasForeignKey(x => x.AcademicContextId).HasConstraintName("fk_exam_matrices_context")

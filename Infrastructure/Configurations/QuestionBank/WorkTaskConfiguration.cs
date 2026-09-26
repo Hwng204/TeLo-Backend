@@ -16,6 +16,7 @@ public sealed class WorkTaskConfiguration : IEntityTypeConfiguration<WorkTask>
         builder.Property(x => x.AssignedToUserId).HasColumnName("assigned_to_user_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.DueAt).HasColumnName("due_at").HasColumnType("datetime(6)");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).IsRequired();
+        builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(255);
         builder.Property(x => x.Description).HasColumnName("description").HasColumnType("text");
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("datetime(6)")
             .HasDefaultValueSql("CURRENT_TIMESTAMP(6)").IsRequired();

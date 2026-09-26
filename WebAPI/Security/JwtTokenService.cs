@@ -28,7 +28,8 @@ public sealed class JwtTokenService(
         {
             new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
             new(JwtRegisteredClaimNames.Sub, user.UserId.ToString()),
-            new(ClaimTypes.Name, user.Username)
+            new(ClaimTypes.Name, user.Username),
+            new("security_version", user.SecurityVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
 
         if (user.BranchId is not null)
@@ -36,7 +37,7 @@ public sealed class JwtTokenService(
             claims.Add(new Claim(MatrixClaims.BranchId, user.BranchId.Value.ToString()));
         }
 
-        claims.AddRange(user.RoleCodes.Select(role => new Claim(ClaimTypes.Role, role)));
+        claims.AddRange(user.RoleCodes.Select(role => new Claim("role", role)));
 
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(settings.SigningKey)),

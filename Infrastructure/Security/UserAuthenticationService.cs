@@ -9,6 +9,17 @@ public sealed class UserAuthenticationService(
     ApplicationDbContext db,
     IPasswordHasher<User> passwordHasher) : IUserAuthenticationService
 {
+    // Operational admins without a teacher profile do not need an assigned branch.
+    // A teacher cannot log in or keep using a token after their employing unit is disabled.
+    private IQueryable<User> ActiveUsers() => db.Users.AsNoTracking().Where(user =>
+        user.Status == "ACTIVE" && (!user.Teachers.Any() ||
+            (user.SchoolBranch != null && user.SchoolBranch.Status == "ACTIVE" &&
+             user.SchoolBranch.School.Status == "ACTIVE" &&
+             !user.Teachers.Any(teacher => teacher.EmploymentStatus == "RESIGNED" || teacher.EmploymentStatus == "INACTIVE"))));
+
+    public Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, CancellationToken cancellationToken) =>
+        ActiveUsers().AnyAsync(user => user.Id == userId && user.SecurityVersion == securityVersion, cancellationToken);
+
     public async Task<AuthenticatedUser?> AuthenticateAsync(
         LoginRequest request,
         CancellationToken cancellationToken)
@@ -21,12 +32,11 @@ public sealed class UserAuthenticationService(
         }
 
         var username = request.Username.Trim();
-        var user = await db.Users
-            .AsNoTracking()
+        var user = await ActiveUsers()
             .Include(item => item.UserRoles)
                 .ThenInclude(item => item.Role)
             .SingleOrDefaultAsync(
-                item => item.Username == username && item.Status == "ACTIVE",
+                item => item.Username == username,
                 cancellationToken);
 
         if (user is null)
@@ -34,10 +44,16 @@ public sealed class UserAuthenticationService(
             return null;
         }
 
-        var passwordResult = passwordHasher.VerifyHashedPassword(
-            user,
-            user.PasswordHash,
-            request.Password);
+        PasswordVerificationResult passwordResult;
+        try
+        {
+            passwordResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        }
+        catch (FormatException)
+        {
+            // Legacy/corrupt password data is not a valid credential and must not produce a 500.
+            return null;
+        }
         if (passwordResult is PasswordVerificationResult.Failed)
         {
             return null;
@@ -48,6 +64,6 @@ public sealed class UserAuthenticationService(
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        return new AuthenticatedUser(user.Id, user.Username, roleCodes, user.SchoolBranchId);
+        return new AuthenticatedUser(user.Id, user.Username, roleCodes, user.SchoolBranchId, user.SecurityVersion);
     }
 }

@@ -3,6 +3,7 @@ using Application.Common;
 using Application.Services.Implement;
 using Infrastructure.Repositories.Interface;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace WebAPI.Controllers;
 
@@ -19,7 +20,18 @@ public abstract class SchoolDirectoryControllerBase : ControllerBase
         ulong.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0;
 
     // School routes never accept a schoolId: the scope comes from the signed-in user's branch.
-    protected DirectoryScope ActorScope => DirectoryScope.FromActor(ActorUserId);
+    protected DirectoryScope ActorScope => DirectoryScope.FromActor(ActorUserId, IsHomeroomOnly());
+
+    // A user whose every role is a teacher role only sees the class they lead. Anyone who also holds
+    // a school-wide role (principal, vice principal, team lead) keeps the whole-school view.
+    private bool IsHomeroomOnly()
+    {
+        var homeroomRoles = HttpContext.RequestServices.GetRequiredService<IConfiguration>()
+            .GetSection("SchoolDirectoryAuth:HomeroomOnlyRoleCodes").Get<string[]>()
+            ?? ["GIAO_VIEN", "TEACHER"];
+        var roles = User.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray();
+        return roles.Length > 0 && roles.All(role => homeroomRoles.Contains(role, StringComparer.OrdinalIgnoreCase));
+    }
 
     protected IActionResult ToActionResult<T>(ServiceResult<T> result)
     {

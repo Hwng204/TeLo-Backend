@@ -102,7 +102,8 @@ public sealed record ClassStudentItem(
     DateOnly? DateOfBirth,
     string? Gender,
     string ClassName,
-    string StudentStatus);
+    string StudentStatus,
+    string EnrollmentStatus);
 
 public sealed record ClassDetailDto(
     ClassListItem Class,

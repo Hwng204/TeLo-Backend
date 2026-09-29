@@ -23,7 +23,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
 
         var target = await FindClassInSchoolAsync(
             command.SchoolId, command.SchoolClassId, cancellationToken);
-        if (target is null)
+        if (target is null || target.Status != SchoolClassStatusCodes.Active)
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
@@ -92,7 +92,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         {
             var target = await FindClassInSchoolAsync(
                 command.SchoolId, schoolClassId, cancellationToken);
-            if (target is null)
+            if (target is null || target.Status != SchoolClassStatusCodes.Active)
             {
                 return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
             }
@@ -215,7 +215,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         }
 
         var teacher = await ResolveHomeroomTeacherAsync(
-            command.SchoolId, command.HomeroomTeacherId, null, cancellationToken);
+            command.SchoolId, HomeroomOf(command.Status, command.HomeroomTeacherId), null, cancellationToken);
         if (teacher.Status is not DirectoryWriteStatus.Success)
         {
             return DirectoryWriteResult<ulong>.Fail(teacher.Status);
@@ -228,6 +228,11 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassCode);
+        }
+
+        if (await NameTakenAsync(command.SchoolBranchId, command.AcademicYearId, command.Name, null, cancellationToken))
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassName);
         }
 
         var schoolClass = new SchoolClass
@@ -306,8 +311,22 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassCode);
         }
 
+        if (await NameTakenAsync(command.SchoolBranchId, command.AcademicYearId, command.Name, schoolClass.Id, cancellationToken))
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassName);
+        }
+
+        // Switching a class off through the edit form must obey the same rule as the delete button.
+        if (command.Status == SchoolClassStatusCodes.Inactive &&
+            schoolClass.Status != SchoolClassStatusCodes.Inactive &&
+            await HasActiveStudentsAsync(schoolClass.Id, cancellationToken))
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassHasActiveStudents);
+        }
+
+        var homeroomTeacherId = HomeroomOf(command.Status, command.HomeroomTeacherId);
         var teacher = await ResolveHomeroomTeacherAsync(
-            command.SchoolId, command.HomeroomTeacherId, schoolClass.Id, cancellationToken);
+            command.SchoolId, homeroomTeacherId, schoolClass.Id, cancellationToken);
         if (teacher.Status is not DirectoryWriteStatus.Success)
         {
             return DirectoryWriteResult<ulong>.Fail(teacher.Status);
@@ -325,7 +344,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         // teachers.class_id is unique, so the outgoing homeroom teacher is cleared in its own save.
         var current = await db.Teachers
             .FirstOrDefaultAsync(t => t.ClassId == schoolClass.Id, cancellationToken);
-        if (current is not null && current.Id != command.HomeroomTeacherId)
+        if (current is not null && current.Id != homeroomTeacherId)
         {
             current.ClassId = null;
             var cleared = await SaveAsync(
@@ -363,18 +382,44 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
 
-        if (await db.StudentEnrollments.AnyAsync(
-            e => e.SchoolClassId == classId &&
-                e.Status == StudentEnrollmentStatusCodes.Active,
-            cancellationToken))
+        if (await HasActiveStudentsAsync(classId, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassHasActiveStudents);
         }
 
         schoolClass.Status = SchoolClassStatusCodes.Inactive;
+        // Otherwise the teacher stays bound to a dead class and can never be given another one.
+        var homeroomTeacher = await db.Teachers
+            .FirstOrDefaultAsync(t => t.ClassId == classId, cancellationToken);
+        if (homeroomTeacher is not null)
+        {
+            homeroomTeacher.ClassId = null;
+        }
+
         return await SaveAsync(
             () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassCode, cancellationToken);
     }
+
+    // An inactive class keeps no homeroom teacher, so saving one never locks a teacher up.
+    private static ulong? HomeroomOf(string classStatus, ulong? teacherId) =>
+        classStatus == SchoolClassStatusCodes.Inactive ? null : teacherId;
+
+    private Task<bool> HasActiveStudentsAsync(ulong classId, CancellationToken cancellationToken) =>
+        db.StudentEnrollments.AnyAsync(
+            e => e.SchoolClassId == classId && e.Status == StudentEnrollmentStatusCodes.Active,
+            cancellationToken);
+
+    // uq_classes_branch_year_name: checked up front so the error names the field, not the code.
+    private Task<bool> NameTakenAsync(
+        ulong branchId,
+        ulong yearId,
+        string name,
+        ulong? exceptClassId,
+        CancellationToken cancellationToken) =>
+        db.SchoolClasses.AnyAsync(
+            c => c.SchoolBranchId == branchId && c.AcademicYearId == yearId && c.Name == name &&
+                c.Id != exceptClassId,
+            cancellationToken);
 
     private Task<bool> SchoolExistsAsync(ulong schoolId, CancellationToken cancellationToken) =>
         db.Schools.AsNoTracking().AnyAsync(s => s.Id == schoolId, cancellationToken);

@@ -10,7 +10,8 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
 {
     private const string ActiveYear = "ACTIVE";
 
-    private sealed record ResolvedScope(ulong SchoolId, string? ProvinceCode);
+    // HomeroomClassIds set = a teacher limited to the classes they lead (empty when they lead none).
+    private sealed record ResolvedScope(ulong SchoolId, string? ProvinceCode, ulong[]? HomeroomClassIds = null);
 
     private sealed record ClassProjection(
         ulong Id,
@@ -38,6 +39,10 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         var schoolId = scope.SchoolId;
         var students = db.Students.AsNoTracking()
             .Where(s => s.Enrollments.Any(e => e.SchoolClass.SchoolBranch.SchoolId == schoolId));
+        if (scope.HomeroomClassIds is { } homeroomIds)
+        {
+            students = students.Where(s => s.Enrollments.Any(e => homeroomIds.Contains(e.SchoolClassId)));
+        }
 
         // Class/grade/branch filters apply to the current (active-year) enrollment inside this school.
         if (filter.ClassId is not null || filter.GradeLevelId is not null || filter.SchoolBranchId is not null)
@@ -126,9 +131,11 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         }
 
         var schoolId = scope.SchoolId;
+        var homeroomIds = scope.HomeroomClassIds;
         var student = await db.Students.AsNoTracking()
             .Where(s => s.Id == studentId &&
-                s.Enrollments.Any(e => e.SchoolClass.SchoolBranch.SchoolId == schoolId))
+                s.Enrollments.Any(e => e.SchoolClass.SchoolBranch.SchoolId == schoolId) &&
+                (homeroomIds == null || s.Enrollments.Any(e => homeroomIds.Contains(e.SchoolClassId))))
             .Select(s => new
             {
                 s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.AdmissionDate, s.Status
@@ -189,6 +196,14 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         }
 
         var schoolId = scope.SchoolId;
+        // A teacher sees the scores (of any class in the history) only for students of their own class.
+        if (scope.HomeroomClassIds is { } homeroomIds &&
+            !await db.StudentEnrollments.AsNoTracking().AnyAsync(
+                e => e.StudentId == studentId && homeroomIds.Contains(e.SchoolClassId), cancellationToken))
+        {
+            return DirectoryReadResult<DirectoryRowsPage<StudentScoreRow>>.Fail(DirectoryReadStatus.NotFound);
+        }
+
         // One lookup proves the student, the class and the enrollment linking them are all in scope.
         var enrolled = await db.StudentEnrollments.AsNoTracking()
             .Where(e => e.StudentId == studentId && e.SchoolClassId == classId &&
@@ -268,6 +283,10 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         var yearId = academicYearId.Value;
         var classes = db.SchoolClasses.AsNoTracking()
             .Where(c => c.SchoolBranch.SchoolId == schoolId && c.AcademicYearId == yearId);
+        if (scope.HomeroomClassIds is { } homeroomIds)
+        {
+            classes = classes.Where(c => homeroomIds.Contains(c.Id));
+        }
 
         if (filter.GradeLevelId is { } gradeId)
         {
@@ -318,6 +337,11 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         }
 
         var schoolId = scope.SchoolId;
+        if (scope.HomeroomClassIds is { } homeroomIds && !homeroomIds.Contains(classId))
+        {
+            return DirectoryReadResult<ClassDetailRow>.Fail(DirectoryReadStatus.NotFound);
+        }
+
         var projection = await Project(db.SchoolClasses.AsNoTracking()
                 .Where(c => c.Id == classId && c.SchoolBranch.SchoolId == schoolId))
             .SingleOrDefaultAsync(cancellationToken);
@@ -334,7 +358,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .Skip((rosterPage - 1) * rosterPageSize).Take(rosterPageSize)
             .Select(e => new ClassStudentRow(
                 e.StudentId, e.Student.Code, e.Student.FullName, e.Student.DateOfBirth,
-                e.Student.Gender, e.SchoolClass.Name, e.Student.Status))
+                e.Student.Gender, e.SchoolClass.Name, e.Student.Status, e.Status))
             .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<ClassDetailRow>.Ok(new ClassDetailRow(
@@ -356,11 +380,23 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         var schoolId = scope.SchoolId;
         var schoolClasses = db.SchoolClasses.AsNoTracking()
             .Where(c => c.SchoolBranch.SchoolId == schoolId);
+        if (scope.HomeroomClassIds is { } homeroomIds)
+        {
+            schoolClasses = schoolClasses.Where(c => homeroomIds.Contains(c.Id));
+        }
+
+        // School side filters only offer grades/years that have classes. The admin form creates
+        // classes, so it needs every grade and year, or a new school / a new year has nothing to pick.
+        var forAdmin = requestedScope.SchoolId is not null;
         var yearId = academicYearId ?? await ResolveActiveYearIdAsync(scope, cancellationToken);
         var enrolled = db.StudentEnrollments.AsNoTracking().Where(e =>
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
             e.SchoolClass.AcademicYearId == yearId &&
             e.Status == StudentEnrollmentStatusCodes.Active);
+        if (scope.HomeroomClassIds is { } leadIds)
+        {
+            enrolled = enrolled.Where(e => leadIds.Contains(e.SchoolClassId));
+        }
 
         var branches = await db.SchoolBranches.AsNoTracking()
             .Where(b => b.SchoolId == schoolId)
@@ -371,20 +407,22 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 enrolled.Count(e => e.SchoolClass.SchoolBranchId == b.Id)))
             .ToListAsync(cancellationToken);
         var grades = await db.GradeLevels.AsNoTracking()
-            .Where(g => g.Status == "ACTIVE" && schoolClasses.Any(c => c.GradeLevelId == g.Id))
+            .Where(g => g.Status == "ACTIVE" && (forAdmin || schoolClasses.Any(c => c.GradeLevelId == g.Id)))
             .OrderBy(g => g.Name).ThenBy(g => g.Id)
             .Select(g => new DirectoryOptionRow(g.Id, null, g.Name))
             .ToListAsync(cancellationToken);
         var years = await db.AcademicYears.AsNoTracking()
-            .Where(y => schoolClasses.Any(c => c.AcademicYearId == y.Id))
+            .Where(y => forAdmin || schoolClasses.Any(c => c.AcademicYearId == y.Id))
             .OrderByDescending(y => y.StartDate).ThenByDescending(y => y.Id)
             .Select(y => new DirectoryOptionRow(y.Id, y.Code, y.Name))
             .ToListAsync(cancellationToken);
 
         var classes = yearId is null
             ? new List<DirectoryOptionRow>()
+            // Only live classes: this list feeds the class filter, the transfer dialog and the
+            // "add student" form, and none of them may target a deactivated class.
             : await schoolClasses
-                .Where(c => c.AcademicYearId == yearId)
+                .Where(c => c.AcademicYearId == yearId && c.Status == SchoolClassStatusCodes.Active)
                 .OrderBy(c => c.GradeLevel.Name).ThenBy(c => c.Name).ThenBy(c => c.Id)
                 .Select(c => new DirectoryOptionRow(c.Id, c.Code, c.Name))
                 .ToListAsync(cancellationToken);
@@ -402,7 +440,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         {
             var school = await db.Schools.AsNoTracking()
                 .Where(s => s.Id == schoolId)
-                .Select(s => new ResolvedScope(s.Id, s.ProvinceCode))
+                .Select(s => new ResolvedScope(s.Id, s.ProvinceCode, null))
                 .SingleOrDefaultAsync(cancellationToken);
             return school is null
                 ? (DirectoryReadStatus.SchoolNotFound, null)
@@ -428,9 +466,22 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             return (DirectoryReadStatus.ActorNotFound, null);
         }
 
-        return actor.SchoolId is { } actorSchoolId
-            ? (DirectoryReadStatus.Success, new ResolvedScope(actorSchoolId, actor.ProvinceCode))
-            : (DirectoryReadStatus.SchoolScopeMissing, null);
+        if (actor.SchoolId is not { } actorSchoolId)
+        {
+            return (DirectoryReadStatus.SchoolScopeMissing, null);
+        }
+
+        ulong[]? homeroomClassIds = null;
+        if (requested.HomeroomOnly)
+        {
+            homeroomClassIds = await db.Teachers.AsNoTracking()
+                .Where(t => t.UserId == actorUserId && t.ClassId != null)
+                .Select(t => t.ClassId!.Value)
+                .ToArrayAsync(cancellationToken);
+        }
+
+        return (DirectoryReadStatus.Success,
+            new ResolvedScope(actorSchoolId, actor.ProvinceCode, homeroomClassIds));
     }
 
     private Task<ulong?> ResolveActiveYearIdAsync(

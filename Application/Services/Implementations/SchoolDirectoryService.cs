@@ -204,7 +204,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
 
         var students = detail.Students.Items.Select(s => new ClassStudentItem(
             s.StudentId, s.StudentCode, s.FullName, s.DateOfBirth, s.Gender,
-            s.ClassName, s.StudentStatus)).ToList();
+            s.ClassName, s.StudentStatus, s.EnrollmentStatus)).ToList();
         return ServiceResult<ClassDetailDto>.Success(new ClassDetailDto(
             ToItem(detail.Class),
             new DirectoryPage<ClassStudentItem>(

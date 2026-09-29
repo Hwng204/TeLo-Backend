@@ -356,11 +356,19 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         var schoolId = scope.SchoolId;
         var schoolClasses = db.SchoolClasses.AsNoTracking()
             .Where(c => c.SchoolBranch.SchoolId == schoolId);
+        var yearId = academicYearId ?? await ResolveActiveYearIdAsync(scope, cancellationToken);
+        var enrolled = db.StudentEnrollments.AsNoTracking().Where(e =>
+            e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
+            e.SchoolClass.AcademicYearId == yearId &&
+            e.Status == StudentEnrollmentStatusCodes.Active);
 
         var branches = await db.SchoolBranches.AsNoTracking()
-            .Where(b => b.SchoolId == schoolId && b.Status == "ACTIVE")
-            .OrderBy(b => b.Name).ThenBy(b => b.Id)
-            .Select(b => new DirectoryOptionRow(b.Id, b.Code, b.Name))
+            .Where(b => b.SchoolId == schoolId)
+            .OrderBy(b => b.Status == "ACTIVE" ? 0 : 1).ThenBy(b => b.Name).ThenBy(b => b.Id)
+            .Select(b => new DirectoryBranchRow(
+                b.Id, b.Code, b.Name, b.Status,
+                schoolClasses.Count(c => c.SchoolBranchId == b.Id && c.AcademicYearId == yearId),
+                enrolled.Count(e => e.SchoolClass.SchoolBranchId == b.Id)))
             .ToListAsync(cancellationToken);
         var grades = await db.GradeLevels.AsNoTracking()
             .Where(g => g.Status == "ACTIVE" && schoolClasses.Any(c => c.GradeLevelId == g.Id))
@@ -373,7 +381,6 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .Select(y => new DirectoryOptionRow(y.Id, y.Code, y.Name))
             .ToListAsync(cancellationToken);
 
-        var yearId = academicYearId ?? await ResolveActiveYearIdAsync(scope, cancellationToken);
         var classes = yearId is null
             ? new List<DirectoryOptionRow>()
             : await schoolClasses

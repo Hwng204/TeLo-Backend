@@ -101,8 +101,9 @@ public sealed class SchoolDirectoryAdminService(
         CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
+        // The UI no longer asks for a class code: default it to the class name (unique per branch and year).
         var name = Required(request.Name, "name", 100, errors);
+        var code = OptionalCode(request.Code, name, errors);
         var status = Status(
             request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
@@ -128,8 +129,9 @@ public sealed class SchoolDirectoryAdminService(
         CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
+        // Blank code means "keep the stored one" (the repository treats an empty code as unchanged).
         var name = Required(request.Name, "name", 100, errors);
+        var code = OptionalCode(request.Code, string.Empty, errors);
         var status = Status(
             request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
@@ -181,6 +183,17 @@ public sealed class SchoolDirectoryAdminService(
     {
         var trimmed = value?.Trim();
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
+    }
+
+    private static string OptionalCode(string? value, string fallback, Dictionary<string, string[]> errors)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length > 64)
+        {
+            errors["code"] = ["Giá trị tối đa 64 ký tự."];
+        }
+
+        return trimmed.Length == 0 ? fallback : trimmed;
     }
 
     private static string Required(

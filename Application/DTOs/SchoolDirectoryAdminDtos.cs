@@ -22,8 +22,8 @@ public sealed record UpdateStudentRequest(
 
 public sealed record CreateClassRequest(
     ulong SchoolBranchId,
-    string Code,
-    string Name,
+    string? Code,
+    string? Name,
     ulong AcademicYearId,
     ulong GradeLevelId,
     string? Status,
@@ -31,8 +31,8 @@ public sealed record CreateClassRequest(
 
 public sealed record UpdateClassRequest(
     ulong SchoolBranchId,
-    string Code,
-    string Name,
+    string? Code,
+    string? Name,
     ulong AcademicYearId,
     ulong GradeLevelId,
     string? Status,

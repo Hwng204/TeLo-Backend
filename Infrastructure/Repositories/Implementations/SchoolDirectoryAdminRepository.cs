@@ -292,13 +292,14 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.AcademicYearInvalid);
         }
 
-        if ((schoolClass.Code != command.Code ||
+        var code = string.IsNullOrEmpty(command.Code) ? schoolClass.Code : command.Code;
+        if ((schoolClass.Code != code ||
                 schoolClass.SchoolBranchId != command.SchoolBranchId ||
                 schoolClass.AcademicYearId != command.AcademicYearId) &&
             await db.SchoolClasses.AnyAsync(
                 c => c.SchoolBranchId == command.SchoolBranchId &&
                     c.AcademicYearId == command.AcademicYearId &&
-                    c.Code == command.Code &&
+                    c.Code == code &&
                     c.Id != schoolClass.Id,
                 cancellationToken))
         {
@@ -313,7 +314,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         }
 
         schoolClass.SchoolBranchId = command.SchoolBranchId;
-        schoolClass.Code = command.Code;
+        schoolClass.Code = code;
         schoolClass.Name = command.Name;
         schoolClass.AcademicYearId = command.AcademicYearId;
         schoolClass.GradeLevelId = command.GradeLevelId;

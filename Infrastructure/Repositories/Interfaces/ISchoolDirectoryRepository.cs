@@ -130,8 +130,13 @@ public sealed record ClassDetailRow(
 
 public sealed record DirectoryOptionRow(ulong Id, string? Code, string Name);
 
+// Branch option for the filter dropdown: inactive branches are listed too (their old classes still
+// exist), with the number of classes and enrolled students in the resolved academic year.
+public sealed record DirectoryBranchRow(
+    ulong Id, string? Code, string Name, string Status, int ClassCount, int StudentCount);
+
 public sealed record DirectoryReferenceRows(
-    IReadOnlyList<DirectoryOptionRow> SchoolBranches,
+    IReadOnlyList<DirectoryBranchRow> SchoolBranches,
     IReadOnlyList<DirectoryOptionRow> GradeLevels,
     IReadOnlyList<DirectoryOptionRow> AcademicYears,
     IReadOnlyList<DirectoryOptionRow> Classes);

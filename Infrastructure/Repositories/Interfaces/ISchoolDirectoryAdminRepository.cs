@@ -11,6 +11,7 @@ public enum DirectoryWriteStatus
     GradeLevelNotFound,
     DuplicateStudentCode,
     DuplicateClassCode,
+    DuplicateClassName,
     TeacherNotInSchool,
     TeacherAlreadyHomeroom,
     ClassHasActiveStudents,

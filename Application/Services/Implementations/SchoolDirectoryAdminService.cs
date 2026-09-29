@@ -22,6 +22,7 @@ public sealed class SchoolDirectoryAdminService(
         var code = Required(request.Code, "code", 64, errors);
         var fullName = Required(request.FullName, "fullName", 255, errors);
         var status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
+        var admissionDate = StudentDates(request.DateOfBirth, request.AdmissionDate, errors);
         RequireId(request.SchoolClassId, "schoolClassId", errors);
         if (errors.Count > 0)
         {
@@ -31,7 +32,7 @@ public sealed class SchoolDirectoryAdminService(
         var created = await repository.CreateStudentAsync(
             new CreateStudentCommand(
                 schoolId, code, fullName, request.DateOfBirth, Trim(request.Gender),
-                request.AdmissionDate, status, request.SchoolClassId),
+                admissionDate, status, request.SchoolClassId),
             cancellationToken);
         return await StudentResultAsync(schoolId, created, cancellationToken);
     }
@@ -46,6 +47,7 @@ public sealed class SchoolDirectoryAdminService(
         var code = Required(request.Code, "code", 64, errors);
         var fullName = Required(request.FullName, "fullName", 255, errors);
         var status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
+        var admissionDate = StudentDates(request.DateOfBirth, request.AdmissionDate, errors);
         if (request.SchoolClassId == 0)
         {
             errors["schoolClassId"] = ["Lớp học không hợp lệ."];
@@ -59,7 +61,7 @@ public sealed class SchoolDirectoryAdminService(
         var updated = await repository.UpdateStudentAsync(
             new UpdateStudentCommand(
                 schoolId, studentId, code, fullName, request.DateOfBirth, Trim(request.Gender),
-                request.AdmissionDate, status, request.SchoolClassId),
+                admissionDate, status, request.SchoolClassId),
             cancellationToken);
         return await StudentResultAsync(schoolId, updated, cancellationToken);
     }
@@ -101,8 +103,9 @@ public sealed class SchoolDirectoryAdminService(
         CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
+        // The UI no longer asks for a class code: default it to the class name (unique per branch and year).
         var name = Required(request.Name, "name", 100, errors);
+        var code = OptionalCode(request.Code, name, errors);
         var status = Status(
             request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
@@ -128,8 +131,9 @@ public sealed class SchoolDirectoryAdminService(
         CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
+        // Blank code means "keep the stored one" (the repository treats an empty code as unchanged).
         var name = Required(request.Name, "name", 100, errors);
+        var code = OptionalCode(request.Code, string.Empty, errors);
         var status = Status(
             request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
@@ -183,6 +187,17 @@ public sealed class SchoolDirectoryAdminService(
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
+    private static string OptionalCode(string? value, string fallback, Dictionary<string, string[]> errors)
+    {
+        var trimmed = value?.Trim() ?? string.Empty;
+        if (trimmed.Length > 64)
+        {
+            errors["code"] = ["Giá trị tối đa 64 ký tự."];
+        }
+
+        return trimmed.Length == 0 ? fallback : trimmed;
+    }
+
     private static string Required(
         string? value,
         string field,
@@ -222,6 +237,24 @@ public sealed class SchoolDirectoryAdminService(
         return trimmed;
     }
 
+    // A missing admission date used to bind as 0001-01-01 and be stored as is.
+    private static DateOnly StudentDates(
+        DateOnly? dateOfBirth,
+        DateOnly? admissionDate,
+        Dictionary<string, string[]> errors)
+    {
+        if (admissionDate is null)
+        {
+            errors["admissionDate"] = ["Giá trị là bắt buộc."];
+        }
+        else if (dateOfBirth > admissionDate)
+        {
+            errors["dateOfBirth"] = ["Ngày sinh phải trước ngày vào trường."];
+        }
+
+        return admissionDate ?? default;
+    }
+
     private static void RequireId(ulong value, string field, Dictionary<string, string[]> errors)
     {
         if (value == 0)
@@ -249,6 +282,10 @@ public sealed class SchoolDirectoryAdminService(
         DirectoryWriteStatus.DuplicateClassCode => ServiceResult<T>.Failure(
             SchoolDirectoryErrorCodes.ClassCodeDuplicate,
             "Mã lớp đã tồn tại trong cơ sở và năm học này."),
+        DirectoryWriteStatus.DuplicateClassName => Field<T>(
+            "name", "Tên lớp đã tồn tại trong cơ sở và năm học này."),
+        DirectoryWriteStatus.TeacherNotInSchool => Field<T>(
+            "homeroomTeacherId", "Giáo viên không thuộc trường này."),
         DirectoryWriteStatus.TeacherAlreadyHomeroom => ServiceResult<T>.Failure(
             SchoolDirectoryErrorCodes.TeacherAlreadyHomeroom,
             "Giáo viên đang chủ nhiệm một lớp khác."),
@@ -267,7 +304,9 @@ public sealed class SchoolDirectoryAdminService(
             "Học sinh đã có lớp trong năm học này. Dùng chức năng chuyển lớp để đổi lớp."),
         DirectoryWriteStatus.InvalidEffectiveDate => Field<T>(
             "effectiveOn", "Ngày chuyển không được trước ngày bắt đầu học lớp hiện tại."),
-        _ => Field<T>("gradeLevelId", "Khối lớp không tồn tại.")
+        DirectoryWriteStatus.GradeLevelNotFound => Field<T>("gradeLevelId", "Khối lớp không tồn tại."),
+        // An unmapped status must not fall into some other field's message again.
+        _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };
 
     private static ServiceResult<T> Field<T>(string field, string message) =>

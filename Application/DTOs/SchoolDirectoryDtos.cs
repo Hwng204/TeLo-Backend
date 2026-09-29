@@ -102,7 +102,8 @@ public sealed record ClassStudentItem(
     DateOnly? DateOfBirth,
     string? Gender,
     string ClassName,
-    string StudentStatus);
+    string StudentStatus,
+    string EnrollmentStatus);
 
 public sealed record ClassDetailDto(
     ClassListItem Class,
@@ -110,8 +111,11 @@ public sealed record ClassDetailDto(
 
 public sealed record DirectoryOption(ulong Id, string? Code, string Name);
 
+public sealed record DirectoryBranchOption(
+    ulong Id, string? Code, string Name, string Status, int ClassCount, int StudentCount);
+
 public sealed record SchoolDirectoryReferenceData(
-    IReadOnlyList<DirectoryOption> SchoolBranches,
+    IReadOnlyList<DirectoryBranchOption> SchoolBranches,
     IReadOnlyList<DirectoryOption> GradeLevels,
     IReadOnlyList<DirectoryOption> AcademicYears,
     IReadOnlyList<DirectoryOption> Classes,

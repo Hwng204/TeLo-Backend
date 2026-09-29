@@ -204,7 +204,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
 
         var students = detail.Students.Items.Select(s => new ClassStudentItem(
             s.StudentId, s.StudentCode, s.FullName, s.DateOfBirth, s.Gender,
-            s.ClassName, s.StudentStatus)).ToList();
+            s.ClassName, s.StudentStatus, s.EnrollmentStatus)).ToList();
         return ServiceResult<ClassDetailDto>.Success(new ClassDetailDto(
             ToItem(detail.Class),
             new DirectoryPage<ClassStudentItem>(
@@ -236,7 +236,9 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
             source.Select(o => new DirectoryOption(o.Id, o.Code, o.Name)).ToList();
 
         return ServiceResult<SchoolDirectoryReferenceData>.Success(new SchoolDirectoryReferenceData(
-            Options(rows.SchoolBranches), Options(rows.GradeLevels),
+            rows.SchoolBranches.Select(b => new DirectoryBranchOption(
+                b.Id, b.Code, b.Name, b.Status, b.ClassCount, b.StudentCount)).ToList(),
+            Options(rows.GradeLevels),
             Options(rows.AcademicYears), Options(rows.Classes),
             StudentStatusCodes.All, SchoolClassStatusCodes.All));
     }

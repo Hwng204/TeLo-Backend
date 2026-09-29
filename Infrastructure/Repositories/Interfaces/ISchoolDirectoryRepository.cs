@@ -2,9 +2,11 @@ namespace Infrastructure.Repositories.Interface;
 
 // School scope of a directory request. SchoolId set means an admin picked the school explicitly in
 // the route; null means the school is derived from the signed-in actor's branch.
-public sealed record DirectoryScope(ulong? ActorUserId, ulong? SchoolId)
+// HomeroomOnly narrows a school-side actor (a plain teacher) to the class they lead and its students.
+public sealed record DirectoryScope(ulong? ActorUserId, ulong? SchoolId, bool HomeroomOnly = false)
 {
-    public static DirectoryScope FromActor(ulong actorUserId) => new(actorUserId, null);
+    public static DirectoryScope FromActor(ulong actorUserId, bool homeroomOnly = false) =>
+        new(actorUserId, null, homeroomOnly);
 
     public static DirectoryScope ForSchool(ulong schoolId) => new(null, schoolId);
 }
@@ -122,7 +124,10 @@ public sealed record ClassStudentRow(
     DateOnly? DateOfBirth,
     string? Gender,
     string ClassName,
-    string StudentStatus);
+    string StudentStatus,
+    // The student's enrollment in this class: a transferred-out student is no longer studying here
+    // even though the profile itself is still ACTIVE.
+    string EnrollmentStatus);
 
 public sealed record ClassDetailRow(
     ClassDirectoryRow Class,
@@ -130,8 +135,13 @@ public sealed record ClassDetailRow(
 
 public sealed record DirectoryOptionRow(ulong Id, string? Code, string Name);
 
+// Branch option for the filter dropdown: inactive branches are listed too (their old classes still
+// exist), with the number of classes and enrolled students in the resolved academic year.
+public sealed record DirectoryBranchRow(
+    ulong Id, string? Code, string Name, string Status, int ClassCount, int StudentCount);
+
 public sealed record DirectoryReferenceRows(
-    IReadOnlyList<DirectoryOptionRow> SchoolBranches,
+    IReadOnlyList<DirectoryBranchRow> SchoolBranches,
     IReadOnlyList<DirectoryOptionRow> GradeLevels,
     IReadOnlyList<DirectoryOptionRow> AcademicYears,
     IReadOnlyList<DirectoryOptionRow> Classes);

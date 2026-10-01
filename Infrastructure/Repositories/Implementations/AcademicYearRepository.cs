@@ -1,3 +1,4 @@
+using System.Data;
 using Domain.Entities.Academic;
 using Infrastructure.Context;
 using Infrastructure.Repositories.Interface;
@@ -12,26 +13,21 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         AcademicYear academicYear,
         CancellationToken cancellationToken)
     {
-        var hasConflict = await context.AcademicYears.AsNoTracking().AnyAsync(
-            year => year.Name == academicYear.Name ||
-                    (year.StartDate <= academicYear.EndDate &&
-                     academicYear.StartDate <= year.EndDate),
-            cancellationToken);
-
-        if (hasConflict)
-        {
-            return AcademicYearCreateOutcome.Conflict;
-        }
-
-        context.AcademicYears.Add(academicYear);
-
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            // The conflict read and insert share range locks, including overlapping years with different names.
+            if (await context.AcademicYears.AsNoTracking().AnyAsync(
+                year => year.Name == academicYear.Name ||
+                    (year.StartDate <= academicYear.EndDate && academicYear.StartDate <= year.EndDate), cancellationToken))
+                return AcademicYearCreateOutcome.Conflict;
+
+            context.AcademicYears.Add(academicYear);
             await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return AcademicYearCreateOutcome.Created;
         }
-        catch (DbUpdateException exception)
-            when (exception.InnerException is MySqlException { Number: 1062 })
+        catch (Exception exception) when (IsWriteConflict(exception))
         {
             return AcademicYearCreateOutcome.Conflict;
         }
@@ -97,19 +93,30 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         AcademicYear academicYear,
         CancellationToken cancellationToken)
     {
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
+            context.ChangeTracker.DetectChanges();
+            var entry = context.Entry(academicYear);
+            var scheduleChanged = entry.Property(year => year.Name).IsModified ||
+                entry.Property(year => year.StartDate).IsModified || entry.Property(year => year.EndDate).IsModified;
+            if (scheduleChanged && await HasConflictExceptCurrentAsync(
+                academicYear.Id, academicYear.Name, academicYear.StartDate, academicYear.EndDate, cancellationToken))
+                return false;
             await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
             return true;
         }
         catch (DbUpdateConcurrencyException)
         {
             return false;
         }
-        catch (DbUpdateException exception)
-            when (exception.InnerException is MySqlException { Number: 1062 })
+        catch (Exception exception) when (IsWriteConflict(exception))
         {
             return false;
         }
     }
+
+    private static bool IsWriteConflict(Exception exception) =>
+        exception.GetBaseException() is MySqlException { Number: 1062 or 1213 or 1205 };
 }

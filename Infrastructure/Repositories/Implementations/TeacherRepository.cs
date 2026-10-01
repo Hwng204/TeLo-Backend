@@ -16,11 +16,13 @@ public sealed class TeacherRepository(
 
     public async Task<TeacherResolvedScope> ResolveScopeAsync(TeacherScope scope, bool write, CancellationToken ct)
     {
-        var actor = await db.Users.AsNoTracking().Include(x => x.UserRoles).ThenInclude(x => x.Role)
+        var actor = await db.Users.AsNoTracking()
             .Include(x => x.SchoolBranch).ThenInclude(x => x!.School)
             .SingleOrDefaultAsync(x => x.Id == scope.ActorUserId && x.Status == "ACTIVE", ct)
             ?? throw Error("UNAUTHORIZED", "Tài khoản không còn hoạt động.");
-        var codes = actor.UserRoles.Select(x => x.Role.Code).ToArray();
+        var codes = await db.UserRoles.AsNoTracking().WhereEffective()
+            .Where(assignment => assignment.UserId == actor.Id)
+            .Select(assignment => assignment.Role.Code).ToArrayAsync(ct);
         var admin = codes.Any(x => AdminRoles.Contains(x, StringComparer.OrdinalIgnoreCase));
         if (scope.SchoolId is { } schoolId)
         {
@@ -119,8 +121,8 @@ public sealed class TeacherRepository(
         ulong actorId, string? search, int page, int size, CancellationToken ct)
     {
         var allowed = AdminRoles;
-        if (!await db.Users.AnyAsync(x => x.Id == actorId && x.Status == "ACTIVE" &&
-                x.UserRoles.Any(r => allowed.Contains(r.Role.Code)), ct))
+        if (!await db.UserRoles.WhereEffective().AnyAsync(assignment => assignment.UserId == actorId &&
+                assignment.User.Status == "ACTIVE" && allowed.Contains(assignment.Role.Code), ct))
             throw Error("FORBIDDEN", "Chỉ admin vận hành được chọn trường.");
         var query = db.Schools.AsNoTracking();
         if (search != null) query = query.Where(x => x.Name.Contains(search) || x.Code.Contains(search));
@@ -162,7 +164,7 @@ public sealed class TeacherRepository(
         var code = configuration["TeacherManagement:TeacherRoleCode"] ?? "TEACHER";
         if (IsPrivilegedRole(code))
             throw Error("TEACHER_ROLE_MISSING", "Vai trò giáo viên không được trùng vai trò quản trị hoặc ban giám hiệu.");
-        return await db.Roles.SingleOrDefaultAsync(x => x.Code == code, ct)
+        return await db.Roles.SingleOrDefaultAsync(x => x.Code == code && x.Status == "ACTIVE", ct)
             ?? throw Error("TEACHER_ROLE_MISSING", "Chưa cấu hình vai trò giáo viên. Cần thiết lập TeacherManagement:TeacherRoleCode và danh mục roles.");
     }
 

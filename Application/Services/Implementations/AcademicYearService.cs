@@ -23,6 +23,14 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 validation.Errors);
         }
 
+        if (request.Terms is not null)
+        {
+            var termValidation = AcademicYearValidator.ValidateConfigureTerms(
+                new ConfigureTermsRequest(request.Terms), request.StartDate, request.EndDate);
+            if (!termValidation.IsValid)
+                return ServiceResult<AcademicYearListItem>.Failure("VALIDATION_ERROR", "Dữ liệu học kỳ không hợp lệ.", termValidation.Errors);
+        }
+
         var name = request.Name.Trim();
         var academicYear = new AcademicYear
         {
@@ -37,6 +45,9 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
             ]
         };
         academicYear.AssignCode(name);
+        if (request.Terms is not null)
+            foreach (var term in request.Terms)
+                academicYear.ConfigureTerm(term.Order, term.Name.Trim(), term.StartDate, term.EndDate);
 
         var createOutcome = await uow.AcademicYears.TryAddAsync(academicYear, cancellationToken);
 
@@ -103,9 +114,22 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 "Không tìm thấy năm học.");
         }
 
+        if (request.Version is not null && request.Version != year.Version)
+            return StaleVersion<AcademicYearDetailDto>();
+
         try
         {
-            year.EnsureCanUpdateSchedule(request.StartDate, request.EndDate);
+            if (request.Terms is null)
+                year.EnsureCanUpdateSchedule(request.StartDate, request.EndDate);
+            else
+            {
+                year.EnsureCanConfigureTerms();
+                var termValidation = AcademicYearValidator.ValidateConfigureTerms(
+                    new ConfigureTermsRequest(request.Terms), request.StartDate, request.EndDate);
+                if (!termValidation.IsValid)
+                    return ServiceResult<AcademicYearDetailDto>.Failure("VALIDATION_ERROR", "Dữ liệu học kỳ không hợp lệ.", termValidation.Errors);
+                EnsureTermsCanChange(year, request.Terms);
+            }
         }
         catch (AcademicCalendarDomainException exception)
         {
@@ -113,7 +137,10 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
         }
 
         var name = request.Name.Trim();
-        if (await uow.AcademicYears.HasConflictExceptCurrentAsync(
+        // Legacy province calendars may share dates. Term-only edits preserve that history;
+        // all new or changed schedules must satisfy the system-wide conflict rule.
+        var scheduleChanged = name != year.Name || request.StartDate != year.StartDate || request.EndDate != year.EndDate;
+        if (scheduleChanged && await uow.AcademicYears.HasConflictExceptCurrentAsync(
                 year.Id,
                 name,
                 request.StartDate,
@@ -125,6 +152,7 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 "Năm học bị trùng tên hoặc chồng lấn thời gian với năm học khác.");
         }
 
+        if (request.Terms is not null) ApplyTerms(year, request.Terms);
         year.UpdateSchedule(name, request.StartDate, request.EndDate);
         if (!await uow.AcademicYears.UpdateAsync(year, cancellationToken))
         {
@@ -196,7 +224,8 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
             return DomainFailure<AcademicYearDetailDto>(exception);
         }
 
-        await uow.CompleteAsync(cancellationToken);
+        if (!await uow.AcademicYears.UpdateAsync(year, cancellationToken))
+            return StaleVersion<AcademicYearDetailDto>();
         return ServiceResult<AcademicYearDetailDto>.Success(year.ToDetailDto());
     }
 
@@ -212,6 +241,9 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 "ACADEMIC_YEAR_NOT_FOUND",
                 "Không tìm thấy năm học.");
         }
+
+        if (request.Version is not null && request.Version != year.Version)
+            return StaleVersion<AcademicYearDetailDto>();
 
         try
         {
@@ -236,26 +268,17 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
 
         try
         {
-            foreach (var item in request.Terms)
-            {
-                year.EnsureCanConfigureTerm(item.Order);
-            }
-
-            foreach (var item in request.Terms)
-            {
-                year.ConfigureTerm(
-                    item.Order,
-                    item.Name.Trim(),
-                    item.StartDate,
-                    item.EndDate);
-            }
+            EnsureTermsCanChange(year, request.Terms);
+            ApplyTerms(year, request.Terms);
         }
         catch (AcademicCalendarDomainException exception)
         {
             return DomainFailure<AcademicYearDetailDto>(exception);
         }
 
-        await uow.CompleteAsync(cancellationToken);
+        year.Version++;
+        if (!await uow.AcademicYears.UpdateAsync(year, cancellationToken))
+            return StaleVersion<AcademicYearDetailDto>();
         return ServiceResult<AcademicYearDetailDto>.Success(year.ToDetailDto());
     }
 
@@ -282,9 +305,33 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
             return DomainFailure<SemesterDto>(exception);
         }
 
-        await uow.CompleteAsync(cancellationToken);
+        if (!await uow.AcademicYears.UpdateAsync(year, cancellationToken))
+            return StaleVersion<SemesterDto>();
         return ServiceResult<SemesterDto>.Success(term.ToDto());
     }
+
+    private static bool TermUnchanged(Semester term, ConfigureTermItem item) =>
+        term.Name == item.Name.Trim() && term.StartDate == item.StartDate && term.EndDate == item.EndDate;
+
+    private static void EnsureTermsCanChange(AcademicYear year, IReadOnlyList<ConfigureTermItem> terms)
+    {
+        foreach (var item in terms)
+        {
+            var existing = year.Semesters.FirstOrDefault(term => term.Order == item.Order);
+            if (existing?.Status == "CLOSED" && TermUnchanged(existing, item)) continue;
+            year.EnsureCanConfigureTerm(item.Order);
+        }
+    }
+
+    private static void ApplyTerms(AcademicYear year, IReadOnlyList<ConfigureTermItem> terms)
+    {
+        foreach (var item in terms)
+            if (year.Semesters.Single(term => term.Order == item.Order).Status != "CLOSED")
+                year.ConfigureTerm(item.Order, item.Name.Trim(), item.StartDate, item.EndDate);
+    }
+
+    private static ServiceResult<T> StaleVersion<T>() => ServiceResult<T>.Failure(
+        "CONCURRENCY_CONFLICT", "Dữ liệu đã được thay đổi. Vui lòng tải lại trước khi lưu.");
 
     private static ServiceResult<T> DomainFailure<T>(AcademicCalendarDomainException exception) =>
         ServiceResult<T>.Failure(exception.Code, exception.Message);

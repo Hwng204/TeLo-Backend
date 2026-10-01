@@ -3,7 +3,8 @@ namespace Application.DTOs;
 public sealed record CreateAcademicYearRequest(
     string Name,
     DateOnly StartDate,
-    DateOnly EndDate);
+    DateOnly EndDate,
+    IReadOnlyList<ConfigureTermItem>? Terms = null);
 
 public sealed record AcademicYearListItem(
     ulong Id,
@@ -52,7 +53,9 @@ public sealed record AcademicYearDetailDto(
 public sealed record UpdateAcademicYearRequest(
     string Name,
     DateOnly StartDate,
-    DateOnly EndDate);
+    DateOnly EndDate,
+    uint? Version = null,
+    IReadOnlyList<ConfigureTermItem>? Terms = null);
 
 public sealed record ConfigureTermItem(
     byte Order,
@@ -61,4 +64,5 @@ public sealed record ConfigureTermItem(
     DateOnly? EndDate);
 
 public sealed record ConfigureTermsRequest(
-    IReadOnlyList<ConfigureTermItem> Terms);
+    IReadOnlyList<ConfigureTermItem> Terms,
+    uint? Version = null);

@@ -201,6 +201,7 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
 
         var roles = await Db.UserRoles
             .AsNoTracking()
+            .WhereEffective()
             .Where(userRole => userIds.Contains(userRole.UserId))
             .Select(userRole => new { userRole.UserId, userRole.Role.Code })
             .ToListAsync(cancellationToken);

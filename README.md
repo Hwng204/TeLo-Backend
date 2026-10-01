@@ -311,3 +311,146 @@ teacher ID; không log mật khẩu hoặc toàn bộ request body.
 Mã phản hồi: 400 (JSON/binding), 401 (chưa đăng nhập/token bị thu hồi), 403 (sai quyền/phạm vi),
 404 (không tìm thấy trong scope), 409 (trùng, version cũ, trạng thái xung đột), 422 (validation),
 503 (role giáo viên chưa cấu hình). Lỗi nghiệp vụ trả `ApiResponse` cùng error code.
+
+## 11. Năm học và học kỳ
+
+Lịch năm học dùng chung toàn hệ thống. Migration `AcademicYearSystemScope` bỏ phạm vi
+tỉnh/thành và chỉ giữ một năm `ACTIVE` (ưu tiên ngày bắt đầu mới nhất, sau đó ID lớn nhất).
+Các năm từng `ACTIVE` khác và học kỳ của chúng chuyển sang `CLOSED`. Migration giữ bản ghi,
+mã năm học và các liên kết cũ; không tự gộp/xóa các lịch trùng nhau từ dữ liệu tỉnh/thành.
+Sao lưu database trước khi áp dụng migration này. Dùng lệnh cập nhật schema ở mục 5;
+nếu connection string nằm trong user secrets, nạp biến môi trường theo mục 10.
+
+Quy tắc:
+
+- Tên `YYYY-YYYY`, hai năm liên tiếp, năm bắt đầu từ 2000 đến 2100. Ngày bắt đầu/kết thúc
+  thuộc hai năm tương ứng, kết thúc sau bắt đầu, thời lượng tối thiểu 180 ngày.
+- Lịch mới hoặc thay đổi tên/ngày không được trùng tên hay chồng lấn năm học khác.
+  Lịch cũ trùng nhau sau migration vẫn được sửa học kỳ nếu giữ nguyên tên/ngày năm học.
+- Đúng hai học kỳ với thứ tự 1, 2; tên bắt buộc, tối đa 100 ký tự, không trùng nhau.
+  Khi cấu hình, phải đủ ngày, nằm trong năm học; học kỳ II bắt đầu sau ngày kết thúc học kỳ I.
+- Luồng năm học: `DRAFT → ACTIVE → CLOSED`. Áp dụng yêu cầu đủ lịch hai học kỳ và không
+  có năm khác đang áp dụng; học kỳ I được kích hoạt cùng năm học.
+- Kết thúc học kỳ I trước học kỳ II; kết thúc I tự kích hoạt II. Kết thúc năm khóa toàn bộ
+  học kỳ. Năm/học kỳ đã kết thúc không được sửa hay mở lại.
+
+Danh sách/chi tiết API cần đăng nhập. `GET /api/academic-years/current` cho phép chưa
+đăng nhập để trang đăng nhập hiển thị lịch thực tế; trả năm `ACTIVE` hoặc `data: null`
+nếu chưa có năm áp dụng. Endpoint này không chọn theo năm trên đồng hồ máy tính.
+Ghi API cần policy `OperationalAdmin`: role `OperationalAdmin`,
+`ADMIN` hoặc permission `academic_calendar.manage`.
+
+`POST /api/academic-years` nhận `name`, `startDate`, `endDate` và `terms` gồm hai phần tử
+`{ order, name, startDate, endDate }`. Năm học và học kỳ được lưu trong cùng giao dịch.
+Client cũ không gửi `terms` vẫn tạo bản nháp với hai học kỳ chưa có ngày; cần cấu hình đủ
+trước khi áp dụng. `PATCH /api/academic-years/{id}` nhận cùng các trường và `version` từ
+response chi tiết để cập nhật lịch đồng thời. `version` cũ trả 409; client nên luôn gửi
+version dù API vẫn cho phép bỏ qua để tương thích client cũ. Học kỳ đã kết thúc phải
+được giữ nguyên trong payload cập nhật.
+
+Các endpoint chuyển trạng thái: `POST /api/academic-years/{id}/activate`,
+`POST /api/academic-years/{id}/close`, `POST /api/academic-years/{id}/terms/{termId}/close`.
+Lỗi validation trả 422 kèm chi tiết trường; JSON/ngày sai định dạng trả 400;
+trùng lịch, dữ liệu cũ hoặc trạng thái không hợp lệ trả 409. Không có quyền ghi trả 403.
+
+Chạy kiểm thử theo mục 6. Frontend có hướng dẫn chạy và kiểm tra validation trong README
+của `TeLo-Frontend`.
+
+### Đối chiếu backlog quản lý năm học/học kỳ
+
+| Chức năng | Hiện trạng |
+| --- | --- |
+| Xem danh sách, tìm kiếm, lọc, xác định năm hiện tại | Đã có; phạm vi toàn hệ thống, chưa theo từng trường |
+| Tạo năm học với mã, tên, ngày | Đã có; mã sinh từ tên, chưa nhập mã riêng |
+| Sửa năm học chưa khóa, kiểm tra xung đột | Đã có; năm đã kết thúc chỉ được xem |
+| Khóa/chốt năm học, giữ lịch sử | Đã có trong module lịch; chưa chặn đầy đủ nghiệp vụ ghi ở các module phụ thuộc |
+| Tạo học kỳ với tên, mã, thứ tự, ngày | Tự tạo đúng hai học kỳ cùng năm học; chưa có mã học kỳ và thêm học kỳ độc lập |
+| Sửa học kỳ chưa khóa | Đã có qua lưu cấu hình hai học kỳ cùng nhau |
+| Đóng học kỳ, giữ lịch sử | Đã có; đóng I trước II, không xóa bản ghi |
+
+Các điểm cần hoàn thiện nếu áp dụng toàn bộ backlog: phạm vi theo trường và phân bổ lịch
+cũ cần thống nhất trước migration; nhập mã năm học/mã học kỳ và luồng tạo học kỳ độc lập
+chưa được hỗ trợ. `SchoolDirectoryAdminRepository.ValidateClassReferencesAsync`,
+`ExamService.ValidateReferencesAsync` và `MatrixReferenceRepository.EnsureSemesterAsync`
+chưa kiểm tra đầy đủ trạng thái năm/học kỳ khi phát sinh nghiệp vụ. Không xem việc khóa
+form cấu hình lịch là bằng chứng mọi module đã khóa theo lịch.
+# Role and module management — implementation checklist
+
+This extension keeps the existing DTO → service → EF context → controller pattern used by SchoolService. Frontend uses the existing feature folders, API client, controls and pagination. The academic-calendar plan is left intact. No automatic commits.
+
+- [x] Phase 1: additive identity schema, bounded pagination, role/module validation and optimistic concurrency; preserve existing grants and module links.
+- [x] Phase 2: role CRUD/status and scoped user assignment. Keep append-only audit records; invalidate affected sessions; prevent self-removal of administrator access. Lists and scope pickers use server pagination.
+- [x] Phase 3: module CRUD/status and matching frontend flows using the existing blue/white design and Figma ADMIN MULTI-TENANT suggestions.
+- [x] Phase 4: focused regression tests, build/lint, MySQL migration and API smoke checks. Browser verification remains unavailable in this environment; production deployment has not been performed.
+
+Contracts: `/api/roles`, `/api/modules`, `/api/users` and `/api/identity/scopes`. Codes are immutable and globally unique. A role applies system-wide (no school), to a school, or to a branch of that school. Existing built-in roles retain their scope. A used role is deactivated rather than deleted; historical changes are retained. Module status manages the module catalog, and does not automatically rewrite business API policies or existing permission masks. Assigning a custom role does not invent new API privileges.
+
+### Chạy và kiểm tra chức năng phân quyền
+
+Migration `20260930132745_AddIdentityManagement` đã áp dụng vào `sep` local. Đã sao lưu
+tại `../sep-backup-before-identity-20260930-203837.sql`; không đưa bản sao dữ liệu này lên Git.
+Sau migration vẫn có 4 vai trò, 4 tài khoản, 4 gán vai trò và 10 năm học; bổ sung 4 bản ghi
+lịch sử gán có sẵn. Các module cũ nhận mã `MODULE_<id>` trước khi tạo unique index.
+Migration chỉ bổ sung phần identity; không xóa cột trường/năm học cũ. Rollback schema sẽ
+xóa phần lịch sử mới, nên phải sao lưu trước khi dùng lệnh downgrade trên database có dữ liệu.
+
+Khởi động lại BE để nạp API và quy tắc quyền mới (dừng tiến trình BE cũ trong IDE trước):
+
+```powershell
+# Từ TeLo-Backend; dùng connection string và JWT key local đã cấu hình.
+dotnet run --project WebAPI --launch-profile https
+# Terminal khác, từ TeLo-FrontEnd/TeLo-Frontend
+npm run dev
+```
+
+FE mặc định gọi `http://localhost:5035/api`; profile `https` của BE lắng nghe cả cổng
+5035 và 7033. Đăng nhập lại bằng tài khoản `ADMIN`/`OperationalAdmin`, mở mục Phân quyền
+→ Vai trò, Người dùng, Quản lý module trong sidebar. Danh sách, hộp chọn trường/phân hiệu
+và hộp chọn thành viên đều phân trang phía server; `pageSize` từ 1 đến 100.
+
+API ghi yêu cầu `version` hiện tại. Sai phiên bản trả 409 `STALE_VERSION`; xung đột mã,
+tên module, phạm vi hoặc dữ liệu đang sử dụng trả 409 `CONFLICT`; lỗi trường trả 422.
+Người dùng có tối đa 100 vai trò. Gán hàng loạt là một giao dịch: một người không hợp lệ
+sẽ không làm phát sinh gán một phần. Không được tự thu hồi vai trò quản trị; trạng thái
+vai trò quản trị được bảo vệ. Thay đổi quyền thu hồi token cũ của người bị ảnh hưởng.
+
+Tài khoản mẫu chỉ được seed ở môi trường `Development`. Production không tự tạo tài khoản
+mẫu hoặc schema; cần chạy migration và cấp tài khoản quản trị bằng quy trình triển khai riêng.
+
+Kiểm thử đã chạy: 136 kiểm thử BE, gồm quy trình HTTP/JWT/MySQL thực và nâng cấp schema
+có dữ liệu cũ; 22 self-check của FE; TypeScript, lint phần mới và build production.
+Kiểm thử MySQL nhận connection string từ biến môi trường `TELO_TEST_MYSQL`, tạo database
+ngẫu nhiên `telo_identity_test_*` riêng rồi dọn bỏ; không ghi vào database chỉ định trong
+connection string. Nếu thiếu biến này, chỉ kiểm thử tích hợp MySQL được đánh dấu bỏ qua.
+
+```powershell
+# Đặt TELO_TEST_MYSQL bằng connection string local có quyền tạo database kiểm thử.
+dotnet test TeLoSchoolManagement.sln -c Release --disable-build-servers -m:1 -p:UseSharedCompilation=false
+```
+
+Chưa xác minh giao diện bằng trình duyệt do công cụ trình duyệt không khả dụng. Cần kiểm tra
+trực quan/keyboard trên các màn mới trước khi triển khai; FE vẫn có cảnh báo bundle trên 500 KB.
+Các mục phân quyền chi tiết theo chức năng và quản lý navbar chưa thuộc nhóm chức năng này.
+
+### Review cuối role/module — 01/10/2026
+
+| Phase | Kết quả |
+| --- | --- |
+| 1. Cấu trúc và contract | Giữ các lớp DTO/service/controller/configuration và feature FE hiện tại; service dùng DbContext theo mẫu SchoolService. Không thêm tầng repository trung gian, thư mục hoặc dependency trong đợt review này. |
+| 2. Nghiệp vụ và bảo mật BE | Kiểm tra phân trang, validation, gán nhiều vai trò đúng phạm vi, giữ lịch sử, xung đột phiên bản và thu hồi phiên. Sửa lỗi mã cấu hình khác hoa/thường, mã cũ có khoảng trắng và sửa metadata khi đơn vị ngừng hoạt động. |
+| 3. FE và tối ưu | Sửa trang rỗng khi tổng kết quả giảm; dùng lại bộ xử lý lỗi API có sẵn cho 400/422/409; định dạng code tại chỗ. BE dùng truy vấn kiểm tra tồn tại khi xóa và cập nhật phiên hàng loạt trong cùng giao dịch, tránh tải toàn bộ người dùng/liên kết. |
+| 4. Hồi quy | 102 Application + 19 Infrastructure + 15 WebAPI tests đạt, không bỏ qua; gồm HTTP/JWT/MySQL thật trên database tạm riêng. FE có 22 self-check đạt, lint phạm vi sửa và production build đạt. |
+
+Các mã hiệu trưởng do `MatrixAuth:PrincipalRoleCodes` xác định và mã quản trị danh bạ
+do `SchoolDirectoryAuth:AdminRoleCodes` xác định chỉ được tạo với phạm vi toàn hệ thống.
+Các API nghiệp vụ cũ diễn giải những mã này theo quyền rộng; gắn nhãn phạm vi trường/
+phân hiệu sẽ không phản ánh đúng quyền thực tế. Vai trò mới thuộc nhóm này được bảo vệ
+phạm vi bằng `IsSystem`. Muốn hiệu trưởng hoạt động riêng từng trường cần sửa cơ chế
+phân quyền của các API ma trận/giáo viên trước; chưa coi đó là chức năng đã hỗ trợ.
+Vai trò tùy chỉnh thông thường vẫn hỗ trợ phạm vi trường/phân hiệu.
+
+Kiểm thử đã tái hiện lỗi tạo vai trò hiệu trưởng có phạm vi hẹp trước khi sửa, rồi đạt
+sau khi sửa; bổ sung kiểm tra thu hồi token sau đổi phạm vi/trạng thái, giữ metadata
+khi trường ngừng hoạt động và mã vai trò cũ có khoảng trắng. Đợt review này không cần
+migration mới và không thay đổi dữ liệu `sep`. Chưa commit. Giới hạn kiểm tra trình
+duyệt và cảnh báo bundle nêu trên vẫn còn; chưa tuyên bố sẵn sàng triển khai production.

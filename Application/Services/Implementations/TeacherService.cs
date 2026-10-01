@@ -58,6 +58,11 @@ public sealed class TeacherService(
         await repository.ValidateReferencesAsync(profile, null, ct);
         await repository.ValidateUniqueAsync(null, null, profile.StaffCode, username, email, ct);
         var role = await repository.GetTeacherRoleAsync(ct);
+        if ((role.SchoolId.HasValue && role.SchoolId != resolved.SchoolId) ||
+            (role.SchoolBranchId.HasValue && role.SchoolBranchId != resolved.BranchId))
+            throw new TeacherManagementException("TEACHER_ROLE_MISSING", "Vai trò giáo viên không áp dụng cho trường/phân hiệu này.");
+        role.UsedAt ??= timeProvider.GetUtcNow().UtcDateTime;
+        role.Version++;
         var user = new User
         {
             Username = username, Email = email, FullName = profile.FullName,

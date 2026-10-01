@@ -81,11 +81,18 @@ public sealed class AcademicYear
                 "Năm học đã đóng không thể kích hoạt lại.");
         }
 
-        if (Semesters.Count != 2)
+        var first = Semesters.FirstOrDefault(term => term.Order == 1);
+        var second = Semesters.FirstOrDefault(term => term.Order == 2);
+        if (Semesters.Count != 2 || first is null || second is null ||
+            Semesters.Any(term => string.IsNullOrWhiteSpace(term.Name) || term.Status == "CLOSED" ||
+                term.StartDate is null || term.EndDate is null ||
+                term.StartDate < StartDate || term.EndDate > EndDate || term.StartDate >= term.EndDate) ||
+            string.Equals(first.Name.Trim(), second.Name.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            second.StartDate <= first.EndDate)
         {
             throw new AcademicCalendarDomainException(
                 "INCOMPLETE_TERMS",
-                "Năm học cần có đầy đủ 2 học kỳ trước khi kích hoạt.");
+                "Cần đủ 2 học kỳ có tên riêng và ngày hợp lệ, nằm trong năm học, không chồng lấn trước khi kích hoạt.");
         }
     }
 
@@ -93,6 +100,9 @@ public sealed class AcademicYear
     {
         EnsureCanActivate();
         Status = "ACTIVE";
+        var first = Semesters.Single(term => term.Order == 1);
+        first.Status = "ACTIVE";
+        first.Version++;
         Version++;
     }
 
@@ -103,6 +113,11 @@ public sealed class AcademicYear
             throw new AcademicCalendarDomainException(
                 "ACADEMIC_YEAR_ALREADY_CLOSED",
                 "Năm học đã đóng từ trước.");
+        }
+
+        if (Status != "ACTIVE")
+        {
+            throw new AcademicCalendarDomainException("ACADEMIC_YEAR_NOT_ACTIVE", "Chỉ được kết thúc năm học đang áp dụng.");
         }
 
         Status = "CLOSED";
@@ -128,8 +143,9 @@ public sealed class AcademicYear
     {
         EnsureCanConfigureTerms();
 
-        Semesters.FirstOrDefault(semester => semester.Order == order)?
-            .EnsureCanConfigure();
+        var semester = Semesters.FirstOrDefault(semester => semester.Order == order)
+            ?? throw new AcademicCalendarDomainException("TERM_NOT_FOUND", "Không tìm thấy học kỳ cần cấu hình.");
+        semester.EnsureCanConfigure();
     }
 
     public void ConfigureTerm(
@@ -150,7 +166,18 @@ public sealed class AcademicYear
                 "TERM_NOT_FOUND",
                 "Không tìm thấy học kỳ.");
 
+        if (Status != "ACTIVE")
+            throw new AcademicCalendarDomainException("ACADEMIC_YEAR_NOT_ACTIVE", "Chỉ được kết thúc học kỳ của năm học đang áp dụng.");
+        if (Semesters.Any(item => item.Order < semester.Order && item.Status != "CLOSED"))
+            throw new AcademicCalendarDomainException("PREVIOUS_TERM_OPEN", "Cần kết thúc học kỳ I trước học kỳ II.");
         semester.Close();
+        var next = Semesters.FirstOrDefault(item => item.Order == semester.Order + 1 && item.Status == "PLANNED");
+        if (next is not null)
+        {
+            next.Status = "ACTIVE";
+            next.Version++;
+        }
+        Version++;
         return semester;
     }
 }

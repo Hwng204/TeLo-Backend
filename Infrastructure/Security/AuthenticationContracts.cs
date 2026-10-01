@@ -11,7 +11,7 @@ public sealed record AuthenticatedUser(
 
 public interface IUserAuthenticationService
 {
-    Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, CancellationToken cancellationToken);
+    Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, IReadOnlyCollection<string> roleCodes, CancellationToken cancellationToken);
 
     Task<AuthenticatedUser?> AuthenticateAsync(
         LoginRequest request,

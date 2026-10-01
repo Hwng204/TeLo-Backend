@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Application.Common;
 using Application.DTOs;
 using Application.Services.Interface;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using WebAPI.Controllers;
 using Xunit;
 
@@ -13,6 +15,65 @@ namespace WebAPI.Tests;
 
 public sealed class AcademicYearsControllerTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task CurrentEndpoint_ReturnsActualYearOrNullWithoutAuthentication(bool hasActiveYear)
+    {
+        var service = new FakeAcademicYearService
+        {
+            ListResult = new AcademicYearPage(hasActiveYear
+                ? [new(9, "01-2029-2030", "2029-2030", new DateOnly(2029, 1, 11),
+                    new DateOnly(2030, 1, 11), "ACTIVE", 1, 2)]
+                : [], 1, 1, hasActiveYear ? 1 : 0)
+        };
+        await using var factory = new WebApplicationFactory<Program>()
+            .WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Testing");
+                builder.UseSetting("ConnectionStrings:DefaultConnection",
+                    "Server=127.0.0.1;Database=unused;User=unused;Password=unused;");
+                builder.UseSetting("Jwt:SigningKey",
+                    "academic-year-test-signing-key-at-least-32-chars");
+                builder.ConfigureServices(services => services.AddSingleton<IAcademicYearService>(service));
+            });
+        using var client = factory.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+
+        var response = await client.GetAsync("/api/academic-years/current");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var envelope = await response.Content.ReadFromJsonAsync<ApiResponse<AcademicYearListItem?>>();
+        Assert.True(envelope!.Success);
+        Assert.Equal(hasActiveYear ? "2029-2030" : null, envelope.Data?.Name);
+        Assert.Equal("ACTIVE", service.LastListQuery?.Status);
+        Assert.Equal(1, service.LastListQuery?.PageSize);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/academic-years")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Current_ReturnsTheActiveAcademicYearAndAllowsAnonymousAccess()
+    {
+        var active = new AcademicYearListItem(
+            9, "01-2029-2030", "2029-2030", new DateOnly(2029, 1, 11),
+            new DateOnly(2030, 1, 11), "ACTIVE", 1, 2);
+        var service = new FakeAcademicYearService
+        {
+            ListResult = new AcademicYearPage([active], 1, 1, 1)
+        };
+        var controller = new AcademicYearsController(service);
+
+        var result = await controller.Current(CancellationToken.None);
+
+        var response = Assert.IsType<OkObjectResult>(result);
+        var envelope = Assert.IsType<ApiResponse<AcademicYearListItem?>>(response.Value);
+        Assert.Equal("2029-2030", envelope.Data?.Name);
+        Assert.Equal("ACTIVE", service.LastListQuery?.Status);
+        Assert.NotNull(typeof(AcademicYearsController).GetMethod(nameof(AcademicYearsController.Current))!
+            .GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute), true)
+            .SingleOrDefault());
+    }
+
     [Fact]
     public async Task List_Returns422ForInvalidPaginationWithoutCallingTheService()
     {
@@ -111,6 +172,8 @@ public sealed class AcademicYearsControllerTests
     private sealed class FakeAcademicYearService : IAcademicYearService
     {
         public int ListCallCount { get; private set; }
+        public AcademicYearListQuery? LastListQuery { get; private set; }
+        public AcademicYearPage? ListResult { get; init; }
         public ServiceResult<AcademicYearListItem> CreateResult { get; init; } =
             ServiceResult<AcademicYearListItem>.Failure("UNEXPECTED", "Not configured");
 
@@ -123,7 +186,8 @@ public sealed class AcademicYearsControllerTests
             CancellationToken cancellationToken)
         {
             ListCallCount++;
-            return Task.FromResult(new AcademicYearPage([], query.Page, query.PageSize, 0));
+            LastListQuery = query;
+            return Task.FromResult(ListResult ?? new AcademicYearPage([], query.Page, query.PageSize, 0));
         }
 
         public Task<ServiceResult<AcademicYearDetailDto>> GetByIdAsync(

@@ -29,6 +29,7 @@ public static class IdentitySeeder
                 db.Roles.Add(new Role
                 {
                     Code = roleData.Code,
+                    IsSystem = true,
                     Name = roleData.Name
                 });
             }

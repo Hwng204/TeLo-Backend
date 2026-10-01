@@ -61,7 +61,8 @@ public static class JwtAuthenticationExtensions
                             return;
                         }
                         var authentication = context.HttpContext.RequestServices.GetRequiredService<IUserAuthenticationService>();
-                        if (!await authentication.IsSessionValidAsync(userId, version, context.HttpContext.RequestAborted))
+                        var roleCodes = principal.FindAll(ClaimTypes.Role).Select(claim => claim.Value).ToArray();
+                        if (!await authentication.IsSessionValidAsync(userId, version, roleCodes, context.HttpContext.RequestAborted))
                             context.Fail("Account disabled or token revoked.");
                     }
                 };

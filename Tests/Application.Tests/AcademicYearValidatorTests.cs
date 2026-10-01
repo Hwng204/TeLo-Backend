@@ -7,6 +7,133 @@ namespace Application.Tests;
 public sealed class AcademicYearValidatorTests
 {
     [Fact]
+    public void ValidateConfigureTerms_UsesRequestIndexWhenTermsAreReversed()
+    {
+        var request = new ConfigureTermsRequest(
+        [
+            new(2, "II", new DateOnly(2027, 1, 15), new DateOnly(2027, 5, 31)),
+            new(1, "", new DateOnly(2026, 8, 15), new DateOnly(2027, 1, 15))
+        ]);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(request,
+            new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.Contains("terms[1].name", result.Errors.Keys);
+        Assert.Contains("terms[0].startDate", result.Errors.Keys);
+        Assert.DoesNotContain("terms[0].name", result.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Validate_ReturnsNameErrorForMissingName(string? name)
+    {
+        var request = new CreateAcademicYearRequest(
+            name!, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        var result = AcademicYearValidator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("name", result.Errors.Keys);
+    }
+
+    [Fact]
+    public void Validate_ReturnsNameErrorForNonAsciiYearDigits()
+    {
+        var request = new CreateAcademicYearRequest(
+            "٢٠٢٦-٢٠٢٧", new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        var result = AcademicYearValidator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("name", result.Errors.Keys);
+    }
+
+    [Fact]
+    public void Validate_RejectsMissingDates()
+    {
+        var request = new CreateAcademicYearRequest("2026-2027", default, default);
+
+        var result = AcademicYearValidator.Validate(request);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("startDate", result.Errors.Keys);
+        Assert.Contains("endDate", result.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ValidateConfigureTerms_RejectsMissingTerms(bool useNull)
+    {
+        var request = new ConfigureTermsRequest(useNull ? null! : []);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(
+            request, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.False(result.IsValid);
+        Assert.Contains("terms", result.Errors.Keys);
+    }
+
+    [Fact]
+    public void ValidateConfigureTerms_RejectsNullTermElementWithoutThrowing()
+    {
+        var request = new ConfigureTermsRequest(
+            [null!, new ConfigureTermItem(2, "Term II", null, null)]);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(
+            request, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.False(result.IsValid);
+        Assert.Contains("terms", result.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(2, 2)]
+    [InlineData(0, 2)]
+    [InlineData(1, 3)]
+    public void ValidateConfigureTerms_RejectsDuplicateOrInvalidOrders(byte firstOrder, byte secondOrder)
+    {
+        var request = new ConfigureTermsRequest(
+        [
+            new ConfigureTermItem(firstOrder, "Term I", null, null),
+            new ConfigureTermItem(secondOrder, "Term II", null, null)
+        ]);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(
+            request, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.False(result.IsValid);
+        Assert.Contains("terms", result.Errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(1, -1)]
+    [InlineData(2, 0)]
+    [InlineData(2, -1)]
+    public void ValidateConfigureTerms_RejectsTermEndingOnOrBeforeItsStart(byte order, int endOffset)
+    {
+        var firstStart = new DateOnly(2026, 9, 1);
+        var secondStart = new DateOnly(2027, 1, 16);
+        var request = new ConfigureTermsRequest(
+        [
+            new ConfigureTermItem(1, "Term I", firstStart,
+                order == 1 ? firstStart.AddDays(endOffset) : new DateOnly(2027, 1, 15)),
+            new ConfigureTermItem(2, "Term II", secondStart,
+                order == 2 ? secondStart.AddDays(endOffset) : new DateOnly(2027, 5, 31))
+        ]);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(
+            request, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.False(result.IsValid);
+        Assert.Contains($"terms[{order - 1}].endDate", result.Errors.Keys);
+    }
+
+    [Fact]
     public void Validate_AcceptsAValidAcademicYear()
     {
         var input = new CreateAcademicYearRequest(
@@ -18,6 +145,29 @@ public sealed class AcademicYearValidatorTests
 
         Assert.True(result.IsValid);
         Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void ValidateConfigureTerms_RequiresBothDatesForEveryTerm(byte order)
+    {
+        var request = new ConfigureTermsRequest(
+        [
+            new ConfigureTermItem(1, "Term I",
+                order == 1 ? null : new DateOnly(2026, 9, 1),
+                order == 1 ? null : new DateOnly(2027, 1, 15)),
+            new ConfigureTermItem(2, "Term II",
+                order == 2 ? null : new DateOnly(2027, 1, 16),
+                order == 2 ? null : new DateOnly(2027, 5, 31))
+        ]);
+
+        var result = AcademicYearValidator.ValidateConfigureTerms(
+            request, new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+
+        Assert.False(result.IsValid);
+        Assert.Contains($"terms[{order - 1}].startDate", result.Errors.Keys);
+        Assert.Contains($"terms[{order - 1}].endDate", result.Errors.Keys);
     }
 
     [Theory]

@@ -1,5 +1,6 @@
 using Domain.Entities.Identity;
 using Infrastructure.Context;
+using Infrastructure.Repositories.Implement;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,8 +18,15 @@ public sealed class UserAuthenticationService(
              user.SchoolBranch.School.Status == "ACTIVE" &&
              !user.Teachers.Any(teacher => teacher.EmploymentStatus == "RESIGNED" || teacher.EmploymentStatus == "INACTIVE"))));
 
-    public Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, CancellationToken cancellationToken) =>
-        ActiveUsers().AnyAsync(user => user.Id == userId && user.SecurityVersion == securityVersion, cancellationToken);
+    public async Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, IReadOnlyCollection<string> roleCodes, CancellationToken cancellationToken)
+    {
+        if (!await ActiveUsers().AnyAsync(user => user.Id == userId && user.SecurityVersion == securityVersion, cancellationToken)) return false;
+        // Scope can stop being effective when a school/branch is disabled, even if
+        // that operation did not increment this non-teacher account's version.
+        var effective = await db.UserRoles.AsNoTracking().WhereEffective().Where(grant => grant.UserId == userId)
+            .Select(grant => grant.Role.Code.Trim()).ToArrayAsync(cancellationToken);
+        return roleCodes.All(code => effective.Contains(code, StringComparer.OrdinalIgnoreCase));
+    }
 
     public async Task<AuthenticatedUser?> AuthenticateAsync(
         LoginRequest request,
@@ -33,8 +41,6 @@ public sealed class UserAuthenticationService(
 
         var username = request.Username.Trim();
         var user = await ActiveUsers()
-            .Include(item => item.UserRoles)
-                .ThenInclude(item => item.Role)
             .SingleOrDefaultAsync(
                 item => item.Username == username,
                 cancellationToken);
@@ -59,8 +65,10 @@ public sealed class UserAuthenticationService(
             return null;
         }
 
-        var roleCodes = user.UserRoles
-            .Select(item => item.Role.Code.Trim())
+        var effectiveCodes = await db.UserRoles.AsNoTracking().WhereEffective()
+            .Where(grant => grant.UserId == user.Id)
+            .Select(grant => grant.Role.Code.Trim()).ToArrayAsync(cancellationToken);
+        var roleCodes = effectiveCodes
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 

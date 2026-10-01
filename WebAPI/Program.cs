@@ -6,6 +6,7 @@ using Microsoft.OpenApi.Models;
 using WebAPI.ExceptionHandling;
 using WebAPI.Controllers;
 using WebAPI.Security;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -68,7 +69,10 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
             context.User.IsInRole("ADMIN") ||
-            context.User.IsInRole("Admin")));
+              context.User.IsInRole("Admin")));
+
+    options.AddPolicy("IdentityAdmin", policy => policy.RequireAuthenticatedUser()
+        .RequireRole("ADMIN", "Admin", "OperationalAdmin"));
 
     // Policy cho OperationalAdmin (academic calendar, v.v.)
     // Role codes live in config so a school can rename them without touching the controllers.
@@ -79,20 +83,24 @@ builder.Services.AddAuthorization(options =>
         .GetSection("SchoolDirectoryAuth:AdminRoleCodes").Get<string[]>()
         ?? ["OperationalAdmin"];
     options.AddPolicy(SchoolDirectoryControllerBase.SchoolReadPolicy, policy =>
-        policy.RequireAuthenticatedUser().RequireRole(schoolReadRoles));
+        policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
+            .Any(claim => schoolReadRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
     options.AddPolicy(SchoolDirectoryControllerBase.AdminPolicy, policy =>
-        policy.RequireAuthenticatedUser().RequireRole(directoryAdminRoles));
+        policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
+            .Any(claim => directoryAdminRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
 
     // Only principals and vice principals import; teachers and team leads can read but not upload.
     var schoolImportRoles = builder.Configuration
         .GetSection("SchoolDirectoryAuth:SchoolImportRoleCodes").Get<string[]>()
         ?? ["HIEU_TRUONG", "PRINCIPAL", "PHT"];
     options.AddPolicy(SchoolDirectoryControllerBase.ImportPolicy, policy =>
-        policy.RequireAuthenticatedUser().RequireRole(schoolImportRoles));
+        policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
+            .Any(claim => schoolImportRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
     var teacherReadRoles = new[] { "MatrixAuth:PrincipalRoleCodes", "MatrixAuth:PhtRoleCodes" }
         .SelectMany(key => builder.Configuration.GetSection(key).Get<string[]>() ??
             (key.Contains("Principal") ? ["HIEU_TRUONG", "PRINCIPAL"] : new[] { "PHT" })).ToArray();
-    options.AddPolicy("TeacherRead", policy => policy.RequireAuthenticatedUser().RequireRole(teacherReadRoles));
+    options.AddPolicy("TeacherRead", policy => policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
+        .Any(claim => teacherReadRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
 
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
@@ -137,7 +145,9 @@ app.MapControllers();
 
 
 
-if (!app.Environment.IsEnvironment("Testing"))
+// Demo credentials are for local development only. Production administrators
+// must be provisioned explicitly; starting the API must never create demo accounts.
+if (app.Environment.IsDevelopment())
 {
     app.SeedIdentityData();
 }

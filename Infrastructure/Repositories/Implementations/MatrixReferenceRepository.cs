@@ -181,16 +181,14 @@ public sealed class MatrixReferenceRepository(
 
         var assignee = await db.Users
             .AsNoTracking()
-            .Include(user => user.UserRoles)
-                .ThenInclude(userRole => userRole.Role)
             .SingleOrDefaultAsync(
                 user => user.Id == assignedToUserId && user.Status == "ACTIVE",
                 cancellationToken);
 
         if (assignee is null ||
             assignee.SchoolBranchId != context.SchoolBranchId ||
-            !assignee.UserRoles.Any(userRole =>
-                roleCatalog.IsTeamLead(userRole.Role.Code)))
+            !await db.UserRoles.WhereEffective().AnyAsync(userRole =>
+                userRole.UserId == assignedToUserId && roleCatalog.TeamLeadRoleCodes.Contains(userRole.Role.Code), cancellationToken))
         {
             throw new MatrixDomainException(
                 "InvalidAssignee",
@@ -338,14 +336,16 @@ public sealed class MatrixReferenceRepository(
                 lesson.SortOrder))
             .ToArray();
 
+        var effectiveTeamLeadUsers = db.UserRoles.WhereEffective()
+            .Where(userRole => roleCatalog.TeamLeadRoleCodes.Contains(userRole.Role.Code))
+            .Select(userRole => userRole.UserId);
         var teamLeads = actor.Role == MatrixActorRole.Pht
             ? await db.Users
                 .AsNoTracking()
                 .Where(user =>
                     user.Status == "ACTIVE" &&
                     (actorBranchId == null || user.SchoolBranchId == actorBranchId.Value) &&
-                    user.UserRoles.Any(userRole =>
-                        roleCatalog.TeamLeadRoleCodes.Contains(userRole.Role.Code)))
+                    effectiveTeamLeadUsers.Contains(user.Id))
                 .OrderBy(user => user.FullName)
                 .Select(user => new MatrixTeamLeadOption(
                     user.Id,

@@ -31,6 +31,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<StudentImportRow> StudentImportRows => Set<StudentImportRow>();
     public DbSet<Teacher> Teachers => Set<Teacher>();
     public DbSet<Role> Roles => Set<Role>();
+    public DbSet<IdentityAudit> IdentityAudits => Set<IdentityAudit>();
     public DbSet<Module> Modules => Set<Module>();
     public DbSet<Navbar> Navbars => Set<Navbar>();
     public DbSet<Permission> Permissions => Set<Permission>();

@@ -16,5 +16,8 @@ public sealed class ModuleConfiguration : IEntityTypeConfiguration<Module>
         builder.Property(x => x.Image).HasColumnName("image").HasMaxLength(512);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("ACTIVE").IsRequired();
         builder.HasIndex(x => x.Name).IsUnique().HasDatabaseName("uq_modules_name");
+        builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(100).IsRequired();
+        builder.HasIndex(x => x.Code).IsUnique().HasDatabaseName("uq_modules_code");
+        builder.Property(x => x.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
     }
 }

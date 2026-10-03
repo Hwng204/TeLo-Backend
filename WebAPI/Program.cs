@@ -107,10 +107,8 @@ builder.Services.AddAuthorization(options =>
             context.User.IsInRole("OperationalAdmin") ||
             context.User.IsInRole("ADMIN") ||
             context.User.HasClaim("permission", "academic_calendar.manage")));
-    options.AddPolicy("ExamSubjectManager", policy =>
-        policy.RequireAuthenticatedUser().RequireAssertion(context =>
-            context.User.IsInRole("PHT") ||
-            context.User.HasClaim("permission", "exam_subject.manage")));
+    options.AddPolicy("ExamManager", policy =>
+        policy.RequireAuthenticatedUser().RequireRole("PHT"));
 });
 builder.Services.AddProblemDetails();
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();

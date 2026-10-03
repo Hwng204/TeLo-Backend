@@ -18,6 +18,7 @@ public static class IdentitySeeder
         var rolesToSeed = new[]
         {
             new { Code = "ADMIN", Name = "Quản trị viên" },
+            new { Code = "PHT", Name = "Phó Hiệu trưởng" },
             new { Code = "TEACHER", Name = "Giáo viên" },
             new { Code = "STUDENT", Name = "Học sinh" }
         };
@@ -36,11 +37,18 @@ public static class IdentitySeeder
         }
         db.SaveChanges();
 
+        var defaultBranchId = db.SchoolBranches
+            .Where(branch => branch.Status == "ACTIVE")
+            .OrderBy(branch => branch.Id)
+            .Select(branch => (ulong?)branch.Id)
+            .FirstOrDefault();
+
         var usersToSeed = new[]
         {
-            new { Username = "admin", RoleCode = "ADMIN" },
-            new { Username = "teacher", RoleCode = "TEACHER" },
-            new { Username = "student", RoleCode = "STUDENT" }
+            new { Username = "admin", FullName = "Quản trị viên", RoleCode = "ADMIN" },
+            new { Username = "pht", FullName = "Phó Hiệu trưởng", RoleCode = "PHT" },
+            new { Username = "teacher", FullName = "Giáo viên", RoleCode = "TEACHER" },
+            new { Username = "student", FullName = "Học sinh", RoleCode = "STUDENT" }
         };
 
         foreach (var userData in usersToSeed)
@@ -52,6 +60,8 @@ public static class IdentitySeeder
                 {
                     Username = userData.Username,
                     Email = $"{userData.Username}@telo.edu.vn",
+                    FullName = userData.FullName,
+                    SchoolBranchId = userData.RoleCode == "PHT" ? defaultBranchId : null,
                     PasswordHash = "",
                     Status = "ACTIVE",
                     CreatedAt = DateTime.UtcNow,

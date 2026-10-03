@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace WebAPI.Controllers;
 
 [ApiController]
-[Authorize(Policy = "OperationalAdmin")]
+[Authorize(Policy = "ExamManager")]
 [Route("api/exams")]
 public sealed class ExamsController(IExamService service) : ControllerBase
 {

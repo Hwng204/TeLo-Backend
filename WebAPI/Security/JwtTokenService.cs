@@ -9,6 +9,7 @@ namespace WebAPI.Security;
 
 public sealed record LoginResponse(
     string AccessToken,
+    string RefreshToken,
     string TokenType,
     DateTime ExpiresAtUtc);
 
@@ -49,8 +50,15 @@ public sealed class JwtTokenService(
             expires: expiresAt,
             signingCredentials: credentials);
 
+        var refreshToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(64));
+        
+        // In a real application, you would store this refresh token in the database
+        // along with the user's ID, expiry time (DateTime.UtcNow.AddMinutes(settings.RefreshTokenMinutes)),
+        // and a revocation status flag.
+
         return new LoginResponse(
             new JwtSecurityTokenHandler().WriteToken(token),
+            refreshToken,
             "Bearer",
             expiresAt);
     }

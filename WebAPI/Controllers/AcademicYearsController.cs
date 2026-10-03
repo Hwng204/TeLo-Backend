@@ -23,6 +23,7 @@ public sealed class AcademicYearsController(IAcademicYearService service) : Cont
     }
 
     [HttpGet]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResponse<AcademicYearPage>), StatusCodes.Status200OK)]
     public async Task<IActionResult> List(
         [FromQuery] string? status = null,

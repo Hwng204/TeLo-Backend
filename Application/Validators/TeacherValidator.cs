@@ -4,7 +4,7 @@ using Application.DTOs;
 using Domain.Entities.Identity;
 using Infrastructure.Repositories.Interface;
 
-namespace Application.Common;
+namespace Application.Validators;
 
 public static partial class TeacherValidator
 {

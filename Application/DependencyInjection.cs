@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<ISchoolService, SchoolService>();
         services.AddScoped<ISchoolBranchService, SchoolBranchService>();
         services.AddScoped<IMatrixPeopleResolver, MatrixPeopleResolver>();
+        services.AddScoped<IEmailService, EmailService>();
 
         return services;
     }

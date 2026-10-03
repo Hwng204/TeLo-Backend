@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace WebAPI.Controllers;
 
 [ApiController]
-[Authorize(Policy = "ExamSubjectManager")]
+[Authorize(Policy = "ExamManager")]
 [Route("api/exams/{examId:long}/subjects")]
 public sealed class ExamSubjectsController(IExamSubjectService service) : ControllerBase
 {

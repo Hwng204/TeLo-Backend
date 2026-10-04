@@ -10,6 +10,7 @@ using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddMemoryCache();
 builder.Services.AddControllers();
 // Student import is the only upload endpoint and its actions cap the request at
 // StudentImportControllerBase.UploadRequestLimit (an oversize body is rejected before the service

@@ -1,5 +1,5 @@
-using Application.Common;
 using Application.DTOs;
+using Application.Validators;
 using Xunit;
 
 namespace Application.Tests;

@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.DTOs;
+using Application.Validators;
 using Application.Mappings;
 using Application.Services.Interface;
 using Domain.Entities.Academic;
@@ -48,6 +49,31 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
         if (request.Terms is not null)
             foreach (var term in request.Terms)
                 academicYear.ConfigureTerm(term.Order, term.Name.Trim(), term.StartDate, term.EndDate);
+
+        if (request.Terms != null && request.Terms.Count > 0)
+        {
+            var termValidation = AcademicYearValidator.ValidateConfigureTerms(
+                new ConfigureTermsRequest(request.Terms),
+                request.StartDate,
+                request.EndDate);
+            
+            if (!termValidation.IsValid)
+            {
+                return ServiceResult<AcademicYearListItem>.Failure(
+                    "VALIDATION_ERROR",
+                    "Dữ liệu học kỳ không hợp lệ.",
+                    termValidation.Errors);
+            }
+
+            foreach (var item in request.Terms)
+            {
+                academicYear.ConfigureTerm(
+                    item.Order,
+                    item.Name.Trim(),
+                    item.StartDate,
+                    item.EndDate);
+            }
+        }
 
         var createOutcome = await uow.AcademicYears.TryAddAsync(academicYear, cancellationToken);
 

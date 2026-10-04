@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.DTOs;
+using Application.Validators;
 using Application.Mappings;
 using Application.Services.Interface;
 using Domain.Entities.Identity;

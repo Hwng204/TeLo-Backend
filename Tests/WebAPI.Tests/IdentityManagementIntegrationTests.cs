@@ -103,6 +103,76 @@ public sealed class IdentityManagementIntegrationTests
             var branches = await Read<DirectoryPage<IdentityScopeItem>>(await client.GetAsync($"/api/identity/scopes?kind=branch&schoolId={schoolA.Id}"));
             Assert.Equal(branchA.Id, Assert.Single(branches.Items).Id);
 
+            // Full user lifecycle: normalize input, enforce uniqueness/versioning,
+            // revoke sessions after credential/status changes, and retain audit history.
+            var createdUser = await Read<UserDetailItem>(await client.PostAsJsonAsync("/api/users", new CreateUserRequest
+            {
+                Username = "managed.user",
+                Email = " MANAGED.USER@EXAMPLE.COM ",
+                FullName = "  Người dùng quản lý  ",
+                Password = "Initial-password-123!",
+                MoetIdentifier = " MOET-001 ",
+                SchoolBranchId = branchA.Id,
+                Status = " active "
+            }), HttpStatusCode.Created);
+            Assert.Equal("managed.user@example.com", createdUser.Email);
+            Assert.Equal("Người dùng quản lý", createdUser.FullName);
+            Assert.Equal("ACTIVE", createdUser.Status);
+            Assert.Equal(branchA.Id, createdUser.SchoolBranchId);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/users", new CreateUserRequest
+            {
+                Username = createdUser.Username,
+                Email = "other@example.com",
+                FullName = "Trùng tên đăng nhập",
+                Password = "Another-password-123!"
+            })).StatusCode);
+
+            var originalVersion = createdUser.Version;
+            createdUser = await Read<UserDetailItem>(await client.PutAsJsonAsync($"/api/users/{createdUser.Id}", new UpdateUserRequest
+            {
+                Username = createdUser.Username,
+                Email = "updated.user@example.com",
+                FullName = "Người dùng đã cập nhật",
+                MoetIdentifier = createdUser.MoetIdentifier,
+                SchoolBranchId = branchB.Id,
+                Version = createdUser.Version
+            }));
+            Assert.Equal(branchB.Id, createdUser.SchoolBranchId);
+            Assert.True(createdUser.Version > originalVersion);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync($"/api/users/{createdUser.Id}", new UpdateUserRequest
+            {
+                Username = createdUser.Username,
+                Email = createdUser.Email,
+                FullName = createdUser.FullName,
+                MoetIdentifier = createdUser.MoetIdentifier,
+                SchoolBranchId = createdUser.SchoolBranchId,
+                Version = originalVersion
+            })).StatusCode);
+
+            createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/password",
+                new ResetUserPasswordRequest("Updated-password-456!", createdUser.Version)));
+            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Initial-password-123!"));
+            using (var managedSession = await Login(factory, createdUser.Username, "Updated-password-456!"))
+                Assert.Equal(HttpStatusCode.Forbidden, (await managedSession.GetAsync("/api/roles")).StatusCode);
+
+            createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/status",
+                new IdentityStatusRequest(" locked ", createdUser.Version)));
+            Assert.Equal("LOCKED", createdUser.Status);
+            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Updated-password-456!"));
+            createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/status",
+                new IdentityStatusRequest("ACTIVE", createdUser.Version)));
+            Assert.True(await Read<bool>(await client.DeleteAsync($"/api/users/{createdUser.Id}?version={createdUser.Version}")));
+            Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/users/{createdUser.Id}")).StatusCode);
+            var userAuditActions = await db.IdentityAudits.AsNoTracking()
+                .Where(a => a.EntityType == "USER" && a.EntityId == createdUser.Id)
+                .Select(a => a.Action)
+                .ToArrayAsync();
+            Assert.Contains("CREATE", userAuditActions);
+            Assert.Contains("UPDATE", userAuditActions);
+            Assert.Contains("RESET_PASSWORD", userAuditActions);
+            Assert.Contains("STATUS", userAuditActions);
+            Assert.Contains("DELETE", userAuditActions);
+
             // These aliases are interpreted globally by existing business APIs.
             foreach (var code in new[] { "PRINCIPAL", "HIEU_TRUONG", "HeadTeacher", "DirectoryAdmin" })
             {
@@ -249,15 +319,24 @@ public sealed class IdentityManagementIntegrationTests
         user.PasswordHash = new PasswordHasher<User>().HashPassword(user, "Identity-test-password-123");
         return user;
     }
-    private static async Task<HttpClient> Login(WebApplicationFactory<Program> factory, string username)
+    private static async Task<HttpClient> Login(WebApplicationFactory<Program> factory, string username,
+        string password = "Identity-test-password-123")
     {
         var client = factory.CreateClient();
         client.BaseAddress = new Uri("https://localhost");
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { username, password = "Identity-test-password-123" });
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { username, password });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", body.GetProperty("accessToken").GetString());
         return client;
+    }
+
+    private static async Task<HttpStatusCode> LoginStatus(WebApplicationFactory<Program> factory, string username, string password)
+    {
+        using var client = factory.CreateClient();
+        client.BaseAddress = new Uri("https://localhost");
+        using var response = await client.PostAsJsonAsync("/api/auth/login", new { username, password });
+        return response.StatusCode;
     }
     private static async Task<T> Read<T>(HttpResponseMessage response, HttpStatusCode expected = HttpStatusCode.OK)
     {

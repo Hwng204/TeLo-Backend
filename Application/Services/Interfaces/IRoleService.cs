@@ -10,7 +10,6 @@ public interface IRoleService
     Task<ServiceResult<RoleItem>> SaveAsync(ulong? id, SaveRoleRequest request, ulong actor, CancellationToken ct);
     Task<ServiceResult<RoleItem>> StatusAsync(ulong id, IdentityStatusRequest request, ulong actor, CancellationToken ct);
     Task<ServiceResult<bool>> DeleteAsync(ulong id, uint version, ulong actor, CancellationToken ct);
-    Task<ServiceResult<DirectoryPage<IdentityUserItem>>> UsersAsync(IdentityListQuery query, CancellationToken ct);
     Task<ServiceResult<UserRolesDetail>> UserRolesAsync(ulong id, CancellationToken ct);
     Task<ServiceResult<UserRolesDetail>> AssignUserRolesAsync(ulong id, AssignUserRolesRequest request, ulong actor, CancellationToken ct);
     Task<ServiceResult<RoleItem>> AddUsersAsync(ulong id, AssignRoleUsersRequest request, ulong actor, CancellationToken ct);

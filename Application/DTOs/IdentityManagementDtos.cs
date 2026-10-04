@@ -40,3 +40,29 @@ public sealed record IdentityUserItem(ulong Id, string Username, string FullName
     ulong? SchoolId, string? SchoolName, ulong? SchoolBranchId, string? SchoolBranchName, uint Version);
 public sealed record UserRolesDetail(IdentityUserItem User, IReadOnlyList<RoleItem> Roles);
 public sealed record IdentityScopeItem(ulong Id, string Code, string Name, string Status);
+
+// ===== User management (Admin) =====
+public sealed class CreateUserRequest
+{
+    public string Username { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string Password { get; set; } = "";
+    public string? MoetIdentifier { get; set; }
+    public ulong? SchoolBranchId { get; set; }
+    public string Status { get; set; } = "ACTIVE";
+    public ulong[] RoleIds { get; set; } = [];
+}
+public sealed class UpdateUserRequest
+{
+    public string Username { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public string? MoetIdentifier { get; set; }
+    public ulong? SchoolBranchId { get; set; }
+    public uint Version { get; set; }
+}
+public sealed record ResetUserPasswordRequest(string NewPassword, uint Version);
+public sealed record UserDetailItem(ulong Id, string Username, string FullName, string Email, string? MoetIdentifier,
+    string Status, ulong? SchoolId, string? SchoolName, ulong? SchoolBranchId, string? SchoolBranchName,
+    DateTime CreatedAt, bool IsTeacher, bool IsStudent, uint Version, IReadOnlyList<RoleItem> Roles);

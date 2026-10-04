@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using System.Text.Json;
 using Application.Common;
 using Application.DTOs;
+using Application.Mappings;
 using Application.Services.Interface;
 using Domain.Entities.Identity;
 using Infrastructure.Context;
@@ -15,14 +16,8 @@ namespace Application.Services.Implement;
 
 public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog roleCatalog, IConfiguration configuration) : IRoleService
 {
-    private static readonly Expression<Func<Role, RoleItem>> RoleProjection = r => new RoleItem(
-        r.Id, r.Code, r.Name, r.Description, r.Status, r.SchoolId, r.School == null ? null : r.School.Name,
-        r.SchoolBranchId, r.SchoolBranch == null ? null : r.SchoolBranch.Name, r.IsSystem, r.Version,
-        r.UserRoles.Count, !r.IsSystem && r.UsedAt == null && !r.UserRoles.Any() && !r.Permissions.Any());
-    private static readonly Expression<Func<User, IdentityUserItem>> UserProjection = u => new IdentityUserItem(
-        u.Id, u.Username, u.FullName, u.Email, u.Status, u.SchoolBranch == null ? null : u.SchoolBranch.SchoolId,
-        u.SchoolBranch == null ? null : u.SchoolBranch.School.Name, u.SchoolBranchId,
-        u.SchoolBranch == null ? null : u.SchoolBranch.Name, u.SecurityVersion);
+    private static readonly Expression<Func<Role, RoleItem>> RoleProjection = IdentityProjections.Role;
+    private static readonly Expression<Func<User, IdentityUserItem>> UserProjection = IdentityProjections.User;
 
     public async Task<ServiceResult<DirectoryPage<RoleItem>>> ListAsync(IdentityListQuery query, CancellationToken ct)
     {
@@ -135,30 +130,6 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return ServiceResult<bool>.Success(true);
-    }
-
-    public async Task<ServiceResult<DirectoryPage<IdentityUserItem>>> UsersAsync(IdentityListQuery query, CancellationToken ct)
-    {
-        var errors = IdentityManagementValidator.Query(query, allowLockedAccount: true);
-        if (errors.Count > 0) return Invalid<DirectoryPage<IdentityUserItem>>(errors);
-        var rows = db.Users.AsNoTracking();
-        var search = query.Search?.Trim();
-        if (!string.IsNullOrEmpty(search)) rows = rows.Where(u => u.Username.Contains(search) || u.FullName.Contains(search) || u.Email.Contains(search));
-        if (!string.IsNullOrEmpty(query.Status)) rows = rows.Where(u => u.Status == query.Status);
-        if (query.SchoolId.HasValue) rows = rows.Where(u => u.SchoolBranch != null && u.SchoolBranch.SchoolId == query.SchoolId);
-        if (query.SchoolBranchId.HasValue) rows = rows.Where(u => u.SchoolBranchId == query.SchoolBranchId);
-        if (query.RoleId.HasValue) rows = rows.Where(u => u.UserRoles.Any(ur => ur.RoleId == query.RoleId));
-        if (query.EligibleForRoleId.HasValue)
-        {
-            var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == query.EligibleForRoleId, ct);
-            if (role == null) return Missing<DirectoryPage<IdentityUserItem>>();
-            rows = rows.Where(u => role.Status == "ACTIVE" && u.Status == "ACTIVE" && !u.UserRoles.Any(ur => ur.RoleId == role.Id));
-            if (role.SchoolId.HasValue) rows = rows.Where(u => u.SchoolBranch != null && u.SchoolBranch.SchoolId == role.SchoolId && u.SchoolBranch.Status == "ACTIVE" && u.SchoolBranch.School.Status == "ACTIVE");
-            if (role.SchoolBranchId.HasValue) rows = rows.Where(u => u.SchoolBranchId == role.SchoolBranchId);
-        }
-        var count = await rows.CountAsync(ct);
-        var items = await rows.OrderBy(u => u.Username).ThenBy(u => u.Id).Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(UserProjection).ToArrayAsync(ct);
-        return ServiceResult<DirectoryPage<IdentityUserItem>>.Success(new(items, query.Page, query.PageSize, count));
     }
 
     public async Task<ServiceResult<UserRolesDetail>> UserRolesAsync(ulong id, CancellationToken ct)

@@ -48,4 +48,58 @@ public sealed class IdentityManagementValidatorTests
         Assert.NotEmpty(IdentityManagementValidator.Query(query));
         Assert.Empty(IdentityManagementValidator.Query(query, allowLockedAccount: true));
     }
+
+    [Fact]
+    public void AcceptsValidUserCreateRequest()
+    {
+        var request = new CreateUserRequest
+        {
+            Username = "  valid.user  ",
+            Email = " USER@example.com ",
+            FullName = "  Nguyễn Văn A  ",
+            Password = "Strong-password-123",
+            Status = " active ",
+            RoleIds = [1, 2]
+        };
+
+        Assert.Empty(IdentityManagementValidator.CreateUser(request));
+    }
+
+    [Fact]
+    public void RejectsInvalidUserFieldsAndDuplicateRoles()
+    {
+        var request = new CreateUserRequest
+        {
+            Username = "a",
+            Email = "not-an-email",
+            FullName = "\u0001",
+            Password = "weak",
+            MoetIdentifier = "MOET\u0001",
+            SchoolBranchId = 0,
+            Status = "UNKNOWN",
+            RoleIds = [1, 1]
+        };
+
+        var errors = IdentityManagementValidator.CreateUser(request);
+
+        Assert.Contains("username", errors.Keys);
+        Assert.Contains("email", errors.Keys);
+        Assert.Contains("fullName", errors.Keys);
+        Assert.Contains("password", errors.Keys);
+        Assert.Contains("moetIdentifier", errors.Keys);
+        Assert.Contains("schoolBranchId", errors.Keys);
+        Assert.Contains("status", errors.Keys);
+        Assert.Contains("roleIds", errors.Keys);
+    }
+
+    [Theory]
+    [InlineData(" active ")]
+    [InlineData("LOCKED")]
+    [InlineData("inactive")]
+    public void NormalizesValidUserStatus(string status) => Assert.Empty(
+        IdentityManagementValidator.UserStatus(new IdentityStatusRequest(status, 1)));
+
+    [Fact]
+    public void RejectsWeakResetPassword() => Assert.Contains("newPassword",
+        IdentityManagementValidator.ResetPassword(new ResetUserPasswordRequest("short", 1)).Keys);
 }

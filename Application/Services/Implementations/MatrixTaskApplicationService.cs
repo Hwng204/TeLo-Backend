@@ -85,7 +85,7 @@ public sealed class MatrixTaskApplicationService(
         var filter = (query with
         {
             AssignedToUserId = assignedToUserId,
-            BranchId = BranchScope(actor)
+            BranchId = MatrixApplicationService.BranchScope(actor)
         }).ToFilter();
 
         var page = await uow.MatrixTasks.ListAsync(filter, cancellationToken);
@@ -181,7 +181,7 @@ public sealed class MatrixTaskApplicationService(
         WorkTask task,
         CancellationToken cancellationToken)
     {
-        var branchScope = BranchScope(actor);
+        var branchScope = MatrixApplicationService.BranchScope(actor);
         if (branchScope is not null &&
             (task.AcademicContextId is null ||
              await uow.MatrixTasks.GetContextBranchIdAsync(task.AcademicContextId.Value, cancellationToken) != branchScope))
@@ -199,18 +199,5 @@ public sealed class MatrixTaskApplicationService(
         return peopleResolver.ResolveAsync(
             page.Items.Select(row => (ulong?)row.CreatedByUserId),
             cancellationToken);
-    }
-
-    // A PHT is limited to their own branch; the Principal and Team Leads are not branch-limited here.
-    private static ulong? BranchScope(MatrixActor actor)
-    {
-        if (actor.Role != MatrixActorRole.Pht || actor.IsPrincipal)
-        {
-            return null;
-        }
-
-        return actor.BranchId ?? throw new MatrixApplicationException(
-            "Forbidden",
-            "Tài khoản PHT chưa được gán chi nhánh.");
     }
 }

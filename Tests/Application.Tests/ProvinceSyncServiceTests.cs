@@ -80,6 +80,8 @@ public sealed class ProvinceSyncServiceTests
             throw new InvalidOperationException("Exam repository is not used by these tests.");
         public IExamSubjectRepository ExamSubjects =>
             throw new InvalidOperationException("Exam-subject repository is not used by these tests.");
+        public IExamRoomRepository ExamRooms =>
+            throw new InvalidOperationException("Exam-room repository is not used by these tests.");
 
         public IReadOnlyList<ProvinceCatalogItem>? SynchronizedProvinces { get; private set; }
 

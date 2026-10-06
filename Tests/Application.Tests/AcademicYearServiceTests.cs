@@ -511,6 +511,8 @@ public sealed class AcademicYearServiceTests
             throw new InvalidOperationException("Exam repository is not used by these tests.");
         public IExamSubjectRepository ExamSubjects =>
             throw new InvalidOperationException("Exam-subject repository is not used by these tests.");
+        public IExamRoomRepository ExamRooms =>
+            throw new InvalidOperationException("Exam-room repository is not used by these tests.");
 
         public AcademicYearCreateOutcome CreateOutcome { get; init; } =
             AcademicYearCreateOutcome.Created;

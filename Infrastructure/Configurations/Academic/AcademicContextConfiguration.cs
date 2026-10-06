@@ -13,14 +13,13 @@ public sealed class AcademicContextConfiguration : IEntityTypeConfiguration<Acad
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.AcademicYearId).HasColumnName("academic_year_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.SchoolId).HasColumnName("school_id").HasColumnType("bigint unsigned").IsRequired();
-        builder.Property(x => x.TextbookId).HasColumnName("textbook_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.SubjectId).HasColumnName("subject_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.GradeLevelId).HasColumnName("grade_level_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.SchoolBranchId).HasColumnName("school_branch_id").HasColumnType("bigint unsigned").IsRequired();
         builder.HasIndex(x => new
         {
             x.AcademicYearId, x.SchoolId, x.SchoolBranchId,
-            x.TextbookId, x.SubjectId, x.GradeLevelId
+            x.SubjectId, x.GradeLevelId
         }).IsUnique().HasDatabaseName("uq_academic_contexts_scope");
         builder.HasIndex(x => new { x.SubjectId, x.GradeLevelId })
             .HasDatabaseName("idx_academic_contexts_subject_grade");
@@ -35,9 +34,6 @@ public sealed class AcademicContextConfiguration : IEntityTypeConfiguration<Acad
             .HasForeignKey(x => new { x.SchoolBranchId, x.SchoolId })
             .HasPrincipalKey(x => new { x.Id, x.SchoolId })
             .HasConstraintName("fk_academic_contexts_branch_school")
-            .OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Textbook).WithMany()
-            .HasForeignKey(x => x.TextbookId).HasConstraintName("fk_academic_contexts_textbook")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Subject).WithMany()
             .HasForeignKey(x => x.SubjectId).HasConstraintName("fk_academic_contexts_subject")

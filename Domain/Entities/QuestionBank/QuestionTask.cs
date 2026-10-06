@@ -11,6 +11,6 @@ public sealed class QuestionTask
     public uint AssignedQuestionCount { get; set; }
 
     public WorkTask Task { get; set; } = null!;
-    public TextbookLesson Lesson { get; set; } = null!;
+    public Lesson Lesson { get; set; } = null!;
     public ICollection<QuestionTaskDetail> Details { get; set; } = new List<QuestionTaskDetail>();
 }

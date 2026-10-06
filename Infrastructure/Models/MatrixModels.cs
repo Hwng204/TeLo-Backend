@@ -80,12 +80,10 @@ public sealed record MatrixAcademicContextOption(
     string Label,
     ulong AcademicYearId,
     ulong SchoolBranchId,
-    ulong TextbookId,
     ulong SubjectId,
     ulong GradeLevelId,
     // Display names so a client can show each dimension in its own field
     // instead of parsing them back out of Label.
-    string TextbookTitle = "",
     string SubjectName = "",
     string GradeLevelName = "",
     string AcademicYearName = "");
@@ -97,12 +95,17 @@ public sealed record MatrixSemesterOption(
     DateOnly? StartDate,
     DateOnly? EndDate);
 
+// Lesson titles repeat across chapters (several "Luyện tập chung"), so the client labels and matches a
+// lesson by its code and chapter too.
 public sealed record MatrixLessonOption(
     ulong Id,
     ulong ContextId,
     ulong ChapterId,
     string Title,
-    uint SortOrder);
+    uint SortOrder,
+    string Code = "",
+    string ChapterCode = "",
+    string ChapterTitle = "");
 
 public sealed record MatrixTeamLeadOption(
     ulong Id,

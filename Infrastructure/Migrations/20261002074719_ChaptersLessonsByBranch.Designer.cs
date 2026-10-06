@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002074719_ChaptersLessonsByBranch")]
+    partial class ChaptersLessonsByBranch
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -651,12 +654,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int unsigned")
                         .HasColumnName("candidate_limit");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("code");
-
                     b.Property<ulong>("ExamId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("exam_id");
@@ -669,10 +666,6 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_exam_rooms_room");
-
-                    b.HasIndex("ExamId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("uq_exam_rooms_exam_code");
 
                     b.HasIndex("ExamId", "RoomId")
                         .IsUnique()

@@ -15,5 +15,5 @@ public sealed class MatrixDetail
     public decimal Percentage { get; set; }
 
     public ExamMatrix ExamMatrix { get; set; } = null!;
-    public TextbookLesson Lesson { get; set; } = null!;
+    public Lesson Lesson { get; set; } = null!;
 }

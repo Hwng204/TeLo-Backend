@@ -103,6 +103,18 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("TeacherRead", policy => policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
         .Any(claim => teacherReadRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
 
+    // Chương & bài học: PHT quản lý, Tổ trưởng và Giáo viên chỉ xem; phạm vi là phân hiệu của người dùng.
+    var curriculumReadRoles = builder.Configuration
+        .GetSection("CurriculumAuth:ReadRoleCodes").Get<string[]>()
+        ?? ["PHT", "TEAM_LEAD", "TO_TRUONG", "GIAO_VIEN", "TEACHER"];
+    var curriculumManageRoles = builder.Configuration
+        .GetSection("CurriculumAuth:ManageRoleCodes").Get<string[]>()
+        ?? ["PHT"];
+    options.AddPolicy(CurriculumController.ReadPolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(curriculumReadRoles));
+    options.AddPolicy(CurriculumController.ManagePolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireRole(curriculumManageRoles));
+
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
             context.User.IsInRole("OperationalAdmin") ||

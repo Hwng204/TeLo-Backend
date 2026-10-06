@@ -106,6 +106,7 @@ public sealed class ExamSubjectServiceTests
         public IMatrixReferenceRepository MatrixReferences => throw Unused();
         public IExamRepository Exams => throw Unused();
         public IExamSubjectRepository ExamSubjects => this;
+        public IExamRoomRepository ExamRooms => throw Unused();
 
         public Dictionary<ulong, ExamSubject> Items { get; } = [];
         public bool ExamExists { get; init; } = true;

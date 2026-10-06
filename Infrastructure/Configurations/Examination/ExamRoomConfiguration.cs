@@ -13,8 +13,10 @@ public sealed class ExamRoomConfiguration : IEntityTypeConfiguration<ExamRoom>
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.ExamId).HasColumnName("exam_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.RoomId).HasColumnName("room_id").HasColumnType("bigint unsigned").IsRequired();
+        builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(50).IsRequired();
         builder.Property(x => x.CandidateLimit).HasColumnName("candidate_limit").HasColumnType("int unsigned").IsRequired();
         builder.HasIndex(x => new { x.ExamId, x.RoomId }).IsUnique().HasDatabaseName("uq_exam_rooms_exam_room");
+        builder.HasIndex(x => new { x.ExamId, x.Code }).IsUnique().HasDatabaseName("uq_exam_rooms_exam_code");
         builder.HasIndex(x => x.RoomId).HasDatabaseName("idx_exam_rooms_room");
         builder.HasOne(x => x.Exam).WithMany(x => x.Rooms)
             .HasForeignKey(x => x.ExamId).HasConstraintName("fk_exam_rooms_exam")

@@ -61,6 +61,7 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddApplication();
+builder.Services.AddHostedService<WebAPI.EmailDeliveryWorker>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();

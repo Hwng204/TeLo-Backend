@@ -123,7 +123,8 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         if (role == null) return Missing<bool>();
         if (version == 0 || role.Version != version) return Conflict<bool>();
         if (role.IsSystem || IsAdministrator(role.Code) || role.UsedAt.HasValue ||
-            await db.Roles.AnyAsync(r => r.Id == id && (r.UserRoles.Any() || r.Permissions.Any()), ct))
+            await db.Roles.AnyAsync(r => r.Id == id && (r.UserRoles.Any() || r.Permissions.Any()), ct) ||
+            await db.NotificationTargets.AnyAsync(t => t.RoleId == id, ct))
             return Conflict<bool>("Vai trò hệ thống hoặc đã phát sinh sử dụng không thể xóa. Hãy ngừng áp dụng để giữ lịch sử.");
         Audit(actor, "ROLE", id, "DELETE", Snapshot(role));
         db.Roles.Remove(role);

@@ -13,7 +13,8 @@ public sealed class MatrixApplicationService(
     IUnitOfWork uow,
     IMatrixCurrentUser currentUser,
     IMatrixWorkbookExporter exporter,
-    IMatrixPeopleResolver peopleResolver) : IMatrixApplicationService
+    IMatrixPeopleResolver peopleResolver,
+    IEmailNotificationService emailNotifications) : IMatrixApplicationService
 {
     public async Task<MatrixPage> ListAsync(
         MatrixListQuery query,
@@ -263,6 +264,15 @@ public sealed class MatrixApplicationService(
                     actor.UserId,
                     ct);
             }
+
+            var eventCode = matrix.Status switch
+            {
+                MatrixStatusCodes.Submitted => "MATRIX_SUBMITTED",
+                MatrixStatusCodes.Approved => "MATRIX_APPROVED",
+                MatrixStatusCodes.Draft when expectedStatus == MatrixStatusCodes.Submitted => "MATRIX_REJECTED",
+                _ => null
+            };
+            if (eventCode != null) await emailNotifications.QueueMatrixAsync(matrix.Id, eventCode, actor.UserId, ct);
 
             return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);

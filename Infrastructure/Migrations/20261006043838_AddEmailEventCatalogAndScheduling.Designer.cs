@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261006043838_AddEmailEventCatalogAndScheduling")]
+    partial class AddEmailEventCatalogAndScheduling
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -53,18 +56,24 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("subject_id");
 
+                    b.Property<ulong>("TextbookId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("textbook_id");
+
                     b.HasKey("Id");
 
                     b.HasIndex("GradeLevelId");
 
                     b.HasIndex("SchoolId");
 
+                    b.HasIndex("TextbookId");
+
                     b.HasIndex("SchoolBranchId", "SchoolId");
 
                     b.HasIndex("SubjectId", "GradeLevelId")
                         .HasDatabaseName("idx_academic_contexts_subject_grade");
 
-                    b.HasIndex("AcademicYearId", "SchoolId", "SchoolBranchId", "SubjectId", "GradeLevelId")
+                    b.HasIndex("AcademicYearId", "SchoolId", "SchoolBranchId", "TextbookId", "SubjectId", "GradeLevelId")
                         .IsUnique()
                         .HasDatabaseName("uq_academic_contexts_scope");
 
@@ -142,64 +151,6 @@ namespace Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("Domain.Entities.Academic.Chapter", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
-                        .HasColumnName("code")
-                        .UseCollation("utf8mb4_0900_as_ci");
-
-                    b.Property<ulong>("FieldId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("field_id");
-
-                    b.Property<ulong>("GradeLevelId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("grade_level_id");
-
-                    b.Property<ulong>("SchoolBranchId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("school_branch_id");
-
-                    b.Property<uint>("SortOrder")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("sort_order");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("title")
-                        .UseCollation("utf8mb4_0900_as_ci");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FieldId")
-                        .HasDatabaseName("idx_chapters_field");
-
-                    b.HasIndex("GradeLevelId")
-                        .HasDatabaseName("idx_chapters_grade");
-
-                    b.HasIndex("SchoolBranchId", "GradeLevelId", "FieldId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("uq_chapters_code");
-
-                    b.HasIndex("SchoolBranchId", "GradeLevelId", "FieldId", "Title")
-                        .IsUnique()
-                        .HasDatabaseName("uq_chapters_title");
-
-                    b.ToTable("chapters", (string)null);
-                });
-
             modelBuilder.Entity("Domain.Entities.Academic.GradeLevel", b =>
                 {
                     b.Property<ulong>("Id")
@@ -230,54 +181,6 @@ namespace Infrastructure.Migrations
                         .HasDatabaseName("uq_grade_levels_name");
 
                     b.ToTable("grade_levels", (string)null);
-                });
-
-            modelBuilder.Entity("Domain.Entities.Academic.Lesson", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<ulong>("ChapterId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("chapter_id");
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
-                        .HasColumnName("code")
-                        .UseCollation("utf8mb4_0900_as_ci");
-
-                    b.Property<string>("Content")
-                        .HasColumnType("longtext")
-                        .HasColumnName("content");
-
-                    b.Property<uint>("SortOrder")
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("sort_order");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("varchar(255)")
-                        .HasColumnName("title")
-                        .UseCollation("utf8mb4_0900_as_ci");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ChapterId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("uq_lessons_code");
-
-                    b.HasIndex("ChapterId", "Title")
-                        .IsUnique()
-                        .HasDatabaseName("uq_lessons_title");
-
-                    b.ToTable("lessons", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Entities.Academic.Semester", b =>
@@ -374,7 +277,7 @@ namespace Infrastructure.Migrations
                     b.ToTable("subjects", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.Entities.Academic.SubjectField", b =>
+            modelBuilder.Entity("Domain.Entities.Academic.Textbook", b =>
                 {
                     b.Property<ulong>("Id")
                         .ValueGeneratedOnAdd()
@@ -383,31 +286,91 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
-                    b.Property<string>("Name")
+                    b.Property<string>("BookSet")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("book_set");
+
+                    b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(32)
-                        .HasColumnType("varchar(32)")
-                        .HasDefaultValue("ACTIVE")
-                        .HasColumnName("status");
-
-                    b.Property<ulong>("SubjectId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("subject_id");
+                        .HasColumnName("title");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SubjectId", "Name")
-                        .IsUnique()
-                        .HasDatabaseName("uq_subject_fields_name");
+                    b.HasIndex("Title")
+                        .HasDatabaseName("idx_textbooks_title");
 
-                    b.ToTable("subject_fields", (string)null);
+                    b.ToTable("textbooks", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.Academic.TextbookChapter", b =>
+                {
+                    b.Property<ulong>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
+
+                    b.Property<uint>("SortOrder")
+                        .HasColumnType("int unsigned")
+                        .HasColumnName("sort_order");
+
+                    b.Property<ulong>("TextbookId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("textbook_id");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TextbookId", "SortOrder")
+                        .IsUnique()
+                        .HasDatabaseName("uq_textbook_chapters_order");
+
+                    b.ToTable("textbook_chapters", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.Academic.TextbookLesson", b =>
+                {
+                    b.Property<ulong>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
+
+                    b.Property<ulong>("ChapterId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("chapter_id");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("longtext")
+                        .HasColumnName("content");
+
+                    b.Property<uint>("SortOrder")
+                        .HasColumnType("int unsigned")
+                        .HasColumnName("sort_order");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("title");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChapterId", "SortOrder")
+                        .IsUnique()
+                        .HasDatabaseName("uq_textbook_lessons_order");
+
+                    b.ToTable("textbook_lessons", (string)null);
                 });
 
             modelBuilder.Entity("Domain.Entities.Examination.Exam", b =>
@@ -651,12 +614,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("int unsigned")
                         .HasColumnName("candidate_limit");
 
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("varchar(50)")
-                        .HasColumnName("code");
-
                     b.Property<ulong>("ExamId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("exam_id");
@@ -669,10 +626,6 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("RoomId")
                         .HasDatabaseName("idx_exam_rooms_room");
-
-                    b.HasIndex("ExamId", "Code")
-                        .IsUnique()
-                        .HasDatabaseName("uq_exam_rooms_exam_code");
 
                     b.HasIndex("ExamId", "RoomId")
                         .IsUnique()
@@ -3379,6 +3332,13 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_academic_contexts_subject");
 
+                    b.HasOne("Domain.Entities.Academic.Textbook", "Textbook")
+                        .WithMany()
+                        .HasForeignKey("TextbookId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_academic_contexts_textbook");
+
                     b.HasOne("Domain.Entities.Organization.SchoolBranch", "SchoolBranch")
                         .WithMany()
                         .HasForeignKey("SchoolBranchId", "SchoolId")
@@ -3396,48 +3356,8 @@ namespace Infrastructure.Migrations
                     b.Navigation("SchoolBranch");
 
                     b.Navigation("Subject");
-                });
 
-            modelBuilder.Entity("Domain.Entities.Academic.Chapter", b =>
-                {
-                    b.HasOne("Domain.Entities.Academic.SubjectField", "Field")
-                        .WithMany()
-                        .HasForeignKey("FieldId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_chapters_field");
-
-                    b.HasOne("Domain.Entities.Academic.GradeLevel", "GradeLevel")
-                        .WithMany()
-                        .HasForeignKey("GradeLevelId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_chapters_grade");
-
-                    b.HasOne("Domain.Entities.Organization.SchoolBranch", "SchoolBranch")
-                        .WithMany()
-                        .HasForeignKey("SchoolBranchId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_chapters_branch");
-
-                    b.Navigation("Field");
-
-                    b.Navigation("GradeLevel");
-
-                    b.Navigation("SchoolBranch");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Academic.Lesson", b =>
-                {
-                    b.HasOne("Domain.Entities.Academic.Chapter", "Chapter")
-                        .WithMany("Lessons")
-                        .HasForeignKey("ChapterId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_lessons_chapter");
-
-                    b.Navigation("Chapter");
+                    b.Navigation("Textbook");
                 });
 
             modelBuilder.Entity("Domain.Entities.Academic.Semester", b =>
@@ -3452,16 +3372,28 @@ namespace Infrastructure.Migrations
                     b.Navigation("AcademicYear");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Academic.SubjectField", b =>
+            modelBuilder.Entity("Domain.Entities.Academic.TextbookChapter", b =>
                 {
-                    b.HasOne("Domain.Entities.Academic.Subject", "Subject")
-                        .WithMany()
-                        .HasForeignKey("SubjectId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                    b.HasOne("Domain.Entities.Academic.Textbook", "Textbook")
+                        .WithMany("Chapters")
+                        .HasForeignKey("TextbookId")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
-                        .HasConstraintName("fk_subject_fields_subject");
+                        .HasConstraintName("fk_textbook_chapters_textbook");
 
-                    b.Navigation("Subject");
+                    b.Navigation("Textbook");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Academic.TextbookLesson", b =>
+                {
+                    b.HasOne("Domain.Entities.Academic.TextbookChapter", "Chapter")
+                        .WithMany("Lessons")
+                        .HasForeignKey("ChapterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_textbook_lessons_chapter");
+
+                    b.Navigation("Chapter");
                 });
 
             modelBuilder.Entity("Domain.Entities.Examination.Exam", b =>
@@ -4379,7 +4311,7 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_matrix_details_matrix");
 
-                    b.HasOne("Domain.Entities.Academic.Lesson", "Lesson")
+                    b.HasOne("Domain.Entities.Academic.TextbookLesson", "Lesson")
                         .WithMany()
                         .HasForeignKey("LessonId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -4472,7 +4404,7 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.QuestionBank.QuestionTask", b =>
                 {
-                    b.HasOne("Domain.Entities.Academic.Lesson", "Lesson")
+                    b.HasOne("Domain.Entities.Academic.TextbookLesson", "Lesson")
                         .WithMany()
                         .HasForeignKey("LessonId")
                         .OnDelete(DeleteBehavior.Restrict)
@@ -4549,7 +4481,12 @@ namespace Infrastructure.Migrations
                     b.Navigation("Semesters");
                 });
 
-            modelBuilder.Entity("Domain.Entities.Academic.Chapter", b =>
+            modelBuilder.Entity("Domain.Entities.Academic.Textbook", b =>
+                {
+                    b.Navigation("Chapters");
+                });
+
+            modelBuilder.Entity("Domain.Entities.Academic.TextbookChapter", b =>
                 {
                     b.Navigation("Lessons");
                 });

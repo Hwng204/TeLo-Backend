@@ -62,6 +62,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<TechnicalIncident> TechnicalIncidents => Set<TechnicalIncident>();
     public DbSet<Violation> Violations => Set<Violation>();
     public DbSet<NotificationConfig> NotificationConfigs => Set<NotificationConfig>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+    public DbSet<EmailEvent> EmailEvents => Set<EmailEvent>();
+    public DbSet<EmailTemplateVersion> EmailTemplateVersions => Set<EmailTemplateVersion>();
     public DbSet<NotificationTarget> NotificationTargets => Set<NotificationTarget>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationRecipient> NotificationRecipients => Set<NotificationRecipient>();

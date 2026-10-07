@@ -16,6 +16,9 @@ public sealed class NotificationConfig
     public string ContentTemplate { get; set; } = string.Empty;
     public string? ActionUrlTemplate { get; set; }
     public bool IsActive { get; set; } = true;
+    public uint Version { get; set; } = 1;
+    public ulong? EmailTemplateVersionId { get; set; }
+    public EmailTemplateVersion? EmailTemplateVersion { get; set; }
 
     public School? School { get; set; }
     public SchoolBranch? SchoolBranch { get; set; }

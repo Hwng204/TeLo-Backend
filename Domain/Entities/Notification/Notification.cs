@@ -13,6 +13,16 @@ public sealed class Notification
     public string Content { get; set; } = string.Empty;
     public string? ActionUrl { get; set; }
     public DateTime CreatedAt { get; set; }
+    public string? EventCode { get; set; }
+    public string? EventKey { get; set; }
+    public ulong? EmailTemplateVersionId { get; set; }
+    public EmailTemplateVersion? EmailTemplateVersion { get; set; }
+    public bool IsTest { get; set; }
+    public string SendKind { get; set; } = "AUTOMATIC";
+    public string? RequestFingerprint { get; set; }
+    public uint Version { get; set; } = 1;
+    public DateTime? CancelledAt { get; set; }
+    public ulong? CreatedByUserId { get; set; }
 
     public NotificationConfig? Config { get; set; }
     public School School { get; set; } = null!;

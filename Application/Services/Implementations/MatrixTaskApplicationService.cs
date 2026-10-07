@@ -11,7 +11,8 @@ namespace Application.Services.Implement;
 public sealed class MatrixTaskApplicationService(
     IUnitOfWork uow,
     IMatrixCurrentUser currentUser,
-    IMatrixPeopleResolver peopleResolver) : IMatrixTaskApplicationService
+    IMatrixPeopleResolver peopleResolver,
+    IEmailNotificationService emailNotifications) : IMatrixTaskApplicationService
 {
     public async Task<MatrixTaskResponse> CreateAsync(
         CreateMatrixTaskRequest request,
@@ -69,6 +70,7 @@ public sealed class MatrixTaskApplicationService(
 
             await uow.MatrixTasks.AddAsync(task, ct);
             await uow.CompleteAsync(ct);
+            await emailNotifications.QueueMatrixAssignmentAsync(task.Id, actor.UserId, ct);
             return task.ToResponse(null, await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, ct));
         }, cancellationToken);
     }

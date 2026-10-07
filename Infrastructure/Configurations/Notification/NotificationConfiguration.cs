@@ -12,6 +12,17 @@ public sealed class NotificationConfiguration : IEntityTypeConfiguration<Notific
         builder.ToTable("notifications");
 
         builder.HasKey(entity => entity.Id);
+        builder.Property(entity => entity.EventCode).HasColumnName("event_code").HasMaxLength(100);
+        builder.Property(entity => entity.EventKey).HasColumnName("event_key").HasMaxLength(190);
+        builder.Property(entity => entity.IsTest).HasColumnName("is_test").HasDefaultValue(false);
+        builder.Property(entity => entity.SendKind).HasColumnName("send_kind").HasMaxLength(20).HasDefaultValue("AUTOMATIC");
+        builder.Property(entity => entity.RequestFingerprint).HasColumnName("request_fingerprint").HasMaxLength(64);
+        builder.Property(entity => entity.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
+        builder.Property(entity => entity.CancelledAt).HasColumnName("cancelled_at");
+        builder.Property(entity => entity.CreatedByUserId).HasColumnName("created_by_user_id");
+        builder.Property(entity => entity.EmailTemplateVersionId).HasColumnName("email_template_version_id");
+        builder.HasIndex(entity => entity.EventKey).IsUnique();
+        builder.HasOne(entity => entity.EmailTemplateVersion).WithMany().HasForeignKey(entity => entity.EmailTemplateVersionId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(entity => entity.ConfigId).HasColumnName("config_id").HasColumnType("bigint unsigned");
         builder.Property(entity => entity.SchoolId).HasColumnName("school_id").HasColumnType("bigint unsigned").IsRequired();

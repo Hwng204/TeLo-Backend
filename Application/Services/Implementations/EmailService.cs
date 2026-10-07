@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Mail;
 using Application.Services.Interface;
 using Microsoft.Extensions.Configuration;
@@ -8,45 +8,44 @@ namespace Application.Services.Implement;
 
 public sealed class EmailService(ILogger<EmailService> logger, IConfiguration configuration) : IEmailService
 {
+    // Preserve the existing authentication contract, without logging OTPs or message bodies.
     public async Task SendEmailAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
     {
-        try
+        try { await SendCoreAsync(to, subject, body, true, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception) { logger.LogWarning("Authentication email delivery failed."); }
+    }
+
+    // Queue delivery must observe failures; completion means SMTP accepted the mail.
+    public Task SendNotificationEmailAsync(string to, string subject, string body, CancellationToken cancellationToken = default) =>
+        SendCoreAsync(to, subject, body, false, cancellationToken);
+
+    private async Task SendCoreAsync(string to, string subject, string body, bool html, CancellationToken ct)
+    {
+        var email = configuration["EmailSettings:Email"];
+        var password = configuration["EmailSettings:Password"];
+        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("EMAIL_NOT_CONFIGURED");
+        var host = configuration["EmailSettings:Host"] ?? "smtp.gmail.com";
+        var port = int.TryParse(configuration["EmailSettings:Port"], out var configuredPort) ? configuredPort : 587;
+        using var client = new SmtpClient(host, port)
         {
-            var host = configuration["EmailSettings:Host"] ?? "smtp.gmail.com";
-            var port = int.Parse(configuration["EmailSettings:Port"] ?? "587");
-            var email = configuration["EmailSettings:Email"];
-            var password = configuration["EmailSettings:Password"];
-            var displayName = configuration["EmailSettings:DisplayName"] ?? "TeLo School Management";
-
-            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
-            {
-                logger.LogWarning("Chưa cấu hình EmailSettings trong appsettings.json. Không thể gửi mail tới {To}", to);
-                
-                // Fallback to dummy logging if not configured
-                logger.LogInformation("DUMMY EMAIL SERVICE - TO: {Email}, SUBJECT: {Subject}, BODY: {Body}", to, subject, body);
-                return;
-            }
-
-            using var client = new SmtpClient(host, port);
-            client.UseDefaultCredentials = false;
-            client.Credentials = new NetworkCredential(email, password);
-            client.EnableSsl = true;
-
-            var mailMessage = new MailMessage
-            {
-                From = new MailAddress(email, displayName),
-                Subject = subject,
-                Body = body,
-                IsBodyHtml = true
-            };
-            mailMessage.To.Add(to);
-
-            await client.SendMailAsync(mailMessage, cancellationToken);
-            logger.LogInformation("Đã gửi email thành công tới {To}", to);
-        }
-        catch (Exception ex)
+            UseDefaultCredentials = false,
+            Credentials = new NetworkCredential(email, password),
+            EnableSsl = true
+        };
+        using var message = new MailMessage
         {
-            logger.LogError(ex, "Lỗi khi gửi email tới {To}", to);
-        }
+            From = new MailAddress(email, configuration["EmailSettings:DisplayName"] ?? "TeLo School Management"),
+            Subject = subject.Replace('\r', ' ').Replace('\n', ' '),
+            Body = body,
+            IsBodyHtml = html,
+            BodyEncoding = System.Text.Encoding.UTF8,
+            SubjectEncoding = System.Text.Encoding.UTF8
+        };
+        message.To.Add(new MailAddress(to));
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        await client.SendMailAsync(message, timeout.Token);
     }
 }

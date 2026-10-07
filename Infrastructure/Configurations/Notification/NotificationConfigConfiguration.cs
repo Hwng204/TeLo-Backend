@@ -15,6 +15,9 @@ public sealed class NotificationConfigConfiguration : IEntityTypeConfiguration<N
         });
 
         builder.HasKey(entity => entity.Id);
+        builder.Property(entity => entity.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
+        builder.Property(entity => entity.EmailTemplateVersionId).HasColumnName("email_template_version_id");
+        builder.HasOne(entity => entity.EmailTemplateVersion).WithMany().HasForeignKey(entity => entity.EmailTemplateVersionId).OnDelete(DeleteBehavior.Restrict);
         builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(entity => entity.SchoolId).HasColumnName("school_id").HasColumnType("bigint unsigned");
         builder.Property(entity => entity.SchoolBranchId).HasColumnName("school_branch_id").HasColumnType("bigint unsigned");

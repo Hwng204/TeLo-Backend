@@ -10,59 +10,19 @@ namespace Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "fk_academic_years_province",
-                table: "academic_years");
-
-            migrationBuilder.DropColumn(
-                name: "representative",
-                table: "schools");
-
-            migrationBuilder.DropColumn(
-                name: "type",
-                table: "schools");
-
-            migrationBuilder.DropColumn(
-                name: "ProvinceCode",
-                table: "academic_years");
+            // AcademicYearSystemScope (20260926120000) already performs the
+            // complete province-to-system migration earlier in this chain.
+            // Keep this historical migration identifier, but do not repeat its
+            // FK removal or drop the unrelated legacy schools.type/representative
+            // columns introduced by a divergent scaffold. This is intentionally
+            // a no-op for both fresh databases and previously migrated databases.
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "representative",
-                table: "schools",
-                type: "varchar(255)",
-                maxLength: 255,
-                nullable: true,
-                collation: "utf8mb4_0900_ai_ci")
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.AddColumn<string>(
-                name: "type",
-                table: "schools",
-                type: "varchar(100)",
-                maxLength: 100,
-                nullable: true,
-                collation: "utf8mb4_0900_ai_ci")
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.AddColumn<string>(
-                name: "ProvinceCode",
-                table: "academic_years",
-                type: "varchar(2)",
-                nullable: true,
-                collation: "utf8mb4_0900_ai_ci")
-                .Annotation("MySql:CharSet", "utf8mb4");
-
-            migrationBuilder.AddForeignKey(
-                name: "fk_academic_years_province",
-                table: "academic_years",
-                column: "ProvinceCode",
-                principalTable: "provinces",
-                principalColumn: "code",
-                onDelete: ReferentialAction.Restrict);
+            // Up owns no schema changes. AcademicYearSystemScope.Down restores
+            // the province schema if rollback continues past that migration.
         }
     }
 }

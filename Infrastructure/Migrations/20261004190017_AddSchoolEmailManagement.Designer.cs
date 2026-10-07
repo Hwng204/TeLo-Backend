@@ -4,6 +4,7 @@ using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261004190017_AddSchoolEmailManagement")]
+    partial class AddSchoolEmailManagement
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1774,134 +1777,6 @@ namespace Infrastructure.Migrations
                     b.ToTable("user_roles", (string)null);
                 });
 
-            modelBuilder.Entity("Domain.Entities.Notification.EmailEvent", b =>
-                {
-                    b.Property<ulong>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("id");
-
-                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
-
-                    b.Property<string>("Code")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("varchar(100)")
-                        .HasColumnName("code");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("varchar(1000)")
-                        .HasColumnName("description");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(150)
-                        .HasColumnType("varchar(150)")
-                        .HasColumnName("name");
-
-                    b.Property<ulong?>("SchoolId")
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("school_id");
-
-                    b.Property<ulong>("ScopeKey")
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("bigint unsigned")
-                        .HasColumnName("scope_key")
-                        .HasComputedColumnSql("COALESCE(school_id,0)", true);
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasColumnName("status");
-
-                    b.Property<string>("TriggerKind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasColumnName("trigger_kind");
-
-                    b.Property<DateTime?>("UsedAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("used_at");
-
-                    b.Property<string>("VariablesJson")
-                        .IsRequired()
-                        .HasColumnType("longtext")
-                        .HasColumnName("variables_json");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .HasColumnType("int unsigned")
-                        .HasColumnName("version");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("SchoolId");
-
-                    b.HasIndex("ScopeKey", "Code")
-                        .IsUnique();
-
-                    b.ToTable("email_events", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_email_events_scope", "(trigger_kind='SYSTEM' AND school_id IS NULL) OR (trigger_kind='MANUAL' AND school_id IS NOT NULL)");
-
-                            t.HasCheckConstraint("ck_email_events_status", "status IN ('ACTIVE','INACTIVE')");
-                        });
-
-                    b.HasData(
-                        new
-                        {
-                            Id = 1ul,
-                            Code = "MATRIX_ASSIGNED",
-                            Description = "",
-                            Name = "Giao nhiệm vụ lập ma trận",
-                            ScopeKey = 0ul,
-                            Status = "ACTIVE",
-                            TriggerKind = "SYSTEM",
-                            VariablesJson = "[{\"Name\":\"schoolName\",\"Label\":\"schoolName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"branchName\",\"Label\":\"branchName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actorName\",\"Label\":\"actorName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"taskName\",\"Label\":\"taskName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"dueAt\",\"Label\":\"dueAt\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actionUrl\",\"Label\":\"actionUrl\",\"Type\":\"TEXT\",\"Required\":true}]",
-                            Version = 1u
-                        },
-                        new
-                        {
-                            Id = 2ul,
-                            Code = "MATRIX_SUBMITTED",
-                            Description = "",
-                            Name = "Ma trận đã nộp",
-                            ScopeKey = 0ul,
-                            Status = "ACTIVE",
-                            TriggerKind = "SYSTEM",
-                            VariablesJson = "[{\"Name\":\"schoolName\",\"Label\":\"schoolName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"branchName\",\"Label\":\"branchName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actorName\",\"Label\":\"actorName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"matrixName\",\"Label\":\"matrixName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actionUrl\",\"Label\":\"actionUrl\",\"Type\":\"TEXT\",\"Required\":true}]",
-                            Version = 1u
-                        },
-                        new
-                        {
-                            Id = 3ul,
-                            Code = "MATRIX_APPROVED",
-                            Description = "",
-                            Name = "Ma trận đã duyệt / hoàn tất",
-                            ScopeKey = 0ul,
-                            Status = "ACTIVE",
-                            TriggerKind = "SYSTEM",
-                            VariablesJson = "[{\"Name\":\"schoolName\",\"Label\":\"schoolName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"branchName\",\"Label\":\"branchName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actorName\",\"Label\":\"actorName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"matrixName\",\"Label\":\"matrixName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actionUrl\",\"Label\":\"actionUrl\",\"Type\":\"TEXT\",\"Required\":true}]",
-                            Version = 1u
-                        },
-                        new
-                        {
-                            Id = 4ul,
-                            Code = "MATRIX_REJECTED",
-                            Description = "",
-                            Name = "Ma trận cần chỉnh sửa",
-                            ScopeKey = 0ul,
-                            Status = "ACTIVE",
-                            TriggerKind = "SYSTEM",
-                            VariablesJson = "[{\"Name\":\"schoolName\",\"Label\":\"schoolName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"branchName\",\"Label\":\"branchName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actorName\",\"Label\":\"actorName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"matrixName\",\"Label\":\"matrixName\",\"Type\":\"TEXT\",\"Required\":true},{\"Name\":\"actionUrl\",\"Label\":\"actionUrl\",\"Type\":\"TEXT\",\"Required\":true}]",
-                            Version = 1u
-                        });
-                });
-
             modelBuilder.Entity("Domain.Entities.Notification.EmailTemplate", b =>
                 {
                     b.Property<ulong>("Id")
@@ -1987,12 +1862,6 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("email_template_id");
 
-                    b.Property<uint>("EventVersion")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int unsigned")
-                        .HasDefaultValue(1u)
-                        .HasColumnName("event_version");
-
                     b.Property<uint>("Revision")
                         .HasColumnType("int unsigned")
                         .HasColumnName("revision");
@@ -2002,10 +1871,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("varchar(200)")
                         .HasColumnName("subject");
-
-                    b.Property<string>("VariablesJson")
-                        .HasColumnType("longtext")
-                        .HasColumnName("variables_json");
 
                     b.HasKey("Id");
 
@@ -2028,10 +1893,6 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("varchar(2048)")
                         .HasColumnName("action_url");
-
-                    b.Property<DateTime?>("CancelledAt")
-                        .HasColumnType("datetime(6)")
-                        .HasColumnName("cancelled_at");
 
                     b.Property<ulong?>("ConfigId")
                         .HasColumnType("bigint unsigned")
@@ -2072,11 +1933,6 @@ namespace Infrastructure.Migrations
                         .HasDefaultValue(false)
                         .HasColumnName("is_test");
 
-                    b.Property<string>("RequestFingerprint")
-                        .HasMaxLength(64)
-                        .HasColumnType("varchar(64)")
-                        .HasColumnName("request_fingerprint");
-
                     b.Property<DateTime?>("ScheduledFor")
                         .HasColumnType("datetime(6)")
                         .HasColumnName("scheduled_for");
@@ -2089,26 +1945,11 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("school_id");
 
-                    b.Property<string>("SendKind")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("varchar(20)")
-                        .HasDefaultValue("AUTOMATIC")
-                        .HasColumnName("send_kind");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasMaxLength(500)
                         .HasColumnType("varchar(500)")
                         .HasColumnName("title");
-
-                    b.Property<uint>("Version")
-                        .IsConcurrencyToken()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int unsigned")
-                        .HasDefaultValue(1u)
-                        .HasColumnName("version");
 
                     b.HasKey("Id");
 
@@ -3928,16 +3769,6 @@ namespace Infrastructure.Migrations
                     b.Navigation("Role");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Domain.Entities.Notification.EmailEvent", b =>
-                {
-                    b.HasOne("Domain.Entities.Organization.School", "School")
-                        .WithMany()
-                        .HasForeignKey("SchoolId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("School");
                 });
 
             modelBuilder.Entity("Domain.Entities.Notification.EmailTemplate", b =>

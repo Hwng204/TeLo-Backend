@@ -15,7 +15,8 @@ public class UnitOfWork(
     IMatrixTaskRepository matrixTasks,
     IMatrixReferenceRepository matrixReferences,
     IExamRepository exams,
-    IExamSubjectRepository examSubjects) : IUnitOfWork
+    IExamSubjectRepository examSubjects,
+    IExamRoomRepository examRooms) : IUnitOfWork
 {
     public IAcademicYearRepository AcademicYears { get; } = academicYears;
     public IProvinceRepository Provinces { get; } = provinces;
@@ -24,6 +25,7 @@ public class UnitOfWork(
     public IMatrixReferenceRepository MatrixReferences { get; } = matrixReferences;
     public IExamRepository Exams { get; } = exams;
     public IExamSubjectRepository ExamSubjects { get; } = examSubjects;
+    public IExamRoomRepository ExamRooms { get; } = examRooms;
 
     public async Task<int> CompleteAsync(CancellationToken cancellationToken = default)
     {

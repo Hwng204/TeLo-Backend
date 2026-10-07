@@ -40,9 +40,11 @@ public static class DependencyInjection
         services.AddScoped<ISchoolDirectoryRepository, SchoolDirectoryRepository>();
         services.AddScoped<ISchoolDirectoryAdminRepository, SchoolDirectoryAdminRepository>();
         services.AddScoped<IStudentImportRepository, StudentImportRepository>();
+        services.AddScoped<ICurriculumRepository, CurriculumRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();
         services.AddScoped<IExamRepository, ExamRepository>();
         services.AddScoped<IExamSubjectRepository, ExamSubjectRepository>();
+        services.AddScoped<IExamRoomRepository, ExamRoomRepository>();
 
         services.AddSingleton<IProvinceProvider>(_ => CreateProvinceProvider(configuration));
         services.AddSingleton(TimeProvider.System);

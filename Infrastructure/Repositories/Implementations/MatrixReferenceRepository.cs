@@ -29,8 +29,9 @@ public sealed class MatrixReferenceRepository(
             .Select(item => new
             {
                 item.AcademicYearId,
-                item.TextbookId,
-                item.SchoolBranchId
+                item.SchoolBranchId,
+                item.GradeLevelId,
+                item.SubjectId
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -78,17 +79,14 @@ public sealed class MatrixReferenceRepository(
             return;
         }
 
-        var validLessonCount = await db.TextbookLessons
-            .AsNoTracking()
-            .Where(lesson =>
-                distinctLessonIds.Contains(lesson.Id) &&
-                lesson.Chapter.TextbookId == context.TextbookId)
+        var validLessonCount = await LessonsOf(context.SchoolBranchId, context.GradeLevelId, context.SubjectId)
+            .Where(lesson => distinctLessonIds.Contains(lesson.Id))
             .CountAsync(cancellationToken);
 
         if (validLessonCount != distinctLessonIds.Length)
         {
             throw InvalidReference(
-                "Mọi bài học trong ma trận phải thuộc sách giáo khoa của ngữ cảnh học thuật.");
+                "Mọi bài học trong ma trận phải thuộc chương của cùng phân hiệu, khối lớp và môn học với ngữ cảnh học thuật.");
         }
     }
 
@@ -119,7 +117,7 @@ public sealed class MatrixReferenceRepository(
                 .Select(item => item.Name)
                 .SingleOrDefaultAsync(cancellationToken);
 
-        var lessons = await db.TextbookLessons
+        var lessons = await db.Lessons
             .AsNoTracking()
             .Where(lesson => lessonIds.Contains(lesson.Id))
             .Select(lesson => new { lesson.Id, lesson.Title, Chapter = lesson.Chapter.Title })
@@ -133,6 +131,17 @@ public sealed class MatrixReferenceRepository(
             label,
             semesterName,
             lessons.ToDictionary(lesson => lesson.Id, lesson => $"{lesson.Chapter} / {lesson.Title}"));
+    }
+
+    // Bài dùng được cho một ngữ cảnh: chương cùng phân hiệu, cùng khối, và lĩnh vực thuộc môn của ngữ cảnh.
+    private IQueryable<Domain.Entities.Academic.Lesson> LessonsOf(ulong branchId, ulong gradeLevelId, ulong subjectId)
+    {
+        return db.Lessons
+            .AsNoTracking()
+            .Where(lesson =>
+                lesson.Chapter.SchoolBranchId == branchId &&
+                lesson.Chapter.GradeLevelId == gradeLevelId &&
+                lesson.Chapter.Field.SubjectId == subjectId);
     }
 
     private static MatrixDomainException InvalidReference(string message)
@@ -264,15 +273,13 @@ public sealed class MatrixReferenceRepository(
                 context.Id,
                 context.AcademicYearId,
                 context.SchoolBranchId,
-                context.TextbookId,
                 context.SubjectId,
                 context.GradeLevelId,
                 AcademicYearName = context.AcademicYear.Name,
                 SchoolName = context.School.Name,
                 BranchName = context.SchoolBranch.Name,
                 SubjectName = context.Subject.Name,
-                GradeLevelName = context.GradeLevel.Name,
-                TextbookTitle = context.Textbook.Title
+                GradeLevelName = context.GradeLevel.Name
             })
             .OrderBy(context => context.Id)
             .ToListAsync(cancellationToken);
@@ -283,10 +290,8 @@ public sealed class MatrixReferenceRepository(
                 $"{context.SubjectName} - {context.GradeLevelName} - {context.AcademicYearName} - {context.SchoolName} / {context.BranchName}",
                 context.AcademicYearId,
                 context.SchoolBranchId,
-                context.TextbookId,
                 context.SubjectId,
                 context.GradeLevelId,
-                context.TextbookTitle,
                 context.SubjectName,
                 context.GradeLevelName,
                 context.AcademicYearName))
@@ -310,31 +315,24 @@ public sealed class MatrixReferenceRepository(
                 semester.EndDate))
             .ToListAsync(cancellationToken);
 
-        var textbookIds = academicContextId is null
-            ? Array.Empty<ulong>()
-            : contextRows.Select(context => context.TextbookId).Distinct().ToArray();
-        var lessonRows = await db.TextbookLessons
-            .AsNoTracking()
-            .Where(lesson => textbookIds.Contains(lesson.Chapter.TextbookId))
-            .OrderBy(lesson => lesson.Chapter.SortOrder)
-            .ThenBy(lesson => lesson.SortOrder)
-            .Select(lesson => new
-            {
-                lesson.Id,
-                TextbookId = lesson.Chapter.TextbookId,
-                lesson.ChapterId,
-                lesson.Title,
-                lesson.SortOrder
-            })
-            .ToListAsync(cancellationToken);
-        var lessons = lessonRows
-            .Select(lesson => new MatrixLessonOption(
-                lesson.Id,
-                contextRows.First(context => context.TextbookId == lesson.TextbookId).Id,
-                lesson.ChapterId,
-                lesson.Title,
-                lesson.SortOrder))
-            .ToArray();
+        // Bài học chỉ trả về khi đã chọn một ngữ cảnh cụ thể.
+        var selectedContext = academicContextId is null ? null : contextRows.SingleOrDefault();
+        var lessons = selectedContext is null
+            ? []
+            : await LessonsOf(selectedContext.SchoolBranchId, selectedContext.GradeLevelId, selectedContext.SubjectId)
+                .OrderBy(lesson => lesson.Chapter.SortOrder)
+                .ThenBy(lesson => lesson.Chapter.FieldId)
+                .ThenBy(lesson => lesson.SortOrder)
+                .Select(lesson => new MatrixLessonOption(
+                    lesson.Id,
+                    selectedContext.Id,
+                    lesson.ChapterId,
+                    lesson.Title,
+                    lesson.SortOrder,
+                    lesson.Code,
+                    lesson.Chapter.Code,
+                    lesson.Chapter.Title))
+                .ToListAsync(cancellationToken);
 
         var effectiveTeamLeadUsers = db.UserRoles.WhereEffective()
             .Where(userRole => roleCatalog.TeamLeadRoleCodes.Contains(userRole.Role.Code))

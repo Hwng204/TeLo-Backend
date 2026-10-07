@@ -20,9 +20,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Semester> Semesters => Set<Semester>();
     public DbSet<GradeLevel> GradeLevels => Set<GradeLevel>();
     public DbSet<Subject> Subjects => Set<Subject>();
-    public DbSet<Textbook> Textbooks => Set<Textbook>();
-    public DbSet<TextbookChapter> TextbookChapters => Set<TextbookChapter>();
-    public DbSet<TextbookLesson> TextbookLessons => Set<TextbookLesson>();
+    public DbSet<SubjectField> SubjectFields => Set<SubjectField>();
+    public DbSet<Chapter> Chapters => Set<Chapter>();
+    public DbSet<Lesson> Lessons => Set<Lesson>();
     public DbSet<AcademicContext> AcademicContexts => Set<AcademicContext>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Student> Students => Set<Student>();

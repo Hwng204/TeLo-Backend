@@ -317,7 +317,7 @@ public sealed class MatrixApplicationService(
     }
 
     // A PHT is limited to their own branch; the Principal and Team Leads are not branch-limited here.
-    private static ulong? BranchScope(MatrixActor actor)
+    internal static ulong? BranchScope(MatrixActor actor)
     {
         if (actor.Role != MatrixActorRole.Pht || actor.IsPrincipal)
         {

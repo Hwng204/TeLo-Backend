@@ -4,6 +4,7 @@ using Application.Services.Interface;
 using Domain.Entities.Organization;
 using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
+using Application.Validators;
 
 namespace Application.Services.Implement;
 
@@ -25,6 +26,10 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
         var school = await db.Schools.FirstOrDefaultAsync(s => s.Id == schoolId, cancellationToken);
         if (school is null)
             return ServiceResult<SchoolBranchDetailDto>.Failure("SCHOOL_NOT_FOUND", "Không tìm thấy trường học.");
+
+        var validationResult = SchoolBranchValidator.ValidateCreate(request);
+        if (validationResult != null)
+            return validationResult;
 
         var existingCount = await db.SchoolBranches.CountAsync(b => b.SchoolId == schoolId, cancellationToken);
         var suffix = (char)('A' + existingCount);
@@ -53,6 +58,10 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
         var branch = await db.SchoolBranches.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
         if (branch is null)
             return ServiceResult<SchoolBranchDetailDto>.Failure("BRANCH_NOT_FOUND", "Không tìm thấy cơ sở.");
+
+        var validationResult = SchoolBranchValidator.ValidateUpdate(request);
+        if (validationResult != null)
+            return validationResult;
 
         branch.Name = request.Name.Trim();
         branch.Address = request.Address?.Trim();

@@ -37,45 +37,6 @@ public static class IdentitySeeder
         }
         db.SaveChanges();
 
-        var defaultBranchId = db.SchoolBranches
-            .Where(branch => branch.Status == "ACTIVE")
-            .OrderBy(branch => branch.Id)
-            .Select(branch => (ulong?)branch.Id)
-            .FirstOrDefault();
 
-        var usersToSeed = new[]
-        {
-            new { Username = "admin", FullName = "Quản trị viên", RoleCode = "ADMIN" },
-            new { Username = "pht", FullName = "Phó Hiệu trưởng", RoleCode = "PHT" },
-            new { Username = "teacher", FullName = "Giáo viên", RoleCode = "TEACHER" },
-            new { Username = "student", FullName = "Học sinh", RoleCode = "STUDENT" }
-        };
-
-        foreach (var userData in usersToSeed)
-        {
-            if (!db.Users.Any(u => u.Username == userData.Username))
-            {
-                var role = db.Roles.First(r => r.Code == userData.RoleCode);
-                var newUser = new User
-                {
-                    Username = userData.Username,
-                    Email = $"{userData.Username}@telo.edu.vn",
-                    FullName = userData.FullName,
-                    SchoolBranchId = userData.RoleCode == "PHT" ? defaultBranchId : null,
-                    PasswordHash = "",
-                    Status = "ACTIVE",
-                    CreatedAt = DateTime.UtcNow,
-                    UserRoles = new List<UserRole>()
-                };
-
-                newUser.PasswordHash = passwordHasher.HashPassword(newUser, $"{userData.Username}123");
-                newUser.UserRoles.Add(new UserRole
-                {
-                    RoleId = role.Id
-                });
-                db.Users.Add(newUser);
-            }
-        }
-        db.SaveChanges();
     }
 }

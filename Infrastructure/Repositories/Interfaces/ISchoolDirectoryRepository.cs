@@ -62,8 +62,7 @@ public sealed record StudentDirectoryRow(
     string? ClassName,
     ulong? SchoolBranchId,
     string? SchoolBranchName,
-    string Status,
-    DateOnly AdmissionDate);
+    string Status);
 
 public sealed record StudentEnrollmentRow(
     ulong AcademicYearId,
@@ -85,7 +84,6 @@ public sealed record StudentDetailRow(
     string FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly AdmissionDate,
     string Status,
     // Ordered by academic year start date DESC, then enrollment id DESC.
     IReadOnlyList<StudentEnrollmentRow> History);

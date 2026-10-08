@@ -29,7 +29,6 @@ public sealed record StudentImportRowDto(
     string FullName,
     string DateOfBirth,
     string Gender,
-    string AdmissionDate,
     string ClassCode,
     ulong? ClassId,
     string? ClassName,

@@ -13,7 +13,6 @@ public sealed class StudentImportRow
     public string RawFullName { get; set; } = string.Empty;
     public string RawDateOfBirth { get; set; } = string.Empty;
     public string RawGender { get; set; } = string.Empty;
-    public string RawAdmissionDate { get; set; } = string.Empty;
     public string RawClassCode { get; set; } = string.Empty;
     public ulong? ResolvedSchoolClassId { get; set; }
     public bool IsValid { get; set; }

@@ -33,7 +33,6 @@ public sealed record CreateStudentCommand(
     string FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly AdmissionDate,
     string Status,
     ulong SchoolClassId);
 
@@ -44,7 +43,6 @@ public sealed record UpdateStudentCommand(
     string FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly AdmissionDate,
     string Status,
     ulong? SchoolClassId);
 

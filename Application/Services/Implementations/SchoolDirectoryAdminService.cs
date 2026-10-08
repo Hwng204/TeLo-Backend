@@ -4,6 +4,7 @@ using Application.Services.Interface;
 using Domain.Entities.Identity;
 using Domain.Entities.Organization;
 using Infrastructure.Repositories.Interface;
+using Application.Validators;
 
 namespace Application.Services.Implement;
 
@@ -18,12 +19,7 @@ public sealed class SchoolDirectoryAdminService(
         CreateStudentRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
-        var fullName = Required(request.FullName, "fullName", 255, errors);
-        var status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
-        var admissionDate = StudentDates(request.DateOfBirth, request.AdmissionDate, errors);
-        RequireId(request.SchoolClassId, "schoolClassId", errors);
+        var errors = SchoolDirectoryValidator.ValidateCreateStudent(request, out var code, out var fullName, out var status);
         if (errors.Count > 0)
         {
             return Invalid<StudentDetailDto>(errors);
@@ -32,7 +28,7 @@ public sealed class SchoolDirectoryAdminService(
         var created = await repository.CreateStudentAsync(
             new CreateStudentCommand(
                 schoolId, code, fullName, request.DateOfBirth, Trim(request.Gender),
-                admissionDate, status, request.SchoolClassId),
+                status, request.SchoolClassId),
             cancellationToken);
         return await StudentResultAsync(schoolId, created, cancellationToken);
     }
@@ -43,15 +39,7 @@ public sealed class SchoolDirectoryAdminService(
         UpdateStudentRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = new Dictionary<string, string[]>();
-        var code = Required(request.Code, "code", 64, errors);
-        var fullName = Required(request.FullName, "fullName", 255, errors);
-        var status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
-        var admissionDate = StudentDates(request.DateOfBirth, request.AdmissionDate, errors);
-        if (request.SchoolClassId == 0)
-        {
-            errors["schoolClassId"] = ["Lớp học không hợp lệ."];
-        }
+        var errors = SchoolDirectoryValidator.ValidateUpdateStudent(request, out var code, out var fullName, out var status);
 
         if (errors.Count > 0)
         {
@@ -61,7 +49,7 @@ public sealed class SchoolDirectoryAdminService(
         var updated = await repository.UpdateStudentAsync(
             new UpdateStudentCommand(
                 schoolId, studentId, code, fullName, request.DateOfBirth, Trim(request.Gender),
-                admissionDate, status, request.SchoolClassId),
+                status, request.SchoolClassId),
             cancellationToken);
         return await StudentResultAsync(schoolId, updated, cancellationToken);
     }
@@ -72,12 +60,10 @@ public sealed class SchoolDirectoryAdminService(
         TransferStudentClassRequest request,
         CancellationToken cancellationToken)
     {
-        if (request.SchoolClassId == 0)
+        var errors = SchoolDirectoryValidator.ValidateTransferStudentClass(request);
+        if (errors.Count > 0)
         {
-            return Invalid<StudentDetailDto>(new Dictionary<string, string[]>
-            {
-                ["schoolClassId"] = ["Giá trị là bắt buộc."]
-            });
+            return Invalid<StudentDetailDto>(errors);
         }
 
         var transferred = await repository.TransferStudentClassAsync(
@@ -102,15 +88,7 @@ public sealed class SchoolDirectoryAdminService(
         CreateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = new Dictionary<string, string[]>();
-        // The UI no longer asks for a class code: default it to the class name (unique per branch and year).
-        var name = Required(request.Name, "name", 100, errors);
-        var code = OptionalCode(request.Code, name, errors);
-        var status = Status(
-            request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
-        RequireId(request.SchoolBranchId, "schoolBranchId", errors);
-        RequireId(request.AcademicYearId, "academicYearId", errors);
-        RequireId(request.GradeLevelId, "gradeLevelId", errors);
+        var errors = SchoolDirectoryValidator.ValidateCreateClass(request, out var name, out var code, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -130,15 +108,7 @@ public sealed class SchoolDirectoryAdminService(
         UpdateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = new Dictionary<string, string[]>();
-        // Blank code means "keep the stored one" (the repository treats an empty code as unchanged).
-        var name = Required(request.Name, "name", 100, errors);
-        var code = OptionalCode(request.Code, string.Empty, errors);
-        var status = Status(
-            request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
-        RequireId(request.SchoolBranchId, "schoolBranchId", errors);
-        RequireId(request.AcademicYearId, "academicYearId", errors);
-        RequireId(request.GradeLevelId, "gradeLevelId", errors);
+        var errors = SchoolDirectoryValidator.ValidateUpdateClass(request, out var name, out var code, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -187,81 +157,7 @@ public sealed class SchoolDirectoryAdminService(
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-    private static string OptionalCode(string? value, string fallback, Dictionary<string, string[]> errors)
-    {
-        var trimmed = value?.Trim() ?? string.Empty;
-        if (trimmed.Length > 64)
-        {
-            errors["code"] = ["Giá trị tối đa 64 ký tự."];
-        }
 
-        return trimmed.Length == 0 ? fallback : trimmed;
-    }
-
-    private static string Required(
-        string? value,
-        string field,
-        int maxLength,
-        Dictionary<string, string[]> errors)
-    {
-        var trimmed = value?.Trim() ?? string.Empty;
-        if (trimmed.Length == 0)
-        {
-            errors[field] = ["Giá trị là bắt buộc."];
-        }
-        else if (trimmed.Length > maxLength)
-        {
-            errors[field] = [$"Giá trị tối đa {maxLength} ký tự."];
-        }
-
-        return trimmed;
-    }
-
-    private static string Status(
-        string? value,
-        IReadOnlyCollection<string> allowed,
-        string fallback,
-        Dictionary<string, string[]> errors)
-    {
-        var trimmed = value?.Trim().ToUpperInvariant();
-        if (string.IsNullOrEmpty(trimmed))
-        {
-            return fallback;
-        }
-
-        if (!allowed.Contains(trimmed))
-        {
-            errors["status"] = [$"Trạng thái phải là một trong: {string.Join(", ", allowed)}."];
-        }
-
-        return trimmed;
-    }
-
-    // A missing admission date used to bind as 0001-01-01 and be stored as is.
-    private static DateOnly StudentDates(
-        DateOnly? dateOfBirth,
-        DateOnly? admissionDate,
-        Dictionary<string, string[]> errors)
-    {
-        if (admissionDate is null)
-        {
-            errors["admissionDate"] = ["Giá trị là bắt buộc."];
-        }
-        else if (dateOfBirth > admissionDate)
-        {
-            errors["dateOfBirth"] = ["Ngày sinh phải trước ngày vào trường."];
-        }
-
-        return admissionDate ?? default;
-    }
-
-    private static void RequireId(ulong value, string field, Dictionary<string, string[]> errors)
-    {
-        if (value == 0)
-        {
-            errors[field] = ["Giá trị là bắt buộc."];
-        }
-    }
 
     private static ulong? NullableId(ulong? value) => value is 0 or null ? null : value;
 

@@ -11,8 +11,7 @@ internal sealed record ParsedStudentFields(
     string Code,
     string FullName,
     DateOnly? DateOfBirth,
-    string? Gender,
-    DateOnly? AdmissionDate);
+    string? Gender);
 
 internal sealed record RowValidation(
     IReadOnlyList<StudentImportRowErrorDto> Errors,
@@ -41,7 +40,6 @@ internal static class StudentImportRules
         string fullName,
         string dateOfBirth,
         string gender,
-        string admissionDate,
         DateOnly today,
         List<StudentImportRowErrorDto> errors)
     {
@@ -90,21 +88,7 @@ internal static class StudentImportRules
             }
         }
 
-        DateOnly? admission = null;
-        if (admissionDate.Length == 0)
-        {
-            errors.Add(new("admissionDate", "Ngày nhập học là bắt buộc."));
-        }
-        else if (!TryParseDate(admissionDate, out var parsedAdmission))
-        {
-            errors.Add(new("admissionDate", "Ngày nhập học không hợp lệ, dùng định dạng dd/MM/yyyy."));
-        }
-        else
-        {
-            admission = parsedAdmission;
-        }
-
-        return new ParsedStudentFields(code, fullName, dob, normalizedGender, admission);
+        return new ParsedStudentFields(code, fullName, dob, normalizedGender);
     }
 
     // Full check of one sheet row against what the database knows.
@@ -117,7 +101,7 @@ internal static class StudentImportRules
     {
         var errors = new List<StudentImportRowErrorDto>();
         ParseFields(
-            raw.Code, raw.FullName, raw.DateOfBirth, raw.Gender, raw.AdmissionDate, today, errors);
+            raw.Code, raw.FullName, raw.DateOfBirth, raw.Gender, today, errors);
 
         if (raw.Code.Length is > 0 and <= MaxCodeLength)
         {

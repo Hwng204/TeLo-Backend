@@ -65,8 +65,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
 
         var items = result.Value.Items.Select(s => new StudentListItem(
             s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.GradeLevelId, s.GradeLevelName,
-            s.ClassId, s.ClassName, s.SchoolBranchId, s.SchoolBranchName, s.Status,
-            s.AdmissionDate)).ToList();
+            s.ClassId, s.ClassName, s.SchoolBranchId, s.SchoolBranchName, s.Status)).ToList();
         return ServiceResult<DirectoryPage<StudentListItem>>.Success(
             new DirectoryPage<StudentListItem>(
                 items, query.Page, query.PageSize, result.Value.TotalCount));
@@ -109,7 +108,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
 
         return ServiceResult<StudentDetailDto>.Success(new StudentDetailDto(
             student.Id, student.Code, student.FullName, student.DateOfBirth, student.Gender,
-            student.AdmissionDate, student.Status, current, history));
+            student.Status, current, history));
     }
 
     public async Task<ServiceResult<DirectoryPage<StudentScoreItem>>> GetStudentScoresAsync(

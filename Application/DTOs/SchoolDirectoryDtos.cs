@@ -43,8 +43,7 @@ public sealed record StudentListItem(
     string? ClassName,
     ulong? SchoolBranchId,
     string? SchoolBranchName,
-    string Status,
-    DateOnly AdmissionDate);
+    string Status);
 
 public sealed record StudentAcademicHistoryItem(
     ulong AcademicYearId,
@@ -75,7 +74,6 @@ public sealed record StudentDetailDto(
     string FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly AdmissionDate,
     string Status,
     StudentCurrentClassDto? CurrentClass,
     IReadOnlyList<StudentAcademicHistoryItem> AcademicHistory);

@@ -19,6 +19,7 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(255).IsRequired();
         builder.Property(x => x.MoetIdentifier).HasColumnName("moet_identifier").HasMaxLength(100);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("ACTIVE").IsRequired();
+        builder.Property(x => x.AvatarUrl).HasColumnName("avatar_url").HasMaxLength(2048);
         builder.Property(x => x.CreatedAt).HasColumnName("created_at").HasColumnType("datetime(6)")
             .HasDefaultValueSql("CURRENT_TIMESTAMP(6)").IsRequired();
         builder.HasIndex(x => x.Username).IsUnique().HasDatabaseName("uq_users_username");

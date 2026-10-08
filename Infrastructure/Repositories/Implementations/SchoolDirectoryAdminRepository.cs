@@ -28,7 +28,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
 
-        if (await db.Students.AnyAsync(s => s.ActiveCode == command.Code, cancellationToken))
+        if (await db.Students.AnyAsync(s => s.Code == command.Code, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
@@ -39,7 +39,6 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             FullName = command.FullName,
             DateOfBirth = command.DateOfBirth,
             Gender = command.Gender,
-            AdmissionDate = command.AdmissionDate,
             Status = command.Status,
             Enrollments =
             {
@@ -48,7 +47,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
                     SchoolClassId = target.Id,
                     AcademicYearId = target.AcademicYearId,
                     Status = StudentEnrollmentStatusCodes.Active,
-                    StartedOn = command.AdmissionDate
+                    StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                 }
             }
         };
@@ -76,7 +75,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             command.Status != StudentStatusCodes.Inactive;
         if ((student.Code != command.Code || reactivating) &&
             await db.Students.AnyAsync(
-                s => s.ActiveCode == command.Code && s.Id != student.Id, cancellationToken))
+                s => s.Code == command.Code && s.Id != student.Id, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
@@ -85,7 +84,6 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         student.FullName = command.FullName;
         student.DateOfBirth = command.DateOfBirth;
         student.Gender = command.Gender;
-        student.AdmissionDate = command.AdmissionDate;
         student.Status = command.Status;
 
         if (command.SchoolClassId is { } schoolClassId)

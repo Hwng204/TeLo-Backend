@@ -83,7 +83,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
             .Select(s => new
             {
-                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.Status, s.AdmissionDate
+                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.Status
             })
             .ToListAsync(cancellationToken);
 
@@ -112,7 +112,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             return new StudentDirectoryRow(
                 s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender,
                 c?.GradeLevelId, c?.GradeLevelName, c?.ClassId, c?.ClassName,
-                c?.SchoolBranchId, c?.SchoolBranchName, s.Status, s.AdmissionDate);
+                c?.SchoolBranchId, c?.SchoolBranchName, s.Status);
         }).ToList();
 
         return DirectoryReadResult<DirectoryRowsPage<StudentDirectoryRow>>.Ok(
@@ -138,7 +138,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 (homeroomIds == null || s.Enrollments.Any(e => homeroomIds.Contains(e.SchoolClassId))))
             .Select(s => new
             {
-                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.AdmissionDate, s.Status
+                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.Status
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (student is null)
@@ -178,7 +178,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
 
         return DirectoryReadResult<StudentDetailRow>.Ok(new StudentDetailRow(
             student.Id, student.Code, student.FullName, student.DateOfBirth, student.Gender,
-            student.AdmissionDate, student.Status, rows));
+            student.Status, rows));
     }
 
     public async Task<DirectoryReadResult<DirectoryRowsPage<StudentScoreRow>>> ListStudentScoresAsync(

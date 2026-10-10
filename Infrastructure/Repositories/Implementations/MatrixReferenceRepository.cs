@@ -120,7 +120,7 @@ public sealed class MatrixReferenceRepository(
         var lessons = await db.Lessons
             .AsNoTracking()
             .Where(lesson => lessonIds.Contains(lesson.Id))
-            .Select(lesson => new { lesson.Id, lesson.Title, Chapter = lesson.Chapter.Title })
+            .Select(lesson => new { lesson.Id, lesson.Title, lesson.Code, Chapter = lesson.Chapter.Title, ChapterCode = lesson.Chapter.Code })
             .ToListAsync(cancellationToken);
 
         var label = context is null
@@ -130,7 +130,7 @@ public sealed class MatrixReferenceRepository(
         return new MatrixExportInfo(
             label,
             semesterName,
-            lessons.ToDictionary(lesson => lesson.Id, lesson => $"{lesson.Chapter} / {lesson.Title}"));
+            lessons.ToDictionary(lesson => lesson.Id, lesson => $"Bài {lesson.Code}. {lesson.Title} — Chương {lesson.ChapterCode}. {lesson.Chapter}"));
     }
 
     // Bài dùng được cho một ngữ cảnh: chương cùng phân hiệu, cùng khối, và lĩnh vực thuộc môn của ngữ cảnh.

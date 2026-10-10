@@ -27,15 +27,7 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
         sheet.Cell("B8").Value = matrix.TotalScore;
 
         var headerRow = 10;
-        var headers = new[]
-        {
-            "Bài học",
-            "Mức nhận thức",
-            "Loại câu hỏi",
-            "Số câu",
-            "Tỷ lệ %",
-            "Điểm"
-        };
+        var headers = MatrixImportWorkbook.Headers;
 
         for (var column = 0; column < headers.Length; column++)
         {
@@ -59,11 +51,13 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
             sheet.Cell(row, 4).Value = detail.QuestionCount;
             sheet.Cell(row, 5).Value = detail.Percentage;
             sheet.Cell(row, 6).Value = detail.CellScore;
+            sheet.Cell(row, 7).Value = detail.LessonId > 0 ? detail.LessonId.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
         }
 
         sheet.Range("A1:B1").Merge().Style.Font.SetBold();
-        sheet.Range($"A{headerRow}:F{headerRow}").Style.Font.SetBold();
+        sheet.Range($"A{headerRow}:G{headerRow}").Style.Font.SetBold();
         sheet.Columns().AdjustToContents();
+        sheet.Column(7).Hide();
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);

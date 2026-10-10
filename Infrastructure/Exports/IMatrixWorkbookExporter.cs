@@ -7,7 +7,8 @@ public sealed record MatrixWorkbookRow(
     uint QuestionCount,
     decimal Percentage,
     // Điểm ô suy ra = TotalScore * Percentage / 100, tính sẵn cho tiện xuất file.
-    decimal CellScore);
+    decimal CellScore,
+    ulong LessonId = 0);
 
 public sealed record MatrixWorkbookModel(
     string Name,

@@ -2,6 +2,18 @@
 
 Các bước cài đặt chung (MySQL, chuỗi kết nối, restore, migration) xem [README.md](README.md). Tài liệu này chỉ nói riêng phần ma trận.
 
+## Nhập Excel và tải mẫu
+
+- `GET /api/matrices/import/template.xlsx`: tải mẫu gồm các bài học của phạm vi đang chọn × ba mức nhận thức.
+- `POST /api/matrices/import/preview`: multipart trường `file`, kiểm tra toàn bộ tệp và trả `{canImport,name,totalScore,lessonCount,filledLines,details,errors}`. `errors` có `rowNumber` (null cho lỗi cả tệp) và `message`; có lỗi thì `details` rỗng.
+- `POST /api/matrices/import`: gửi lại chính tệp để kiểm tra theo chương trình hiện tại. Tệp còn lỗi trả 422 `ImportHasInvalidRows`; hợp lệ trả nội dung đưa vào bản soạn. **Không tự ghi DB**; tiếp tục dùng tạo/cập nhật/lưu nháp/nộp/xác nhận.
+
+Cả ba API nhận query `academicContextId`, `semesterId` (tùy chọn), `totalScore` (mặc định 10, nguyên dương), `name` (tùy chọn). Phân quyền PHT/Hiệu trưởng/Tổ trưởng và phạm vi theo reference data hiện có; trạng thái ma trận khi lưu vẫn do API ma trận kiểm tra.
+
+Chỉ nhận `.xlsx` tối đa 5 MB, 5000 dòng và 32 cột; giới hạn nội dung giải nén 50 MB. Không dùng công thức. Đọc sheet đầu tiên, tìm cột theo tiêu đề Bài học / Mức nhận thức / Số câu / Tỷ lệ %; giữ tương thích mẫu và file xuất trước đây. Bài học cần khớp chính xác nhãn đầy đủ (bài + chương), nhãn xuất cũ `Tên chương / Tên bài`, hoặc tên bài duy nhất trong phạm vi. Không suy đoán lại tên bài khi tên chương sai. File xuất mới dùng nhãn có mã bài và mã chương. Mẫu và file xuất mới có cột ẩn `ID bài học` để phân biệt chương/bài cùng tên và mã ở các lĩnh vực của cùng môn. ID vẫn phải khớp tên bài và nằm trong phạm vi; file cũ không có cột này tiếp tục dùng đối chiếu tên, trường hợp mơ hồ cần tải mẫu mới.
+
+Ô có cả Số câu và Tỷ lệ % trống được bỏ qua; ô điền một nửa, trùng bài/mức, bài ngoài phạm vi, sai số hoặc loại câu hỏi khác Trắc nghiệm đều chặn cả tệp. Số câu là uint dương, tỷ lệ trong (0,100] với tối đa hai chữ số thập phân; không tự làm tròn dữ liệu sai. Tổng tỷ lệ chưa bằng 100% vẫn được nhập/soạn nháp; nộp/xác nhận và sửa bản đã nộp tiếp tục áp dụng luật 100% hiện có.
+
 ## 1. Đăng nhập và chạy thử
 
 Backend dùng access token JWT. Cần khóa ký (tối thiểu 32 ký tự) đặt qua biến môi trường, **không** ghi vào file được commit:

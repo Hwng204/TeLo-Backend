@@ -454,3 +454,18 @@ sau khi sửa; bổ sung kiểm tra thu hồi token sau đổi phạm vi/trạng
 khi trường ngừng hoạt động và mã vai trò cũ có khoảng trắng. Đợt review này không cần
 migration mới và không thay đổi dữ liệu `sep`. Chưa commit. Giới hạn kiểm tra trình
 duyệt và cảnh báo bundle nêu trên vẫn còn; chưa tuyên bố sẵn sàng triển khai production.
+
+## Quản lý email và thông báo
+
+Xem [README_EMAIL.md](README_EMAIL.md) để sử dụng tính năng, cấu hình Gmail SMTP, đồng bộ DB và theo dõi kế hoạch mở rộng sự kiện, gửi thủ công, đặt lịch.
+
+## Review IT1 còn cần xử lý riêng
+
+Đã sửa các lỗi được test tái hiện: tên năm học null/chữ số Unicode gây exception; thiếu cả hai ngày học kỳ vẫn qua validate; lỗi trả sai index khi đảo thứ tự học kỳ; danh sách năm học cho truy cập anonymous trái hợp đồng test. Role đang được NotificationTarget tham chiếu được bảo vệ khỏi xóa.
+
+Các điểm còn khác backlog, chưa coi IT1 hoàn tất 100%:
+
+- AcademicYear hiện có phạm vi **toàn hệ thống**, trong khi backlog ghi theo trường. Cần thống nhất lại phạm vi và migration/API tương ứng trước khi thay đổi.
+- `AcademicYearConfigPage.tsx` chưa truyền version khi cập nhật; API hiện chấp nhận thiếu version. FE chưa có thao tác đóng riêng học kỳ dù BE có hỗ trợ.
+- Kiểm tra trạng thái năm/học kỳ đóng chưa đồng nhất ở `ExamRepository.ValidateReferences` và `MatrixReferenceRepository.EnsureSemester`.
+- Mã năm học hiện sinh từ tên; học kỳ cố định hai kỳ, chưa có mã độc lập như backlog. FE năm học còn có chỗ đọc lỗi `data.errors` thay cho `error.details`.

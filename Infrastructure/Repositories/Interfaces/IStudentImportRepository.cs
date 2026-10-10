@@ -17,7 +17,6 @@ public sealed record NewImportRow(
     string RawFullName,
     string RawDateOfBirth,
     string RawGender,
-    string RawAdmissionDate,
     string RawClassCode,
     ulong? ResolvedSchoolClassId,
     bool IsValid,
@@ -60,7 +59,6 @@ public sealed record ImportRowDetail(
     string RawFullName,
     string RawDateOfBirth,
     string RawGender,
-    string RawAdmissionDate,
     string RawClassCode,
     ulong? ResolvedSchoolClassId,
     string? ResolvedClassName,
@@ -77,7 +75,6 @@ public sealed record ImportStudentToCreate(
     string FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly AdmissionDate,
     ulong SchoolClassId);
 
 public enum ImportApplyStatus

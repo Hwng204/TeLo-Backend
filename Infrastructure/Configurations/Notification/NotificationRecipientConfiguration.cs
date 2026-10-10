@@ -15,6 +15,13 @@ public sealed class NotificationRecipientConfiguration : IEntityTypeConfiguratio
         });
 
         builder.HasKey(entity => entity.Id);
+        builder.Property(entity => entity.EmailAddress).HasColumnName("email_address").HasMaxLength(255);
+        builder.Property(entity => entity.AttemptCount).HasColumnName("attempt_count").HasDefaultValue(0);
+        builder.Property(entity => entity.NextAttemptAt).HasColumnName("next_attempt_at");
+        builder.Property(entity => entity.LockedAt).HasColumnName("locked_at");
+        builder.Property(entity => entity.DeliveryToken).HasColumnName("delivery_token").HasMaxLength(36);
+        builder.Property(entity => entity.LastError).HasColumnName("last_error").HasMaxLength(100);
+        builder.HasIndex(entity => new { entity.EmailStatus, entity.NextAttemptAt });
         builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(entity => entity.NotificationId).HasColumnName("notification_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(entity => entity.UserId).HasColumnName("user_id").HasColumnType("bigint unsigned").IsRequired();

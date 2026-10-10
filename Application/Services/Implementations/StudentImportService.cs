@@ -112,7 +112,7 @@ public sealed class StudentImportService(
                 raw, classesByCode, value.ExistingCodes, firstRowByCode, today);
             return new NewImportRow(
                 raw.RowNumber, Fit(raw.Code), Fit(raw.FullName), Fit(raw.DateOfBirth),
-                Fit(raw.Gender), Fit(raw.AdmissionDate), Fit(raw.ClassCode),
+                Fit(raw.Gender), Fit(raw.ClassCode),
                 verdict.ClassId, verdict.Errors.Count == 0,
                 StudentImportRules.SerializeErrors(verdict.Errors));
         }).ToList();
@@ -348,9 +348,8 @@ public sealed class StudentImportService(
         {
             var errors = new List<StudentImportRowErrorDto>();
             var fields = StudentImportRules.ParseFields(
-                row.RawCode, row.RawFullName, row.RawDateOfBirth, row.RawGender,
-                row.RawAdmissionDate, today, errors);
-            if (errors.Count > 0 || fields.AdmissionDate is null || row.ResolvedSchoolClassId is null)
+                row.RawCode, row.RawFullName, row.RawDateOfBirth, row.RawGender, today, errors);
+            if (errors.Count > 0 || row.ResolvedSchoolClassId is null)
             {
                 return Failure<StudentImportBatchDetailDto>(
                     SchoolDirectoryErrorCodes.ImportHasInvalidRows,
@@ -359,7 +358,7 @@ public sealed class StudentImportService(
 
             students.Add(new ImportStudentToCreate(
                 row.RowId, row.RowNumber, fields.Code, fields.FullName, fields.DateOfBirth,
-                fields.Gender, fields.AdmissionDate.Value, row.ResolvedSchoolClassId.Value));
+                fields.Gender, row.ResolvedSchoolClassId.Value));
         }
 
         if (students.Count == 0)
@@ -579,7 +578,7 @@ public sealed class StudentImportService(
         b.ReviewedByName, b.ReviewedAt, b.ReviewComment, b.AppliedAt);
 
     private static StudentImportRowDto ToRowDto(ImportRowDetail r) => new(
-        r.RowNumber, r.RawCode, r.RawFullName, r.RawDateOfBirth, r.RawGender, r.RawAdmissionDate,
+        r.RowNumber, r.RawCode, r.RawFullName, r.RawDateOfBirth, r.RawGender,
         r.RawClassCode, r.ResolvedSchoolClassId, r.ResolvedClassName, r.IsValid,
         StudentImportRules.DeserializeErrors(r.ErrorJson), r.CreatedStudentId);
 

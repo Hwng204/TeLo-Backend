@@ -67,16 +67,15 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
             .ToListAsync(cancellationToken);
 
         var existing = codes.Count == 0
-            ? new List<string?>()
+            ? new List<string>()
             : await db.Students.AsNoTracking()
-                .Where(s => s.ActiveCode != null && codes.Contains(s.ActiveCode))
-                .Select(s => s.ActiveCode)
+                .Where(s => codes.Contains(s.Code))
+                .Select(s => s.Code)
                 .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<ImportLookup>.Ok(new ImportLookup(
             schoolId, year.Id, year.Name, classes,
-            existing.Where(c => c is not null).Select(c => c!)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase)));
+            existing.ToHashSet(StringComparer.OrdinalIgnoreCase)));
     }
 
     public async Task<ulong> SaveDraftAsync(
@@ -105,7 +104,6 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
                 RawFullName = r.RawFullName,
                 RawDateOfBirth = r.RawDateOfBirth,
                 RawGender = r.RawGender,
-                RawAdmissionDate = r.RawAdmissionDate,
                 RawClassCode = r.RawClassCode,
                 ResolvedSchoolClassId = r.ResolvedSchoolClassId,
                 IsValid = r.IsValid,
@@ -262,7 +260,6 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
                 FullName = item.FullName,
                 DateOfBirth = item.DateOfBirth,
                 Gender = item.Gender,
-                AdmissionDate = item.AdmissionDate,
                 Status = StudentStatusCodes.Active,
                 Enrollments =
                 {
@@ -271,7 +268,7 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
                         SchoolClassId = item.SchoolClassId,
                         AcademicYearId = batch.AcademicYearId,
                         Status = StudentEnrollmentStatusCodes.Active,
-                        StartedOn = item.AdmissionDate
+                        StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                     }
                 }
             };
@@ -308,8 +305,8 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
         var conflicts = new List<ImportRowConflict>();
         var codes = students.Select(s => s.Code).ToArray();
         var taken = (await db.Students.AsNoTracking()
-                .Where(s => s.ActiveCode != null && codes.Contains(s.ActiveCode))
-                .Select(s => s.ActiveCode)
+                .Where(s => codes.Contains(s.Code))
+                .Select(s => s.Code)
                 .ToListAsync(cancellationToken))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -350,7 +347,7 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
     private static IQueryable<ImportRowDetail> Details(IQueryable<StudentImportRow> rows) =>
         rows.Select(r => new ImportRowDetail(
             r.Id, (int)r.RowNumber, r.RawCode, r.RawFullName, r.RawDateOfBirth, r.RawGender,
-            r.RawAdmissionDate, r.RawClassCode, r.ResolvedSchoolClassId,
+            r.RawClassCode, r.ResolvedSchoolClassId,
             r.ResolvedSchoolClass == null ? null : r.ResolvedSchoolClass.Name,
             r.IsValid, r.ErrorJson, r.CreatedStudentId));
 }

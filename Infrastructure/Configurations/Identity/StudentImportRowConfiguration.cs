@@ -17,7 +17,6 @@ public sealed class StudentImportRowConfiguration : IEntityTypeConfiguration<Stu
         builder.Property(x => x.RawFullName).HasColumnName("raw_full_name").HasMaxLength(255).IsRequired();
         builder.Property(x => x.RawDateOfBirth).HasColumnName("raw_date_of_birth").HasMaxLength(255).IsRequired();
         builder.Property(x => x.RawGender).HasColumnName("raw_gender").HasMaxLength(255).IsRequired();
-        builder.Property(x => x.RawAdmissionDate).HasColumnName("raw_admission_date").HasMaxLength(255).IsRequired();
         builder.Property(x => x.RawClassCode).HasColumnName("raw_class_code").HasMaxLength(255).IsRequired();
         builder.Property(x => x.ResolvedSchoolClassId).HasColumnName("resolved_school_class_id").HasColumnType("bigint unsigned");
         builder.Property(x => x.IsValid).HasColumnName("is_valid").HasColumnType("tinyint(1)").IsRequired();

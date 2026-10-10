@@ -2,9 +2,11 @@ using Infrastructure.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using WebAPI.Security;
 using System.Security.Claims;
+using Application.Validators;
+using Application.DTOs;
+using Application.Services.Interface;
 
 namespace WebAPI.Controllers;
 
@@ -128,6 +130,11 @@ public sealed class AuthController(
         LoginRequest request,
         CancellationToken cancellationToken)
     {
+        if (!LoginValidator.IsValid(request))
+        {
+            return BadRequest(new { message = "Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu." });
+        }
+
         var user = await authenticationService.AuthenticateAsync(request, cancellationToken);
         if (user is null)
         {
@@ -141,34 +148,14 @@ public sealed class AuthController(
     [HttpPost("forgot-password")]
     public async Task<IActionResult> ForgotPassword(
         [FromBody] ForgotPasswordRequest request,
-        [FromServices] Infrastructure.Context.ApplicationDbContext db,
-        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
-        [FromServices] Application.Services.Interface.IEmailService emailService,
+        [FromServices] IAuthService authService,
         CancellationToken cancellationToken)
     {
-        var email = request.Email?.Trim();
-        if (string.IsNullOrWhiteSpace(email))
-            return BadRequest(new { message = "Email không hợp lệ." });
-
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == email && u.Status == "ACTIVE", cancellationToken);
-        if (user is null)
+        var result = await authService.ForgotPasswordAsync(request, cancellationToken);
+        if (!result.IsSuccess)
         {
-            return BadRequest(new { message = "Email giáo viên không tồn tại vui lòng kiểm tra lại." });
+            return BadRequest(new { message = result.Error!.Message });
         }
-
-        // Generate 6-digit OTP
-        var otp = Random.Shared.Next(100000, 999999).ToString();
-        
-        // Store OTP in cache for 5 minutes
-        cache.Set($"OTP_{email}", otp, TimeSpan.FromMinutes(5));
-        cache.Set($"OTP_Attempts_{email}", 0, TimeSpan.FromMinutes(5));
-
-        // Simulate sending email
-        await emailService.SendEmailAsync(
-            email,
-            "Yêu cầu lấy lại mật khẩu",
-            $"Mã OTP của bạn là: {otp}. Mã có hiệu lực trong 5 phút.",
-            cancellationToken);
 
         return Ok(new { message = "Mã OTP đã được gửi đến email của bạn." });
     }
@@ -177,36 +164,17 @@ public sealed class AuthController(
     [HttpPost("verify-otp")]
     public IActionResult VerifyOtp(
         [FromBody] VerifyOtpRequest request,
-        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
+        [FromServices] IAuthService authService)
     {
-        var email = request.Email?.Trim();
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.Otp))
-            return BadRequest(new { message = "Vui lòng nhập đầy đủ thông tin." });
-
-        if (!cache.TryGetValue($"OTP_{email}", out string? storedOtp))
+        var result = authService.VerifyOtp(request);
+        if (!result.IsSuccess)
         {
-            return BadRequest(new { message = "Mã OTP đã hết hạn hoặc không tồn tại." });
-        }
-
-        int attempts = cache.TryGetValue($"OTP_Attempts_{email}", out int a) ? a : 0;
-        if (attempts >= 3)
-        {
-            cache.Remove($"OTP_{email}");
-            cache.Remove($"OTP_Attempts_{email}");
-            return BadRequest(new { message = "Bạn đã nhập sai OTP quá 3 lần, vui lòng gửi lại yêu cầu để nhận mã mới." });
-        }
-
-        if (storedOtp != request.Otp?.Trim())
-        {
-            attempts++;
-            cache.Set($"OTP_Attempts_{email}", attempts, TimeSpan.FromMinutes(5));
-            if (attempts >= 3)
+            if (result.Error!.Message.Contains("3 lần sai"))
             {
-                cache.Remove($"OTP_{email}");
-                cache.Remove($"OTP_Attempts_{email}");
-                return BadRequest(new { message = "Bạn đã nhập sai OTP quá 3 lần, vui lòng gửi lại yêu cầu để nhận mã mới.", attempts });
+                // Parse attempts from message if we want, or just return the message
+                return BadRequest(new { message = result.Error.Message });
             }
-            return BadRequest(new { message = $"Mã OTP không chính xác ({attempts}/3 lần sai).", attempts });
+            return BadRequest(new { message = result.Error.Message });
         }
 
         return Ok(new { message = "Xác nhận OTP thành công." });
@@ -216,33 +184,14 @@ public sealed class AuthController(
     [HttpPost("reset-password")]
     public async Task<IActionResult> ResetPassword(
         [FromBody] ResetPasswordRequest request,
-        [FromServices] Infrastructure.Context.ApplicationDbContext db,
-        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache cache,
-        [FromServices] Microsoft.AspNetCore.Identity.IPasswordHasher<Domain.Entities.Identity.User> passwordHasher,
+        [FromServices] IAuthService authService,
         CancellationToken cancellationToken)
     {
-        var email = request.Email?.Trim();
-        if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.Otp) || string.IsNullOrWhiteSpace(request.NewPassword))
-            return BadRequest(new { message = "Vui lòng nhập đầy đủ thông tin." });
-
-        if (!cache.TryGetValue($"OTP_{email}", out string? storedOtp) || storedOtp != request.Otp)
+        var result = await authService.ResetPasswordAsync(request, cancellationToken);
+        if (!result.IsSuccess)
         {
-            return BadRequest(new { message = "Mã OTP không chính xác hoặc đã hết hạn." });
+            return BadRequest(new { message = result.Error!.Message, errors = result.Error.Details });
         }
-
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email && u.Status == "ACTIVE", cancellationToken);
-        if (user is null)
-        {
-            return BadRequest(new { message = "Người dùng không hợp lệ." });
-        }
-
-        // Update password
-        user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
-        user.SecurityVersion++; // Invalidate existing sessions
-        await db.SaveChangesAsync(cancellationToken);
-
-        // Remove OTP
-        cache.Remove($"OTP_{email}");
 
         return Ok(new { message = "Đổi mật khẩu thành công. Vui lòng đăng nhập lại." });
     }
@@ -271,31 +220,18 @@ public sealed class AuthController(
     [HttpPost("change-password")]
     public async Task<IActionResult> ChangePassword(
         [FromBody] ChangePasswordRequest request,
-        [FromServices] Infrastructure.Context.ApplicationDbContext db,
-        [FromServices] Microsoft.AspNetCore.Identity.IPasswordHasher<Domain.Entities.Identity.User> passwordHasher,
+        [FromServices] IAuthService authService,
         CancellationToken cancellationToken)
     {
         var userIdString = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
         if (!ulong.TryParse(userIdString, out var userId)) return Unauthorized();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
-        if (user is null) return NotFound();
-
-        var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
-        if (verificationResult == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Failed)
+        var result = await authService.ChangePasswordAsync(userId, request, cancellationToken);
+        if (!result.IsSuccess)
         {
-            return BadRequest(new { message = "Mật khẩu hiện tại không chính xác." });
+            return BadRequest(new { message = result.Error!.Message, errors = result.Error.Details });
         }
-
-        user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
-        user.SecurityVersion++; // Invalidate existing sessions
-        await db.SaveChangesAsync(cancellationToken);
 
         return Ok(new { message = "Đổi mật khẩu thành công." });
     }
 }
-
-public sealed record ForgotPasswordRequest(string Email);
-public sealed record VerifyOtpRequest(string Email, string Otp);
-public sealed record ResetPasswordRequest(string Email, string Otp, string NewPassword);
-public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);

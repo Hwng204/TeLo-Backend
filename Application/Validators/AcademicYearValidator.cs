@@ -130,7 +130,7 @@ public static partial class AcademicYearValidator
     {
         var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
-        if (request.Terms is null || request.Terms.Count != 2 || request.Terms.Any(term => term is null))
+        if (request.Terms is null || request.Terms.Count != 2 || request.Terms.Any(t => t is null))
         {
             AddError(errors, "terms", "Cấu hình năm học phải có đúng 2 học kỳ.");
             return new AcademicYearValidationResult(

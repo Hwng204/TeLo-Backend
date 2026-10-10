@@ -9,7 +9,6 @@ public sealed record CreateStudentRequest(
     string? FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly? AdmissionDate,
     string? Status,
     ulong SchoolClassId);
 
@@ -18,7 +17,6 @@ public sealed record UpdateStudentRequest(
     string? FullName,
     DateOnly? DateOfBirth,
     string? Gender,
-    DateOnly? AdmissionDate,
     string? Status,
     ulong? SchoolClassId);
 

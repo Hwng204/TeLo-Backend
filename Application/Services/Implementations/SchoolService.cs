@@ -4,6 +4,7 @@ using Application.Services.Interface;
 using Domain.Entities.Organization;
 using Infrastructure.Context;
 using Microsoft.EntityFrameworkCore;
+using Application.Validators;
 
 namespace Application.Services.Implement;
 
@@ -73,12 +74,14 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
         CreateSchoolRequest request,
         CancellationToken cancellationToken)
     {
-        var code = request.Code.Trim().ToUpperInvariant();
+        var isCodeConflict = !string.IsNullOrWhiteSpace(request.Code) && 
+                             await db.Schools.AnyAsync(s => s.Code == request.Code.Trim().ToUpperInvariant(), cancellationToken);
 
-        if (await db.Schools.AnyAsync(s => s.Code == code, cancellationToken))
-            return ServiceResult<SchoolListItem>.Failure(
-                "SCHOOL_CODE_CONFLICT",
-                $"Mã trường '{code}' đã được sử dụng.");
+        var validationResult = SchoolValidator.ValidateCreate(request, isCodeConflict);
+        if (validationResult != null)
+            return validationResult;
+
+        var code = request.Code.Trim().ToUpperInvariant();
 
         var school = new School
         {
@@ -109,6 +112,10 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
 
         if (school is null)
             return ServiceResult<SchoolListItem>.Failure("SCHOOL_NOT_FOUND", "Không tìm thấy trường.");
+
+        var validationResult = SchoolValidator.ValidateUpdate(request);
+        if (validationResult != null)
+            return validationResult;
 
         school.Name = request.Name.Trim();
         school.ProvinceCode = request.ProvinceCode?.Trim();

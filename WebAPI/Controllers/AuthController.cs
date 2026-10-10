@@ -131,7 +131,7 @@ public sealed class AuthController(
         var user = await authenticationService.AuthenticateAsync(request, cancellationToken);
         if (user is null)
         {
-            return Unauthorized(new { message = "Tên đăng nhập hoặc mật khẩu không đúng." });
+            return Unauthorized(new { code = "Unauthorized", message = "Tên đăng nhập hoặc mật khẩu không đúng." });
         }
 
         return Ok(tokenService.CreateToken(user));

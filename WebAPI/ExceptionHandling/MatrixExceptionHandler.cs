@@ -79,6 +79,8 @@ public sealed class MatrixExceptionHandler : IExceptionHandler
                 "DirectMatrixRequired" or
                 "MatrixNotEditable" => 409,
             "InvalidRequest" or
+                "ImportFileInvalid" or
+                "ImportHasInvalidRows" or
                 "EmptyMatrix" or
                 "InvalidDetail" or
                 "InvalidTotalScore" or

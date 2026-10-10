@@ -59,7 +59,8 @@ public static class MatrixMappingExtensions
                 detail.QuestionType,
                 detail.QuestionCount,
                 detail.Percentage,
-                detail.CellScore))
+                detail.CellScore,
+                detail.LessonId))
             .ToArray();
 
         return new MatrixWorkbookModel(

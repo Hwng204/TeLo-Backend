@@ -5,6 +5,14 @@ namespace Application.Services.Interface;
 
 public interface IExamService
 {
+    Task<ServiceResult<ExamFormOptionsDto>> GetFormOptionsAsync(CancellationToken cancellationToken);
+
+    Task<ServiceResult<ExamCandidateCountDto>> GetCandidateCountAsync(
+        ulong academicYearId,
+        ulong schoolBranchId,
+        ulong gradeLevelId,
+        CancellationToken cancellationToken);
+
     Task<ServiceResult<ExamDetailDto>> CreateAsync(
         CreateExamRequest request,
         CancellationToken cancellationToken);

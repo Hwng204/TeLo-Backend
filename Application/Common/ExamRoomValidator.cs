@@ -6,12 +6,57 @@ namespace Application.Common;
 public static partial class ExamRoomValidator
 {
     private const int MaxCodeLength = 50;
+    private const int MaxPrefixLength = 40;
 
     public static ExamValidationResult Validate(CreateExamRoomRequest request) =>
         ValidateWrite(request.Code, request.RoomId, request.CandidateLimit);
 
     public static ExamValidationResult Validate(UpdateExamRoomRequest request) =>
         ValidateWrite(request.Code, request.RoomId, request.CandidateLimit);
+
+    public static ExamValidationResult Validate(CreateExamRoomsRequest request)
+    {
+        var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var prefix = request.CodePrefix?.Trim() ?? string.Empty;
+        var roomIds = request.RoomIds ?? [];
+
+        if (request.RoomCount != 2)
+        {
+            Add(errors, "roomCount", "Kỳ thi phải sử dụng đúng 2 phòng máy.");
+        }
+
+        if (request.CandidateLimit == 0)
+        {
+            Add(errors, "candidateLimit", "Số học sinh mỗi phòng phải lớn hơn 0.");
+        }
+
+        if (prefix.Length == 0)
+        {
+            Add(errors, "codePrefix", "Tiền tố mã phòng thi là bắt buộc.");
+        }
+        else if (prefix.Length > MaxPrefixLength)
+        {
+            Add(errors, "codePrefix", $"Tiền tố mã phòng thi không được vượt quá {MaxPrefixLength} ký tự.");
+        }
+        else if (!CodePrefixPattern().IsMatch(prefix))
+        {
+            Add(errors, "codePrefix", "Tiền tố chỉ gồm chữ, số, dấu gạch ngang hoặc gạch dưới.");
+        }
+
+        if (roomIds.Count != request.RoomCount)
+        {
+            Add(errors, "roomIds", "Số phòng máy được chọn phải bằng số phòng thi.");
+        }
+        else if (roomIds.Any(id => id == 0) || roomIds.Distinct().Count() != roomIds.Count)
+        {
+            Add(errors, "roomIds", "Danh sách phòng máy không hợp lệ hoặc bị trùng.");
+        }
+
+        return new ExamValidationResult(errors.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToArray(),
+            StringComparer.OrdinalIgnoreCase));
+    }
 
     private static ExamValidationResult ValidateWrite(string? code, ulong roomId, uint candidateLimit)
     {
@@ -28,7 +73,7 @@ public static partial class ExamRoomValidator
         }
         else if (!CodePattern().IsMatch(normalizedCode))
         {
-            Add(errors, "code", "Mã phòng thi phải có dạng k5p01.");
+            Add(errors, "code", "Mã phòng thi chỉ gồm chữ, số, dấu gạch ngang hoặc gạch dưới.");
         }
 
         if (roomId == 0)
@@ -58,6 +103,9 @@ public static partial class ExamRoomValidator
         fieldErrors.Add(message);
     }
 
-    [GeneratedRegex(@"^k[1-5]p\d{2,}$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"^[A-Z0-9]+(?:[-_][A-Z0-9]+)*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex CodePattern();
+
+    [GeneratedRegex(@"^[A-Z0-9]+(?:[-_][A-Z0-9]+)*[-_]?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex CodePrefixPattern();
 }

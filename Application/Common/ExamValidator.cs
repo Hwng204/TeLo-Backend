@@ -19,9 +19,13 @@ public static class ExamValidator
         ValidateWrite(
             request.SemesterId,
             request.SchoolBranchId,
+            request.GradeLevelId,
+            request.SubjectId,
             request.Name,
             request.StartDate,
+            request.StartTime,
             request.EndDate,
+            request.EndTime,
             null,
             false);
 
@@ -29,9 +33,13 @@ public static class ExamValidator
         ValidateWrite(
             request.SemesterId,
             request.SchoolBranchId,
+            request.GradeLevelId,
+            request.SubjectId,
             request.Name,
             request.StartDate,
+            request.StartTime,
             request.EndDate,
+            request.EndTime,
             request.Status,
             true);
 
@@ -82,9 +90,13 @@ public static class ExamValidator
     private static ExamValidationResult ValidateWrite(
         ulong semesterId,
         ulong schoolBranchId,
+        ulong gradeLevelId,
+        ulong subjectId,
         string? name,
-        DateOnly startDate,
-        DateOnly endDate,
+        DateOnly? startDate,
+        TimeOnly? startTime,
+        DateOnly? endDate,
+        TimeOnly? endTime,
         string? status,
         bool requireStatus)
     {
@@ -101,6 +113,16 @@ public static class ExamValidator
             Add(errors, "schoolBranchId", "Cơ sở trường là bắt buộc.");
         }
 
+        if (gradeLevelId == 0)
+        {
+            Add(errors, "gradeLevelId", "Khối thi là bắt buộc.");
+        }
+
+        if (subjectId == 0)
+        {
+            Add(errors, "subjectId", "Môn thi là bắt buộc.");
+        }
+
         if (normalizedName.Length == 0)
         {
             Add(errors, "name", "Tên kỳ thi là bắt buộc.");
@@ -110,9 +132,30 @@ public static class ExamValidator
             Add(errors, "name", $"Tên kỳ thi không được vượt quá {MaxNameLength} ký tự.");
         }
 
-        if (startDate > endDate)
+        if (!startDate.HasValue)
         {
-            Add(errors, "endDate", "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu.");
+            Add(errors, "startDate", "Ngày bắt đầu kỳ thi là bắt buộc.");
+        }
+
+        if (!startTime.HasValue)
+        {
+            Add(errors, "startTime", "Giờ bắt đầu kỳ thi là bắt buộc.");
+        }
+
+        if (!endDate.HasValue)
+        {
+            Add(errors, "endDate", "Ngày kết thúc kỳ thi là bắt buộc.");
+        }
+
+        if (!endTime.HasValue)
+        {
+            Add(errors, "endTime", "Giờ kết thúc kỳ thi là bắt buộc.");
+        }
+
+        if (startDate.HasValue && startTime.HasValue && endDate.HasValue && endTime.HasValue &&
+            startDate.Value.ToDateTime(startTime.Value) >= endDate.Value.ToDateTime(endTime.Value))
+        {
+            Add(errors, "endDate", "Thời gian kết thúc phải sau thời gian bắt đầu.");
         }
 
         if (requireStatus && string.IsNullOrWhiteSpace(status))

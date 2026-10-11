@@ -64,6 +64,7 @@ public sealed class ExamRoomsControllerTests
             "k5p01",
             new ExamRoomPhysicalRoomSummary(3, "P101", "Phòng 101", "CLASSROOM", "ACTIVE"),
             30,
+            "READY",
             0);
 
     private sealed class FakeExamRoomService : IExamRoomService
@@ -83,6 +84,13 @@ public sealed class ExamRoomsControllerTests
             CancellationToken cancellationToken) =>
             Task.FromResult(ServiceResult<IReadOnlyList<ExamRoomOptionDto>>.Success([]));
 
+        public Task<ServiceResult<ExamRoomPlanDto>> GetPlanAsync(
+            ulong examId,
+            uint candidateLimit,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ServiceResult<ExamRoomPlanDto>.Success(
+                new ExamRoomPlanDto(0, 2, candidateLimit, (int)candidateLimit * 2, 0, [])));
+
         public Task<ServiceResult<ExamRoomDto>> GetByIdAsync(
             ulong examId,
             ulong id,
@@ -93,6 +101,12 @@ public sealed class ExamRoomsControllerTests
             ulong examId,
             CreateExamRoomRequest request,
             CancellationToken cancellationToken) => Task.FromResult(CreateResult);
+
+        public Task<ServiceResult<IReadOnlyList<ExamRoomDto>>> CreateBatchAsync(
+            ulong examId,
+            CreateExamRoomsRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ServiceResult<IReadOnlyList<ExamRoomDto>>.Success([]));
 
         public Task<ServiceResult<ExamRoomDto>> UpdateAsync(
             ulong examId,

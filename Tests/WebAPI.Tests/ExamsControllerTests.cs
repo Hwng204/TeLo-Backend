@@ -24,7 +24,7 @@ public sealed class ExamsControllerTests
         var controller = new ExamsController(service);
 
         var action = await controller.Create(
-            new CreateExamRequest(1, 2, "Kiểm tra", detail.StartDate, detail.EndDate),
+            new CreateExamRequest(1, 2, 3, 4, "Kiểm tra", detail.StartDate, detail.StartTime, detail.EndDate, detail.EndTime),
             CancellationToken.None);
 
         var created = Assert.IsType<CreatedAtActionResult>(action);
@@ -76,9 +76,14 @@ public sealed class ExamsControllerTests
             7,
             "Kiểm tra",
             new ExamSemesterSummary(1, "Học kỳ 1"),
+            new ExamAcademicYearSummary(5, "2026-2027"),
+            new ExamCatalogSummary(3, "Khối 5"),
+            new ExamCatalogSummary(4, "Toán"),
             new ExamSchoolBranchSummary(2, "CS1", "Cơ sở 1"),
             new DateOnly(2026, 11, 1),
+            new TimeOnly(8, 0),
             new DateOnly(2026, 11, 2),
+            new TimeOnly(10, 0),
             ExamStatusCodes.Draft,
             0,
             0,
@@ -88,6 +93,17 @@ public sealed class ExamsControllerTests
 
     private sealed class FakeExamService : IExamService
     {
+        public Task<ServiceResult<ExamFormOptionsDto>> GetFormOptionsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(ServiceResult<ExamFormOptionsDto>.Success(new ExamFormOptionsDto([], [], [])));
+
+        public Task<ServiceResult<ExamCandidateCountDto>> GetCandidateCountAsync(
+            ulong academicYearId,
+            ulong schoolBranchId,
+            ulong gradeLevelId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(ServiceResult<ExamCandidateCountDto>.Success(
+                new ExamCandidateCountDto(academicYearId, schoolBranchId, gradeLevelId, 0)));
+
         public ServiceResult<ExamDetailDto> CreateResult { get; init; } =
             ServiceResult<ExamDetailDto>.Failure("NOT_CONFIGURED", "Not configured");
         public ServiceResult<bool> DeleteResult { get; init; } =

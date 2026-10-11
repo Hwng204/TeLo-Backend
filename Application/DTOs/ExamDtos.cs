@@ -3,21 +3,58 @@ namespace Application.DTOs;
 public sealed record CreateExamRequest(
     ulong SemesterId,
     ulong SchoolBranchId,
+    ulong GradeLevelId,
+    ulong SubjectId,
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate);
+    DateOnly? StartDate,
+    TimeOnly? StartTime,
+    DateOnly? EndDate,
+    TimeOnly? EndTime);
 
 public sealed record UpdateExamRequest(
     ulong SemesterId,
     ulong SchoolBranchId,
+    ulong GradeLevelId,
+    ulong SubjectId,
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate,
+    DateOnly? StartDate,
+    TimeOnly? StartTime,
+    DateOnly? EndDate,
+    TimeOnly? EndTime,
     string Status);
 
 public sealed record ExamSemesterSummary(
     ulong Id,
     string Name);
+
+public sealed record ExamAcademicYearSummary(
+    ulong Id,
+    string Name);
+
+public sealed record ExamCatalogSummary(
+    ulong Id,
+    string Name);
+
+public sealed record ExamSemesterOption(
+    ulong Id,
+    string Name);
+
+public sealed record ExamAcademicYearOption(
+    ulong Id,
+    string Name,
+    string Status,
+    IReadOnlyList<ExamSemesterOption> Semesters);
+
+public sealed record ExamFormOptionsDto(
+    IReadOnlyList<ExamAcademicYearOption> AcademicYears,
+    IReadOnlyList<ExamCatalogSummary> GradeLevels,
+    IReadOnlyList<ExamCatalogSummary> Subjects);
+
+public sealed record ExamCandidateCountDto(
+    ulong AcademicYearId,
+    ulong SchoolBranchId,
+    ulong GradeLevelId,
+    int StudentCount);
 
 public sealed record ExamSchoolBranchSummary(
     ulong Id,
@@ -28,18 +65,28 @@ public sealed record ExamListItem(
     ulong Id,
     string Name,
     ExamSemesterSummary Semester,
+    ExamAcademicYearSummary AcademicYear,
+    ExamCatalogSummary? GradeLevel,
+    ExamCatalogSummary? Subject,
     ExamSchoolBranchSummary SchoolBranch,
     DateOnly StartDate,
+    TimeOnly StartTime,
     DateOnly EndDate,
+    TimeOnly EndTime,
     string Status);
 
 public sealed record ExamDetailDto(
     ulong Id,
     string Name,
     ExamSemesterSummary Semester,
+    ExamAcademicYearSummary AcademicYear,
+    ExamCatalogSummary? GradeLevel,
+    ExamCatalogSummary? Subject,
     ExamSchoolBranchSummary SchoolBranch,
     DateOnly StartDate,
+    TimeOnly StartTime,
     DateOnly EndDate,
+    TimeOnly EndTime,
     string Status,
     int SubjectCount,
     int SessionCount,
@@ -68,4 +115,5 @@ public sealed record ExamListQuery(
     int PageNumber,
     int PageSize,
     string? SortBy,
-    string? SortDirection);
+    string? SortDirection,
+    ulong? AcademicYearId = null);

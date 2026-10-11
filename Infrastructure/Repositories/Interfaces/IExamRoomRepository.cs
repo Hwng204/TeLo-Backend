@@ -21,6 +21,15 @@ public sealed record ExamRoomOptionData(
     string RoomType,
     string Status);
 
+public sealed record ExamCandidateData(
+    ulong Id,
+    string Code,
+    string FullName);
+
+public sealed record ExamCandidateRosterData(
+    bool HasGradeLevel,
+    IReadOnlyList<ExamCandidateData> Students);
+
 public interface IExamRoomRepository
 {
     Task<IReadOnlyList<ExamRoomData>> ListByExamAsync(ulong examId, CancellationToken cancellationToken);
@@ -35,6 +44,9 @@ public interface IExamRoomRepository
     Task<bool> CodeExistsAsync(ulong examId, string code, ulong? excludedId, CancellationToken cancellationToken);
     Task<bool> RoomExistsAsync(ulong examId, ulong roomId, ulong? excludedId, CancellationToken cancellationToken);
     Task<bool> HasDependentDataAsync(ulong id, CancellationToken cancellationToken);
+    Task<ExamCandidateRosterData?> GetCandidateRosterAsync(
+        ulong examId,
+        CancellationToken cancellationToken);
     Task AddAsync(ExamRoom examRoom, CancellationToken cancellationToken);
     void Delete(ExamRoom examRoom);
 }

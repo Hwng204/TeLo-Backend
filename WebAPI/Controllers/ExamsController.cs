@@ -11,6 +11,33 @@ namespace WebAPI.Controllers;
 [Route("api/exams")]
 public sealed class ExamsController(IExamService service) : ControllerBase
 {
+    [HttpGet("options")]
+    [ProducesResponseType(typeof(ApiResponse<ExamFormOptionsDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetFormOptions(CancellationToken cancellationToken)
+    {
+        var result = await service.GetFormOptionsAsync(cancellationToken);
+        return Ok(ApiResponse<ExamFormOptionsDto>.Ok(result.Value!));
+    }
+
+    [HttpGet("candidate-count")]
+    [ProducesResponseType(typeof(ApiResponse<ExamCandidateCountDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ExamCandidateCountDto>), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> GetCandidateCount(
+        [FromQuery] ulong academicYearId,
+        [FromQuery] ulong schoolBranchId,
+        [FromQuery] ulong gradeLevelId,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.GetCandidateCountAsync(
+            academicYearId,
+            schoolBranchId,
+            gradeLevelId,
+            cancellationToken);
+        return result.IsSuccess && result.Value is not null
+            ? Ok(ApiResponse<ExamCandidateCountDto>.Ok(result.Value))
+            : ToErrorResult(result);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(ApiResponse<ExamDetailDto>), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ApiResponse<ExamDetailDto>), StatusCodes.Status404NotFound)]
@@ -45,6 +72,7 @@ public sealed class ExamsController(IExamService service) : ControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] string? sortBy = null,
         [FromQuery] string? sortDirection = null,
+        [FromQuery] ulong? academicYearId = null,
         CancellationToken cancellationToken = default)
     {
         var result = await service.ListAsync(
@@ -58,7 +86,8 @@ public sealed class ExamsController(IExamService service) : ControllerBase
                 pageNumber,
                 pageSize,
                 sortBy,
-                sortDirection),
+                sortDirection,
+                academicYearId),
             cancellationToken);
 
         return result.IsSuccess && result.Value is not null
@@ -115,7 +144,7 @@ public sealed class ExamsController(IExamService service) : ControllerBase
         return error.Code switch
         {
             "VALIDATION_ERROR" => UnprocessableEntity(response),
-            "EXAM_NOT_FOUND" or "SEMESTER_NOT_FOUND" or "SCHOOL_BRANCH_NOT_FOUND" => NotFound(response),
+            "EXAM_NOT_FOUND" or "SEMESTER_NOT_FOUND" or "SCHOOL_BRANCH_NOT_FOUND" or "GRADE_LEVEL_NOT_FOUND" or "SUBJECT_NOT_FOUND" => NotFound(response),
             "EXAM_HAS_DEPENDENCIES" => Conflict(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)
         };

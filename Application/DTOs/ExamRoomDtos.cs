@@ -10,6 +10,12 @@ public sealed record UpdateExamRoomRequest(
     ulong RoomId,
     uint CandidateLimit);
 
+public sealed record CreateExamRoomsRequest(
+    uint RoomCount,
+    uint CandidateLimit,
+    string CodePrefix,
+    IReadOnlyList<ulong> RoomIds);
+
 public sealed record ExamRoomPhysicalRoomSummary(
     ulong Id,
     string Code,
@@ -30,4 +36,26 @@ public sealed record ExamRoomDto(
     string Code,
     ExamRoomPhysicalRoomSummary Room,
     uint CandidateLimit,
+    string Status,
     int SessionCount);
+
+public sealed record ExamRoomPlanStudentDto(
+    ulong Id,
+    string Code,
+    string FullName);
+
+public sealed record ExamRoomPlanRoomDto(
+    int RoomNumber,
+    IReadOnlyList<ExamRoomPlanStudentDto> Students);
+
+public sealed record ExamRoomPlanSessionDto(
+    int SessionNumber,
+    IReadOnlyList<ExamRoomPlanRoomDto> Rooms);
+
+public sealed record ExamRoomPlanDto(
+    int TotalStudents,
+    int RoomCount,
+    uint CandidateLimit,
+    int CapacityPerSession,
+    int RequiredSessionCount,
+    IReadOnlyList<ExamRoomPlanSessionDto> Sessions);

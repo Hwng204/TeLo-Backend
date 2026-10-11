@@ -12,18 +12,27 @@ public sealed record ExamListFilter(
     int PageNumber,
     int PageSize,
     string SortBy,
-    string SortDirection);
+    string SortDirection,
+    ulong? AcademicYearId);
 
 public sealed record ExamListData(
     ulong Id,
     string Name,
     ulong SemesterId,
     string SemesterName,
+    ulong AcademicYearId,
+    string AcademicYearName,
+    ulong? GradeLevelId,
+    string? GradeLevelName,
+    ulong? SubjectId,
+    string? SubjectName,
     ulong SchoolBranchId,
     string SchoolBranchCode,
     string SchoolBranchName,
     DateOnly StartDate,
+    TimeOnly StartTime,
     DateOnly EndDate,
+    TimeOnly EndTime,
     string Status);
 
 public sealed record ExamDetailData(
@@ -31,11 +40,19 @@ public sealed record ExamDetailData(
     string Name,
     ulong SemesterId,
     string SemesterName,
+    ulong AcademicYearId,
+    string AcademicYearName,
+    ulong? GradeLevelId,
+    string? GradeLevelName,
+    ulong? SubjectId,
+    string? SubjectName,
     ulong SchoolBranchId,
     string SchoolBranchCode,
     string SchoolBranchName,
     DateOnly StartDate,
+    TimeOnly StartTime,
     DateOnly EndDate,
+    TimeOnly EndTime,
     string Status,
     int SubjectCount,
     int SessionCount,
@@ -45,7 +62,21 @@ public sealed record ExamDetailData(
 
 public sealed record ExamReferenceData(
     bool SemesterExists,
-    bool SchoolBranchExists);
+    bool SchoolBranchExists,
+    bool GradeLevelExists = true,
+    bool SubjectExists = true);
+
+public sealed record ExamOptionData(ulong Id, string Name);
+public sealed record ExamSemesterOptionData(ulong Id, string Name);
+public sealed record ExamAcademicYearOptionData(
+    ulong Id,
+    string Name,
+    string Status,
+    IReadOnlyList<ExamSemesterOptionData> Semesters);
+public sealed record ExamFormOptionsData(
+    IReadOnlyList<ExamAcademicYearOptionData> AcademicYears,
+    IReadOnlyList<ExamOptionData> GradeLevels,
+    IReadOnlyList<ExamOptionData> Subjects);
 
 public interface IExamRepository
 {
@@ -68,6 +99,16 @@ public interface IExamRepository
     Task<ExamReferenceData> GetReferenceDataAsync(
         ulong semesterId,
         ulong schoolBranchId,
+        ulong gradeLevelId,
+        ulong subjectId,
+        CancellationToken cancellationToken);
+
+    Task<ExamFormOptionsData> GetFormOptionsAsync(CancellationToken cancellationToken);
+
+    Task<int> CountCandidatesAsync(
+        ulong academicYearId,
+        ulong schoolBranchId,
+        ulong gradeLevelId,
         CancellationToken cancellationToken);
 
     Task<bool> HasDependentDataAsync(

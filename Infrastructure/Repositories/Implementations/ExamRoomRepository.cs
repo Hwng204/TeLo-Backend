@@ -1,4 +1,5 @@
 using Domain.Entities.Examination;
+using Domain.Entities.Identity;
 using Infrastructure.Context;
 using Infrastructure.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
@@ -10,17 +11,23 @@ public sealed class ExamRoomRepository(ApplicationDbContext context) : IExamRoom
     public async Task<IReadOnlyList<ExamRoomData>> ListByExamAsync(
         ulong examId,
         CancellationToken cancellationToken) =>
-        await Project(context.ExamRooms.AsNoTracking().Where(item => item.ExamId == examId))
+        await BuildListByExamQuery(context, examId).ToArrayAsync(cancellationToken);
+
+    internal static IQueryable<ExamRoomData> BuildListByExamQuery(
+        ApplicationDbContext db,
+        ulong examId) =>
+        Project(db.ExamRooms.AsNoTracking()
+            .Where(item => item.ExamId == examId)
             .OrderBy(item => item.Code)
-            .ThenBy(item => item.Id)
-            .ToArrayAsync(cancellationToken);
+            .ThenBy(item => item.Id));
 
     public async Task<IReadOnlyList<ExamRoomOptionData>> ListRoomOptionsAsync(
         ulong examId,
         CancellationToken cancellationToken) =>
         await context.Rooms.AsNoTracking()
             .Where(room => context.Exams.Any(exam =>
-                exam.Id == examId && exam.SchoolBranchId == room.SchoolBranchId))
+                exam.Id == examId && exam.SchoolBranchId == room.SchoolBranchId) &&
+                room.Status == "ACTIVE")
             .OrderBy(room => room.Code)
             .ThenBy(room => room.Id)
             .Select(room => new ExamRoomOptionData(
@@ -65,7 +72,8 @@ public sealed class ExamRoomRepository(ApplicationDbContext context) : IExamRoom
         ulong roomId,
         CancellationToken cancellationToken) =>
         context.Exams.AsNoTracking().AnyAsync(
-            exam => exam.Id == examId && exam.SchoolBranch.Rooms.Any(room => room.Id == roomId),
+            exam => exam.Id == examId && exam.SchoolBranch.Rooms.Any(room =>
+                room.Id == roomId && room.Status == "ACTIVE"),
             cancellationToken);
 
     public Task<bool> CodeExistsAsync(
@@ -92,6 +100,50 @@ public sealed class ExamRoomRepository(ApplicationDbContext context) : IExamRoom
 
     public Task<bool> HasDependentDataAsync(ulong id, CancellationToken cancellationToken) =>
         context.SessionRooms.AsNoTracking().AnyAsync(item => item.ExamRoomId == id, cancellationToken);
+
+    public async Task<ExamCandidateRosterData?> GetCandidateRosterAsync(
+        ulong examId,
+        CancellationToken cancellationToken)
+    {
+        var exam = await context.Exams.AsNoTracking()
+            .Where(item => item.Id == examId)
+            .Select(item => new
+            {
+                item.SchoolBranchId,
+                AcademicYearId = item.Semester.AcademicYearId,
+                item.GradeLevelId
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (exam is null)
+        {
+            return null;
+        }
+
+        if (!exam.GradeLevelId.HasValue)
+        {
+            return new ExamCandidateRosterData(false, []);
+        }
+
+        var students = await context.StudentEnrollments.AsNoTracking()
+            .Where(enrollment =>
+                enrollment.AcademicYearId == exam.AcademicYearId &&
+                enrollment.Status == StudentEnrollmentStatusCodes.Active &&
+                enrollment.Student.Status == StudentStatusCodes.Active &&
+                enrollment.SchoolClass.Status == "ACTIVE" &&
+                enrollment.SchoolClass.SchoolBranchId == exam.SchoolBranchId &&
+                enrollment.SchoolClass.GradeLevelId == exam.GradeLevelId.Value)
+            .OrderBy(enrollment => enrollment.Student.FullName)
+            .ThenBy(enrollment => enrollment.Student.Code)
+            .ThenBy(enrollment => enrollment.StudentId)
+            .Select(enrollment => new ExamCandidateData(
+                enrollment.StudentId,
+                enrollment.Student.Code,
+                enrollment.Student.FullName))
+            .ToArrayAsync(cancellationToken);
+
+        return new ExamCandidateRosterData(true, students);
+    }
 
     public Task AddAsync(ExamRoom examRoom, CancellationToken cancellationToken) =>
         context.ExamRooms.AddAsync(examRoom, cancellationToken).AsTask();

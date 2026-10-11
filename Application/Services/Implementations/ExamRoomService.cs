@@ -43,6 +43,72 @@ public sealed class ExamRoomService(IUnitOfWork unitOfWork) : IExamRoomService
             .ToArray());
     }
 
+    public async Task<ServiceResult<ExamRoomPlanDto>> GetPlanAsync(
+        ulong examId,
+        uint candidateLimit,
+        CancellationToken cancellationToken)
+    {
+        if (candidateLimit == 0 || candidateLimit > int.MaxValue / 2)
+        {
+            return ServiceResult<ExamRoomPlanDto>.Failure(
+                "VALIDATION_ERROR",
+                "Số học sinh mỗi phòng phải là số nguyên lớn hơn 0.",
+                new Dictionary<string, string[]>
+                {
+                    ["candidateLimit"] = ["Số học sinh mỗi phòng không hợp lệ."]
+                });
+        }
+
+        var roster = await unitOfWork.ExamRooms.GetCandidateRosterAsync(examId, cancellationToken);
+        if (roster is null)
+        {
+            return ExamNotFound<ExamRoomPlanDto>();
+        }
+
+        if (!roster.HasGradeLevel)
+        {
+            return ServiceResult<ExamRoomPlanDto>.Failure(
+                "EXAM_GRADE_NOT_CONFIGURED",
+                "Kỳ thi chưa được cấu hình khối thi.");
+        }
+
+        const int roomCount = 2;
+        var limit = (int)candidateLimit;
+        var capacityPerSession = limit * roomCount;
+        var requiredSessionCount = roster.Students.Count == 0
+            ? 0
+            : (int)Math.Ceiling((double)roster.Students.Count / capacityPerSession);
+        var sessions = new List<ExamRoomPlanSessionDto>(requiredSessionCount);
+
+        for (var sessionIndex = 0; sessionIndex < requiredSessionCount; sessionIndex++)
+        {
+            var plannedRooms = new List<ExamRoomPlanRoomDto>(roomCount);
+            for (var roomIndex = 0; roomIndex < roomCount; roomIndex++)
+            {
+                var offset = sessionIndex * capacityPerSession + roomIndex * limit;
+                var students = roster.Students
+                    .Skip(offset)
+                    .Take(limit)
+                    .Select(student => new ExamRoomPlanStudentDto(
+                        student.Id,
+                        student.Code,
+                        student.FullName))
+                    .ToArray();
+                plannedRooms.Add(new ExamRoomPlanRoomDto(roomIndex + 1, students));
+            }
+
+            sessions.Add(new ExamRoomPlanSessionDto(sessionIndex + 1, plannedRooms));
+        }
+
+        return ServiceResult<ExamRoomPlanDto>.Success(new ExamRoomPlanDto(
+            roster.Students.Count,
+            roomCount,
+            candidateLimit,
+            capacityPerSession,
+            requiredSessionCount,
+            sessions));
+    }
+
     public async Task<ServiceResult<ExamRoomDto>> GetByIdAsync(
         ulong examId,
         ulong id,
@@ -94,6 +160,95 @@ public sealed class ExamRoomService(IUnitOfWork unitOfWork) : IExamRoomService
         await unitOfWork.ExamRooms.AddAsync(examRoom, cancellationToken);
         await unitOfWork.CompleteAsync(cancellationToken);
         return await LoadDetailAsync(examId, examRoom.Id, cancellationToken);
+    }
+
+    public async Task<ServiceResult<IReadOnlyList<ExamRoomDto>>> CreateBatchAsync(
+        ulong examId,
+        CreateExamRoomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var validation = ExamRoomValidator.Validate(request);
+        if (!validation.IsValid)
+        {
+            return ValidationFailure<IReadOnlyList<ExamRoomDto>>(validation);
+        }
+
+        if (!await unitOfWork.ExamRooms.ExamExistsAsync(examId, cancellationToken))
+        {
+            return ExamNotFound<IReadOnlyList<ExamRoomDto>>();
+        }
+
+        return await unitOfWork.ExecuteInTransactionAsync(async transactionCancellationToken =>
+        {
+            foreach (var roomId in request.RoomIds)
+            {
+                if (!await unitOfWork.ExamRooms.RoomBelongsToExamBranchAsync(
+                    examId,
+                    roomId,
+                    transactionCancellationToken))
+                {
+                    return PhysicalRoomNotFound<IReadOnlyList<ExamRoomDto>>();
+                }
+
+                if (await unitOfWork.ExamRooms.RoomExistsAsync(
+                    examId,
+                    roomId,
+                    null,
+                    transactionCancellationToken))
+                {
+                    return ServiceResult<IReadOnlyList<ExamRoomDto>>.Failure(
+                        "EXAM_ROOM_ALREADY_EXISTS",
+                        "Phòng máy đã được thêm vào kỳ thi.");
+                }
+            }
+
+            var prefix = NormalizePrefix(request.CodePrefix);
+            var nextNumber = 1;
+            var newRooms = new List<ExamRoom>(request.RoomIds.Count);
+            foreach (var roomId in request.RoomIds)
+            {
+                string code;
+                do
+                {
+                    code = $"{prefix}{nextNumber:00}";
+                    nextNumber++;
+                }
+                while (await unitOfWork.ExamRooms.CodeExistsAsync(
+                    examId,
+                    code,
+                    null,
+                    transactionCancellationToken));
+
+                var examRoom = new ExamRoom
+                {
+                    ExamId = examId,
+                    RoomId = roomId,
+                    Code = code,
+                    CandidateLimit = request.CandidateLimit
+                };
+                await unitOfWork.ExamRooms.AddAsync(examRoom, transactionCancellationToken);
+                newRooms.Add(examRoom);
+            }
+
+            await unitOfWork.CompleteAsync(transactionCancellationToken);
+            var result = new List<ExamRoomDto>(newRooms.Count);
+            foreach (var room in newRooms)
+            {
+                var detail = await unitOfWork.ExamRooms.GetDetailAsync(
+                    examId,
+                    room.Id,
+                    transactionCancellationToken);
+                if (detail is null)
+                {
+                    return ServiceResult<IReadOnlyList<ExamRoomDto>>.Failure(
+                        "EXAM_ROOM_NOT_FOUND",
+                        "Không thể tải phòng thi vừa tạo.");
+                }
+                result.Add(detail.ToDto());
+            }
+
+            return ServiceResult<IReadOnlyList<ExamRoomDto>>.Success(result);
+        }, cancellationToken);
     }
 
     public async Task<ServiceResult<ExamRoomDto>> UpdateAsync(
@@ -213,7 +368,9 @@ public sealed class ExamRoomService(IUnitOfWork unitOfWork) : IExamRoomService
             : ServiceResult<ExamRoomDto>.Success(detail.ToDto());
     }
 
-    private static string NormalizeCode(string code) => code.Trim().ToLowerInvariant();
+    private static string NormalizeCode(string code) => code.Trim().ToUpperInvariant();
+
+    private static string NormalizePrefix(string prefix) => prefix.Trim().ToUpperInvariant();
 
     private static ServiceResult<T> ValidationFailure<T>(ExamValidationResult validation) =>
         ServiceResult<T>.Failure(

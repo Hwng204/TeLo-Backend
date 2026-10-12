@@ -546,7 +546,7 @@ public sealed class EmailManagementIntegrationTests
             var context = new AcademicContext
             {
                 AcademicYear = year, SchoolId = SchoolA.Id, SchoolBranchId = IncludedA.SchoolBranchId!.Value,
-                Subject = new Subject { Name = "Toán" },
+                Subject = await db.Subjects.SingleAsync(subject => subject.Name == "Toán"),
                 GradeLevel = new GradeLevel { Name = "Lớp 1" }
             };
             db.AcademicContexts.Add(context);

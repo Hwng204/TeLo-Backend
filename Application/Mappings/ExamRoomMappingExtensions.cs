@@ -17,5 +17,6 @@ public static class ExamRoomMappingExtensions
                 item.RoomType,
                 item.RoomStatus),
             item.CandidateLimit,
+            item.RoomStatus == "ACTIVE" ? "READY" : "UNAVAILABLE",
             item.SessionCount);
 }

@@ -9,6 +9,50 @@ namespace Application.Services.Implement;
 
 public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
 {
+    public async Task<ServiceResult<ExamFormOptionsDto>> GetFormOptionsAsync(
+        CancellationToken cancellationToken)
+    {
+        var options = await unitOfWork.Exams.GetFormOptionsAsync(cancellationToken);
+        return ServiceResult<ExamFormOptionsDto>.Success(new ExamFormOptionsDto(
+            options.AcademicYears.Select(year => new ExamAcademicYearOption(
+                year.Id,
+                year.Name,
+                year.Status,
+                year.Semesters.Select(semester => new ExamSemesterOption(semester.Id, semester.Name)).ToArray())).ToArray(),
+            options.GradeLevels.Select(item => new ExamCatalogSummary(item.Id, item.Name)).ToArray(),
+            options.Subjects.Select(item => new ExamCatalogSummary(item.Id, item.Name)).ToArray()));
+    }
+
+    public async Task<ServiceResult<ExamCandidateCountDto>> GetCandidateCountAsync(
+        ulong academicYearId,
+        ulong schoolBranchId,
+        ulong gradeLevelId,
+        CancellationToken cancellationToken)
+    {
+        if (academicYearId == 0 || schoolBranchId == 0 || gradeLevelId == 0)
+        {
+            var errors = new Dictionary<string, string[]>();
+            if (academicYearId == 0) errors["academicYearId"] = ["Năm học là bắt buộc."];
+            if (schoolBranchId == 0) errors["schoolBranchId"] = ["Cơ sở trường là bắt buộc."];
+            if (gradeLevelId == 0) errors["gradeLevelId"] = ["Khối học là bắt buộc."];
+            return ServiceResult<ExamCandidateCountDto>.Failure(
+                "VALIDATION_ERROR",
+                "Thông tin dùng để tính sĩ số không hợp lệ.",
+                errors);
+        }
+
+        var count = await unitOfWork.Exams.CountCandidatesAsync(
+            academicYearId,
+            schoolBranchId,
+            gradeLevelId,
+            cancellationToken);
+        return ServiceResult<ExamCandidateCountDto>.Success(new ExamCandidateCountDto(
+            academicYearId,
+            schoolBranchId,
+            gradeLevelId,
+            count));
+    }
+
     public async Task<ServiceResult<ExamDetailDto>> CreateAsync(
         CreateExamRequest request,
         CancellationToken cancellationToken)
@@ -22,6 +66,8 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
         var referenceFailure = await ValidateReferencesAsync(
             request.SemesterId,
             request.SchoolBranchId,
+            request.GradeLevelId,
+            request.SubjectId,
             cancellationToken);
         if (referenceFailure is not null)
         {
@@ -32,9 +78,13 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
         {
             SemesterId = request.SemesterId,
             SchoolBranchId = request.SchoolBranchId,
+            GradeLevelId = request.GradeLevelId,
+            SubjectId = request.SubjectId,
             Name = request.Name.Trim(),
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
+            StartDate = request.StartDate!.Value,
+            StartTime = request.StartTime!.Value,
+            EndDate = request.EndDate!.Value,
+            EndTime = request.EndTime!.Value,
             Status = ExamStatusCodes.Draft
         };
 
@@ -95,6 +145,8 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
             var referenceFailure = await ValidateReferencesAsync(
                 request.SemesterId,
                 request.SchoolBranchId,
+                request.GradeLevelId,
+                request.SubjectId,
                 ct);
             if (referenceFailure is not null)
             {
@@ -103,9 +155,13 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
 
             exam.SemesterId = request.SemesterId;
             exam.SchoolBranchId = request.SchoolBranchId;
+            exam.GradeLevelId = request.GradeLevelId;
+            exam.SubjectId = request.SubjectId;
             exam.Name = request.Name.Trim();
-            exam.StartDate = request.StartDate;
-            exam.EndDate = request.EndDate;
+            exam.StartDate = request.StartDate!.Value;
+            exam.StartTime = request.StartTime!.Value;
+            exam.EndDate = request.EndDate!.Value;
+            exam.EndTime = request.EndTime!.Value;
             exam.Status = request.Status.Trim().ToUpperInvariant();
 
             await unitOfWork.CompleteAsync(ct);
@@ -141,11 +197,15 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
     private async Task<ServiceResult<ExamDetailDto>?> ValidateReferencesAsync(
         ulong semesterId,
         ulong schoolBranchId,
+        ulong gradeLevelId,
+        ulong subjectId,
         CancellationToken cancellationToken)
     {
         var references = await unitOfWork.Exams.GetReferenceDataAsync(
             semesterId,
             schoolBranchId,
+            gradeLevelId,
+            subjectId,
             cancellationToken);
 
         if (!references.SemesterExists)
@@ -155,11 +215,28 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
                 "Không tìm thấy học kỳ.");
         }
 
-        return !references.SchoolBranchExists
-            ? ServiceResult<ExamDetailDto>.Failure(
+        if (!references.SchoolBranchExists)
+        {
+            return ServiceResult<ExamDetailDto>.Failure(
                 "SCHOOL_BRANCH_NOT_FOUND",
-                "Không tìm thấy cơ sở trường.")
-            : null;
+                "Không tìm thấy cơ sở trường.");
+        }
+
+        if (!references.GradeLevelExists)
+        {
+            return ServiceResult<ExamDetailDto>.Failure(
+                "GRADE_LEVEL_NOT_FOUND",
+                "Không tìm thấy khối thi đang hoạt động.");
+        }
+
+        if (!references.SubjectExists)
+        {
+            return ServiceResult<ExamDetailDto>.Failure(
+                "SUBJECT_NOT_FOUND",
+                "Không tìm thấy môn thi đang hoạt động.");
+        }
+
+        return null;
     }
 
     private async Task<ServiceResult<ExamDetailDto>> LoadDetailAsync(

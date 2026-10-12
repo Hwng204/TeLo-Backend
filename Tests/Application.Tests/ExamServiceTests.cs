@@ -27,16 +27,24 @@ public sealed class ExamServiceTests
     }
 
     [Theory]
-    [InlineData(false, true, "SEMESTER_NOT_FOUND")]
-    [InlineData(true, false, "SCHOOL_BRANCH_NOT_FOUND")]
+    [InlineData(false, true, true, true, "SEMESTER_NOT_FOUND")]
+    [InlineData(true, false, true, true, "SCHOOL_BRANCH_NOT_FOUND")]
+    [InlineData(true, true, false, true, "GRADE_LEVEL_NOT_FOUND")]
+    [InlineData(true, true, true, false, "SUBJECT_NOT_FOUND")]
     public async Task CreateAsync_RejectsMissingReference(
         bool semesterExists,
         bool branchExists,
+        bool gradeLevelExists,
+        bool subjectExists,
         string expectedCode)
     {
         var repository = new FakeExamRepository
         {
-            References = new ExamReferenceData(semesterExists, branchExists)
+            References = new ExamReferenceData(
+                semesterExists,
+                branchExists,
+                gradeLevelExists,
+                subjectExists)
         };
         var service = new ExamService(repository);
 
@@ -66,6 +74,28 @@ public sealed class ExamServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_RequiresGradeSubjectAndDateTimes()
+    {
+        var service = new ExamService(new FakeExamRepository());
+        var request = ValidCreate() with
+        {
+            GradeLevelId = 0,
+            SubjectId = 0,
+            StartTime = null,
+            EndDate = null
+        };
+
+        var result = await service.CreateAsync(request, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
+        Assert.Contains("gradeLevelId", result.Error?.Details?.Keys ?? []);
+        Assert.Contains("subjectId", result.Error?.Details?.Keys ?? []);
+        Assert.Contains("startTime", result.Error?.Details?.Keys ?? []);
+        Assert.Contains("endDate", result.Error?.Details?.Keys ?? []);
+    }
+
+    [Fact]
     public async Task UpdateAsync_UpdatesOnlyExamScalarFields()
     {
         var repository = new FakeExamRepository();
@@ -74,9 +104,13 @@ public sealed class ExamServiceTests
             Id = 7,
             SemesterId = 1,
             SchoolBranchId = 2,
+            GradeLevelId = 3,
+            SubjectId = 4,
             Name = "Tên cũ",
             StartDate = new DateOnly(2026, 10, 1),
+            StartTime = new TimeOnly(8, 0),
             EndDate = new DateOnly(2026, 10, 2),
+            EndTime = new TimeOnly(10, 0),
             Status = ExamStatusCodes.Draft,
             Subjects = [new ExamSubject { Id = 99 }]
         });
@@ -87,9 +121,13 @@ public sealed class ExamServiceTests
             new UpdateExamRequest(
                 1,
                 2,
+                3,
+                4,
                 "Tên mới",
                 new DateOnly(2026, 11, 1),
+                new TimeOnly(8, 0),
                 new DateOnly(2026, 11, 2),
+                new TimeOnly(10, 0),
                 "scheduled"),
             CancellationToken.None);
 
@@ -97,6 +135,53 @@ public sealed class ExamServiceTests
         Assert.Equal("Tên mới", result.Value?.Name);
         Assert.Equal(ExamStatusCodes.Scheduled, result.Value?.Status);
         Assert.Single(repository.ExamsById[7].Subjects);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpdateAsync_BlocksScopeChangeWhenExamHasDependentData(bool changeSemester)
+    {
+        var repository = new FakeExamRepository { HasDependentData = true };
+        var exam = ExistingExam();
+        repository.Seed(exam);
+        var request = changeSemester
+            ? ValidUpdate() with { SemesterId = 2 }
+            : ValidUpdate() with { SchoolBranchId = 3 };
+
+        var result = await new ExamService(repository).UpdateAsync(7, request, CancellationToken.None);
+
+        Assert.Equal("EXAM_HAS_DEPENDENCIES", result.Error?.Code);
+        Assert.Equal((ulong)1, exam.SemesterId);
+        Assert.Equal((ulong)2, exam.SchoolBranchId);
+        Assert.Equal(0, repository.CompleteCallCount);
+        Assert.Equal(1, repository.TransactionCallCount);
+        Assert.Equal(1, repository.LockedReadCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_KeepsCatalogAndTimesInsideTransaction()
+    {
+        var repository = new FakeExamRepository();
+        repository.Seed(ExistingExam());
+        var request = ValidUpdate() with
+        {
+            GradeLevelId = 5,
+            SubjectId = 6,
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(11, 0)
+        };
+
+        var result = await new ExamService(repository).UpdateAsync(7, request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal((ulong)5, repository.ExamsById[7].GradeLevelId);
+        Assert.Equal((ulong)6, repository.ExamsById[7].SubjectId);
+        Assert.Equal(request.StartTime, repository.ExamsById[7].StartTime);
+        Assert.Equal(request.EndTime, repository.ExamsById[7].EndTime);
+        Assert.Equal(1, repository.CompleteCallCount);
+        Assert.Equal(1, repository.TransactionCallCount);
+        Assert.Equal(1, repository.LockedReadCallCount);
     }
 
     [Fact]
@@ -124,6 +209,22 @@ public sealed class ExamServiceTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
+        Assert.Equal(0, repository.CompleteCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RejectsMissingReferenceBeforeWriting()
+    {
+        var repository = new FakeExamRepository
+        {
+            References = new ExamReferenceData(true, true, false, true)
+        };
+        repository.Seed(ExistingExam());
+        var service = new ExamService(repository);
+
+        var result = await service.UpdateAsync(7, ValidUpdate(), CancellationToken.None);
+
+        Assert.Equal("GRADE_LEVEL_NOT_FOUND", result.Error?.Code);
         Assert.Equal(0, repository.CompleteCallCount);
     }
 
@@ -156,6 +257,15 @@ public sealed class ExamServiceTests
     }
 
     [Fact]
+    public async Task DeleteAsync_ReturnsNotFound_WhenExamDoesNotExist()
+    {
+        var result = await new ExamService(new FakeExamRepository())
+            .DeleteAsync(99, CancellationToken.None);
+
+        Assert.Equal("EXAM_NOT_FOUND", result.Error?.Code);
+    }
+
+    [Fact]
     public async Task ListAsync_NormalizesFiltersAndReturnsPagination()
     {
         var repository = new FakeExamRepository
@@ -167,11 +277,19 @@ public sealed class ExamServiceTests
                     "Kiểm tra học kỳ",
                     1,
                     "Học kỳ 1",
+                    5,
+                    "2026-2027",
+                    3,
+                    "Khối 5",
+                    4,
+                    "Toán",
                     2,
                     "CS1",
                     "Cơ sở 1",
                     new DateOnly(2026, 11, 1),
+                    new TimeOnly(8, 0),
                     new DateOnly(2026, 11, 2),
+                    new TimeOnly(10, 0),
                     ExamStatusCodes.Draft)
             ],
             TotalCount = 21
@@ -222,11 +340,71 @@ public sealed class ExamServiceTests
         Assert.Equal("EXAM_NOT_FOUND", missing.Error?.Code);
     }
 
+    [Fact]
+    public async Task GetFormOptionsAsync_MapsAcademicYearsGradesAndSubjects()
+    {
+        var repository = new FakeExamRepository
+        {
+            FormOptions = new ExamFormOptionsData(
+                [new ExamAcademicYearOptionData(1, "2026-2027", "ACTIVE", [new(2, "Học kỳ I")])],
+                [new ExamOptionData(5, "Khối 5")],
+                [new ExamOptionData(6, "Toán")])
+        };
+        var service = new ExamService(repository);
+
+        var result = await service.GetFormOptionsAsync(CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Học kỳ I", result.Value?.AcademicYears.Single().Semesters.Single().Name);
+        Assert.Equal("Khối 5", result.Value?.GradeLevels.Single().Name);
+        Assert.Equal("Toán", result.Value?.Subjects.Single().Name);
+    }
+
+    [Fact]
+    public async Task GetCandidateCountAsync_ReturnsActiveRosterCount()
+    {
+        var service = new ExamService(new FakeExamRepository { CandidateCount = 100 });
+
+        var result = await service.GetCandidateCountAsync(1, 2, 5, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(100, result.Value?.StudentCount);
+        Assert.Equal((ulong)5, result.Value?.GradeLevelId);
+    }
+
+    [Fact]
+    public async Task GetCandidateCountAsync_RejectsMissingScopeIds()
+    {
+        var service = new ExamService(new FakeExamRepository());
+
+        var result = await service.GetCandidateCountAsync(0, 0, 0, CancellationToken.None);
+
+        Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
+        Assert.NotNull(result.Error?.Details);
+        Assert.Equal(
+            ["academicYearId", "gradeLevelId", "schoolBranchId"],
+            result.Error.Details.Keys.OrderBy(key => key).ToArray());
+    }
+
+    [Fact]
+    public async Task ListAsync_RejectsInvalidPagingBeforeRepositoryCall()
+    {
+        var repository = new FakeExamRepository();
+        var service = new ExamService(repository);
+
+        var result = await service.ListAsync(
+            new ExamListQuery(null, null, null, null, null, null, 0, 101, "unknown", "sideways"),
+            CancellationToken.None);
+
+        Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
+        Assert.Null(repository.LastFilter);
+    }
+
     private static CreateExamRequest ValidCreate() =>
-        new(1, 2, "Kiểm tra học kỳ", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 2));
+        new(1, 2, 3, 4, "Kiểm tra học kỳ", new DateOnly(2026, 11, 1), new TimeOnly(8, 0), new DateOnly(2026, 11, 2), new TimeOnly(10, 0));
 
     private static UpdateExamRequest ValidUpdate() =>
-        new(1, 2, "Kiểm tra học kỳ", new DateOnly(2026, 11, 1), new DateOnly(2026, 11, 2), ExamStatusCodes.Draft);
+        new(1, 2, 3, 4, "Kiểm tra học kỳ", new DateOnly(2026, 11, 1), new TimeOnly(8, 0), new DateOnly(2026, 11, 2), new TimeOnly(10, 0), ExamStatusCodes.Draft);
 
     private static Exam ExistingExam() =>
         new()
@@ -234,9 +412,13 @@ public sealed class ExamServiceTests
             Id = 7,
             SemesterId = 1,
             SchoolBranchId = 2,
+            GradeLevelId = 3,
+            SubjectId = 4,
             Name = "Kiểm tra học kỳ",
             StartDate = new DateOnly(2026, 11, 1),
+            StartTime = new TimeOnly(8, 0),
             EndDate = new DateOnly(2026, 11, 2),
+            EndTime = new TimeOnly(10, 0),
             Status = ExamStatusCodes.Draft
         };
 
@@ -258,6 +440,10 @@ public sealed class ExamServiceTests
         public int TotalCount { get; init; }
         public ExamListFilter? LastFilter { get; private set; }
         public int CompleteCallCount { get; private set; }
+        public int TransactionCallCount { get; private set; }
+        public int LockedReadCallCount { get; private set; }
+        public int CandidateCount { get; init; }
+        public ExamFormOptionsData FormOptions { get; init; } = new([], [], []);
         public (int Subjects, int Sessions, int Rooms, int Candidates, int Proctors) DetailCounts { get; init; }
 
         public void Seed(Exam exam) => ExamsById[exam.Id] = exam;
@@ -282,11 +468,19 @@ public sealed class ExamServiceTests
                 exam.Name,
                 exam.SemesterId,
                 "Học kỳ 1",
+                5,
+                "2026-2027",
+                exam.GradeLevelId,
+                "Khối 5",
+                exam.SubjectId,
+                "Toán",
                 exam.SchoolBranchId,
                 "CS1",
                 "Cơ sở 1",
                 exam.StartDate,
+                exam.StartTime,
                 exam.EndDate,
+                exam.EndTime,
                 exam.Status,
                 DetailCounts.Subjects,
                 DetailCounts.Sessions,
@@ -298,13 +492,28 @@ public sealed class ExamServiceTests
         public Task<Exam?> GetByIdAsync(ulong id, CancellationToken cancellationToken) =>
             Task.FromResult(ExamsById.GetValueOrDefault(id));
 
-        public Task<Exam?> GetForDeleteAsync(ulong id, CancellationToken cancellationToken) =>
-            GetByIdAsync(id, cancellationToken);
+        public Task<Exam?> GetForDeleteAsync(ulong id, CancellationToken cancellationToken)
+        {
+            LockedReadCallCount++;
+            return GetByIdAsync(id, cancellationToken);
+        }
 
         public Task<ExamReferenceData> GetReferenceDataAsync(
             ulong semesterId,
             ulong schoolBranchId,
+            ulong gradeLevelId,
+            ulong subjectId,
             CancellationToken cancellationToken) => Task.FromResult(References);
+
+        public Task<ExamFormOptionsData> GetFormOptionsAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(FormOptions);
+
+        public Task<int> CountCandidatesAsync(
+            ulong academicYearId,
+            ulong schoolBranchId,
+            ulong gradeLevelId,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(CandidateCount);
 
         public Task<bool> HasDependentDataAsync(ulong id, CancellationToken cancellationToken) =>
             Task.FromResult(HasDependentData);
@@ -326,7 +535,11 @@ public sealed class ExamServiceTests
 
         public Task<T> ExecuteInTransactionAsync<T>(
             Func<CancellationToken, Task<T>> operation,
-            CancellationToken cancellationToken = default) => operation(cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            TransactionCallCount++;
+            return operation(cancellationToken);
+        }
 
         public void Dispose()
         {

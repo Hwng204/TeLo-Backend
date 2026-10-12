@@ -230,6 +230,38 @@ namespace Infrastructure.Migrations
                         .HasDatabaseName("uq_grade_levels_name");
 
                     b.ToTable("grade_levels", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1ul,
+                            Name = "Khối 1",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 2ul,
+                            Name = "Khối 2",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 3ul,
+                            Name = "Khối 3",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 4ul,
+                            Name = "Khối 4",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 5ul,
+                            Name = "Khối 5",
+                            Status = "ACTIVE"
+                        });
                 });
 
             modelBuilder.Entity("Domain.Entities.Academic.Lesson", b =>
@@ -372,6 +404,26 @@ namespace Infrastructure.Migrations
                         .HasDatabaseName("uq_subjects_name");
 
                     b.ToTable("subjects", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1ul,
+                            Name = "Toán",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 2ul,
+                            Name = "Tiếng Việt",
+                            Status = "ACTIVE"
+                        },
+                        new
+                        {
+                            Id = 3ul,
+                            Name = "Tiếng Anh",
+                            Status = "ACTIVE"
+                        });
                 });
 
             modelBuilder.Entity("Domain.Entities.Academic.SubjectField", b =>
@@ -423,6 +475,16 @@ namespace Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("end_date");
 
+                    b.Property<TimeOnly>("EndTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("time")
+                        .HasDefaultValue(new TimeOnly(0, 0, 0))
+                        .HasColumnName("end_time");
+
+                    b.Property<ulong?>("GradeLevelId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("grade_level_id");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(255)
@@ -441,15 +503,31 @@ namespace Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("start_date");
 
+                    b.Property<TimeOnly>("StartTime")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("time")
+                        .HasDefaultValue(new TimeOnly(0, 0, 0))
+                        .HasColumnName("start_time");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("varchar(32)")
                         .HasColumnName("status");
 
+                    b.Property<ulong?>("SubjectId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("subject_id");
+
                     b.HasKey("Id");
 
+                    b.HasIndex("GradeLevelId")
+                        .HasDatabaseName("idx_exams_grade_level");
+
                     b.HasIndex("SemesterId");
+
+                    b.HasIndex("SubjectId")
+                        .HasDatabaseName("idx_exams_subject");
 
                     b.HasIndex("SchoolBranchId", "SemesterId")
                         .HasDatabaseName("idx_exams_branch_semester");
@@ -3496,6 +3574,12 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.Examination.Exam", b =>
                 {
+                    b.HasOne("Domain.Entities.Academic.GradeLevel", "GradeLevel")
+                        .WithMany()
+                        .HasForeignKey("GradeLevelId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_exams_grade_level");
+
                     b.HasOne("Domain.Entities.Organization.SchoolBranch", "SchoolBranch")
                         .WithMany()
                         .HasForeignKey("SchoolBranchId")
@@ -3510,9 +3594,19 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasConstraintName("fk_exams_semester");
 
+                    b.HasOne("Domain.Entities.Academic.Subject", "Subject")
+                        .WithMany()
+                        .HasForeignKey("SubjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_exams_subject");
+
+                    b.Navigation("GradeLevel");
+
                     b.Navigation("SchoolBranch");
 
                     b.Navigation("Semester");
+
+                    b.Navigation("Subject");
                 });
 
             modelBuilder.Entity("Domain.Entities.Examination.ExamAttempt", b =>

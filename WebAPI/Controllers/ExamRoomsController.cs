@@ -37,6 +37,21 @@ public sealed class ExamRoomsController(IExamRoomService service) : ControllerBa
             : ToErrorResult(result);
     }
 
+    [HttpGet("plan")]
+    [ProducesResponseType(typeof(ApiResponse<ExamRoomPlanDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse<ExamRoomPlanDto>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<ExamRoomPlanDto>), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> GetPlan(
+        [FromRoute] ulong examId,
+        [FromQuery] uint candidateLimit,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.GetPlanAsync(examId, candidateLimit, cancellationToken);
+        return result.IsSuccess && result.Value is not null
+            ? Ok(ApiResponse<ExamRoomPlanDto>.Ok(result.Value))
+            : ToErrorResult(result);
+    }
+
     [HttpGet("{id:long}")]
     [ProducesResponseType(typeof(ApiResponse<ExamRoomDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse<ExamRoomDto>), StatusCodes.Status404NotFound)]
@@ -71,6 +86,24 @@ public sealed class ExamRoomsController(IExamRoomService service) : ControllerBa
         }
 
         return ToErrorResult(result);
+    }
+
+    [HttpPost("batch")]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ExamRoomDto>>), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ExamRoomDto>>), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ExamRoomDto>>), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ApiResponse<IReadOnlyList<ExamRoomDto>>), StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> CreateBatch(
+        [FromRoute] ulong examId,
+        [FromBody] CreateExamRoomsRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.CreateBatchAsync(examId, request, cancellationToken);
+        return result.IsSuccess && result.Value is not null
+            ? StatusCode(
+                StatusCodes.Status201Created,
+                ApiResponse<IReadOnlyList<ExamRoomDto>>.Ok(result.Value, "Đã tạo phòng thi."))
+            : ToErrorResult(result);
     }
 
     [HttpPut("{id:long}")]
@@ -112,7 +145,8 @@ public sealed class ExamRoomsController(IExamRoomService service) : ControllerBa
         return error.Code switch
         {
             "VALIDATION_ERROR" => UnprocessableEntity(response),
-            "EXAM_NOT_FOUND" or "ROOM_NOT_FOUND" or "EXAM_ROOM_NOT_FOUND" => NotFound(response),
+            "EXAM_NOT_FOUND" or "ROOM_NOT_FOUND" or "EXAM_ROOM_NOT_FOUND" or
+                "EXAM_GRADE_NOT_CONFIGURED" => NotFound(response),
             "EXAM_ROOM_CODE_ALREADY_EXISTS" or "EXAM_ROOM_ALREADY_EXISTS" or
                 "EXAM_ROOM_HAS_DEPENDENCIES" => Conflict(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)

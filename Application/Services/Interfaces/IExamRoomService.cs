@@ -13,6 +13,11 @@ public interface IExamRoomService
         ulong examId,
         CancellationToken cancellationToken);
 
+    Task<ServiceResult<ExamRoomPlanDto>> GetPlanAsync(
+        ulong examId,
+        uint candidateLimit,
+        CancellationToken cancellationToken);
+
     Task<ServiceResult<ExamRoomDto>> GetByIdAsync(
         ulong examId,
         ulong id,
@@ -21,6 +26,11 @@ public interface IExamRoomService
     Task<ServiceResult<ExamRoomDto>> CreateAsync(
         ulong examId,
         CreateExamRoomRequest request,
+        CancellationToken cancellationToken);
+
+    Task<ServiceResult<IReadOnlyList<ExamRoomDto>>> CreateBatchAsync(
+        ulong examId,
+        CreateExamRoomsRequest request,
         CancellationToken cancellationToken);
 
     Task<ServiceResult<ExamRoomDto>> UpdateAsync(

@@ -28,6 +28,11 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
             query = query.Where(exam => exam.SchoolBranchId == filter.SchoolBranchId.Value);
         }
 
+        if (filter.AcademicYearId.HasValue)
+        {
+            query = query.Where(exam => exam.Semester.AcademicYearId == filter.AcademicYearId.Value);
+        }
+
         if (filter.Status is not null)
         {
             query = query.Where(exam => exam.Status == filter.Status);
@@ -54,11 +59,19 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
                 exam.Name,
                 exam.SemesterId,
                 exam.Semester.Name,
+                exam.Semester.AcademicYearId,
+                exam.Semester.AcademicYear.Name,
+                exam.GradeLevelId,
+                exam.GradeLevel == null ? null : exam.GradeLevel.Name,
+                exam.SubjectId,
+                exam.Subject == null ? null : exam.Subject.Name,
                 exam.SchoolBranchId,
                 exam.SchoolBranch.Code,
                 exam.SchoolBranch.Name,
                 exam.StartDate,
+                exam.StartTime,
                 exam.EndDate,
+                exam.EndTime,
                 exam.Status))
             .ToArrayAsync(cancellationToken);
 
@@ -76,11 +89,19 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
                 exam.Name,
                 exam.SemesterId,
                 exam.Semester.Name,
+                exam.Semester.AcademicYearId,
+                exam.Semester.AcademicYear.Name,
+                exam.GradeLevelId,
+                exam.GradeLevel == null ? null : exam.GradeLevel.Name,
+                exam.SubjectId,
+                exam.Subject == null ? null : exam.Subject.Name,
                 exam.SchoolBranchId,
                 exam.SchoolBranch.Code,
                 exam.SchoolBranch.Name,
                 exam.StartDate,
+                exam.StartTime,
                 exam.EndDate,
+                exam.EndTime,
                 exam.Status,
                 exam.Subjects.Count,
                 exam.Subjects.SelectMany(subject => subject.GradeLevels)
@@ -105,15 +126,66 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
     public async Task<ExamReferenceData> GetReferenceDataAsync(
         ulong semesterId,
         ulong schoolBranchId,
+        ulong gradeLevelId,
+        ulong subjectId,
         CancellationToken cancellationToken)
     {
-        var semesterExists = await context.Semesters.AsNoTracking()
-            .AnyAsync(semester => semester.Id == semesterId, cancellationToken);
+        var academicYearId = await context.Semesters.AsNoTracking()
+            .Where(semester => semester.Id == semesterId)
+            .Select(semester => (ulong?)semester.AcademicYearId)
+            .FirstOrDefaultAsync(cancellationToken);
+        var semesterExists = academicYearId.HasValue;
         var schoolBranchExists = await context.SchoolBranches.AsNoTracking()
             .AnyAsync(branch => branch.Id == schoolBranchId, cancellationToken);
+        var gradeLevelExists = await context.GradeLevels.AsNoTracking()
+            .AnyAsync(item => item.Id == gradeLevelId && item.Status == "ACTIVE", cancellationToken);
+        var subjectExists = await context.Subjects.AsNoTracking()
+            .AnyAsync(item => item.Id == subjectId && item.Status == "ACTIVE", cancellationToken);
 
-        return new ExamReferenceData(semesterExists, schoolBranchExists);
+        return new ExamReferenceData(semesterExists, schoolBranchExists, gradeLevelExists, subjectExists);
     }
+
+    public async Task<ExamFormOptionsData> GetFormOptionsAsync(CancellationToken cancellationToken)
+    {
+        var academicYears = await context.AcademicYears.AsNoTracking()
+            .OrderByDescending(item => item.StartDate)
+            .Select(item => new ExamAcademicYearOptionData(
+                item.Id,
+                item.Name,
+                item.Status,
+                item.Semesters
+                    .OrderBy(semester => semester.Order)
+                    .Select(semester => new ExamSemesterOptionData(semester.Id, semester.Name))
+                    .ToArray()))
+            .ToArrayAsync(cancellationToken);
+        var gradeLevels = await context.GradeLevels.AsNoTracking()
+            .Where(item => item.Status == "ACTIVE")
+            .OrderBy(item => item.Name)
+            .Select(item => new ExamOptionData(item.Id, item.Name))
+            .ToArrayAsync(cancellationToken);
+        var subjects = await context.Subjects.AsNoTracking()
+            .Where(item => item.Status == "ACTIVE")
+            .OrderBy(item => item.Name)
+            .Select(item => new ExamOptionData(item.Id, item.Name))
+            .ToArrayAsync(cancellationToken);
+
+        return new ExamFormOptionsData(academicYears, gradeLevels, subjects);
+    }
+
+    public Task<int> CountCandidatesAsync(
+        ulong academicYearId,
+        ulong schoolBranchId,
+        ulong gradeLevelId,
+        CancellationToken cancellationToken) =>
+        context.StudentEnrollments.AsNoTracking()
+            .CountAsync(enrollment =>
+                enrollment.AcademicYearId == academicYearId &&
+                enrollment.Status == Domain.Entities.Identity.StudentEnrollmentStatusCodes.Active &&
+                enrollment.Student.Status == Domain.Entities.Identity.StudentStatusCodes.Active &&
+                enrollment.SchoolClass.Status == "ACTIVE" &&
+                enrollment.SchoolClass.SchoolBranchId == schoolBranchId &&
+                enrollment.SchoolClass.GradeLevelId == gradeLevelId,
+                cancellationToken);
 
     public async Task<bool> HasDependentDataAsync(
         ulong id,

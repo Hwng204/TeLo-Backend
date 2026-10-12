@@ -58,8 +58,8 @@ Ma trận: `Nháp → Đã nộp → Đã duyệt → Đã lưu trữ`. PHT có 
 - **PHT tự tạo:** tạo Nháp, bấm Xác nhận là thành Đã duyệt.
 - **Nháp của Tổ trưởng là riêng tư:** ma trận gắn nhiệm vụ đang ở `Nháp` (kể cả sau khi bị từ chối) **không** hiện trong danh sách của PHT/Hiệu trưởng, và xem/sửa/xóa trực tiếp trả `403` ("Ma trận đang được Tổ trưởng soạn, chỉ xem được sau khi nộp."). PHT thấy lại ngay khi Tổ trưởng nộp (`Đã nộp`).
 - **PHT giao Tổ trưởng:** PHT giao nhiệm vụ, Tổ trưởng tạo đúng một ma trận cho nhiệm vụ đó, nộp, PHT duyệt.
-- Nhiệm vụ: `Đã giao → Đã nộp → Hoàn thành`. PHT từ chối ma trận thì nhiệm vụ về `Đã giao` để Tổ trưởng làm lại.
-- **Từ chối:** chỉ PHT/Hiệu trưởng, chỉ với ma trận `Đã nộp`. Ma trận về `Nháp`, response có `rejectComment`, `rejectedAt`, `rejectedByUserId`. Tổ trưởng sửa rồi nộp lại (nhận xét cũ bị xóa khi nộp lại). Tổ trưởng **không** thu hồi được ma trận đã nộp; PHT vẫn sửa trực tiếp được trước khi duyệt hoặc từ chối.
+- Nhiệm vụ (đổi cùng transaction với ma trận, xem TASKS.md): Tổ trưởng lưu nháp → `IN_PROGRESS` Đang thực hiện; xoá bản nháp → `ASSIGNED` Đã giao; nộp (kể cả nộp lại) → `PENDING_REVIEW` Chờ kiểm duyệt; PHT từ chối → `NEEDS_REVISION` Cần chỉnh sửa; PHT duyệt → `COMPLETED` Hoàn thành. Mã `SUBMITTED` của nhiệm vụ không còn dùng. Ma trận PHT tự tạo không đổi nhiệm vụ nào.
+- **Duyệt/từ chối:** chỉ PHT/Hiệu trưởng, chỉ với ma trận `Đã nộp`; nếu gắn nhiệm vụ thì phải là người kiểm duyệt của nhiệm vụ (mặc định người giao). Từ chối đưa ma trận về `Nháp`, response có `rejectComment`, `rejectedAt`, `rejectedByUserId`. Tổ trưởng sửa rồi nộp lại (nhận xét cũ bị xóa khi nộp lại). Tổ trưởng **không** thu hồi được ma trận đã nộp; PHT vẫn sửa trực tiếp được trước khi duyệt hoặc từ chối.
 - Ma trận không có dòng chi tiết thì không nộp hoặc xác nhận được.
 
 ## 4. Danh sách API
@@ -79,9 +79,10 @@ Ma trận: `Nháp → Đã nộp → Đã duyệt → Đã lưu trữ`. PHT có 
 | `POST /api/matrices/{id}/clone` | Sao chép thành Nháp mới (PHT) |
 | `GET /api/matrices/{id}/export.xlsx` | Xuất Excel (đã duyệt hoặc đã lưu trữ) |
 | `POST /api/matrix-tasks` | Giao nhiệm vụ cho Tổ trưởng |
-| `GET /api/matrix-tasks` | Nhiệm vụ đã giao (PHT, Hiệu trưởng). Lọc: `page`, `pageSize`, `status`, `dueBefore`, `assignedToUserId`, `keyword`, `academicContextId` |
+| `GET /api/matrix-tasks` | Nhiệm vụ người gọi giao, thực hiện hoặc kiểm duyệt. Lọc: `page`, `pageSize`, `status`, `dueBefore`, `assignedToUserId`, `keyword`, `academicContextId` |
 | `GET /api/my/matrix-tasks` | Nhiệm vụ của tôi (Tổ trưởng). Cùng bộ lọc, trừ `assignedToUserId` |
 | `GET /api/matrix-tasks/{id}` | Chi tiết nhiệm vụ |
+| `/api/tasks/...` | Danh sách chung, sửa, xoá nhiệm vụ: xem TASKS.md |
 | `GET /api/matrix-reference-data` | Dữ liệu dựng form: ngữ cảnh, học kỳ, bài học, Tổ trưởng, mức nhận thức |
 
 Body tạo ma trận mẫu:

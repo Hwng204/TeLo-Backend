@@ -21,6 +21,9 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             .AsNoTracking()
             .Where(task => task.TaskType == "MATRIX");
 
+        if (query.InvolvingUserId is { } userId)
+            tasks = tasks.Where(task => task.CreatedByUserId == userId || task.AssignedToUserId == userId || task.ReviewerUserId == userId);
+
         if (query.AssignedToUserId is not null)
         {
             tasks = tasks.Where(task => task.AssignedToUserId == query.AssignedToUserId.Value);
@@ -126,6 +129,10 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             .SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
     }
 
+    public async Task LockAsync(ulong taskId, CancellationToken cancellationToken) =>
+        await Db.Database.SqlQuery<ulong>($"SELECT id AS Value FROM tasks WHERE id = {taskId} FOR UPDATE")
+            .ToListAsync(cancellationToken);
+
     public Task<WorkTask?> GetMatrixTaskAsync(
         ulong taskId,
         CancellationToken cancellationToken)
@@ -170,7 +177,10 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             .Where(task =>
                 task.Id == taskId &&
                 task.TaskType == "MATRIX" &&
-                !Db.ExamMatrices.Any(matrix => matrix.TaskId == taskId))
+                task.Status == "ASSIGNED" &&
+                !Db.ExamMatrices.Any(matrix => matrix.TaskId == taskId) &&
+                !Db.ExamSets.Any(set => set.TaskId == taskId) &&
+                !Db.Questions.Any(question => question.QuestionTaskDetail.QuestionTask.TaskId == taskId))
             .ExecuteDeleteAsync(cancellationToken);
         return deleted > 0;
     }

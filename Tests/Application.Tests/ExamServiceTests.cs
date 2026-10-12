@@ -137,6 +137,53 @@ public sealed class ExamServiceTests
         Assert.Single(repository.ExamsById[7].Subjects);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpdateAsync_BlocksScopeChangeWhenExamHasDependentData(bool changeSemester)
+    {
+        var repository = new FakeExamRepository { HasDependentData = true };
+        var exam = ExistingExam();
+        repository.Seed(exam);
+        var request = changeSemester
+            ? ValidUpdate() with { SemesterId = 2 }
+            : ValidUpdate() with { SchoolBranchId = 3 };
+
+        var result = await new ExamService(repository).UpdateAsync(7, request, CancellationToken.None);
+
+        Assert.Equal("EXAM_HAS_DEPENDENCIES", result.Error?.Code);
+        Assert.Equal((ulong)1, exam.SemesterId);
+        Assert.Equal((ulong)2, exam.SchoolBranchId);
+        Assert.Equal(0, repository.CompleteCallCount);
+        Assert.Equal(1, repository.TransactionCallCount);
+        Assert.Equal(1, repository.LockedReadCallCount);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_KeepsCatalogAndTimesInsideTransaction()
+    {
+        var repository = new FakeExamRepository();
+        repository.Seed(ExistingExam());
+        var request = ValidUpdate() with
+        {
+            GradeLevelId = 5,
+            SubjectId = 6,
+            StartTime = new TimeOnly(9, 0),
+            EndTime = new TimeOnly(11, 0)
+        };
+
+        var result = await new ExamService(repository).UpdateAsync(7, request, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal((ulong)5, repository.ExamsById[7].GradeLevelId);
+        Assert.Equal((ulong)6, repository.ExamsById[7].SubjectId);
+        Assert.Equal(request.StartTime, repository.ExamsById[7].StartTime);
+        Assert.Equal(request.EndTime, repository.ExamsById[7].EndTime);
+        Assert.Equal(1, repository.CompleteCallCount);
+        Assert.Equal(1, repository.TransactionCallCount);
+        Assert.Equal(1, repository.LockedReadCallCount);
+    }
+
     [Fact]
     public async Task UpdateAsync_ReturnsNotFound_WhenExamDoesNotExist()
     {
@@ -393,6 +440,8 @@ public sealed class ExamServiceTests
         public int TotalCount { get; init; }
         public ExamListFilter? LastFilter { get; private set; }
         public int CompleteCallCount { get; private set; }
+        public int TransactionCallCount { get; private set; }
+        public int LockedReadCallCount { get; private set; }
         public int CandidateCount { get; init; }
         public ExamFormOptionsData FormOptions { get; init; } = new([], [], []);
         public (int Subjects, int Sessions, int Rooms, int Candidates, int Proctors) DetailCounts { get; init; }
@@ -443,8 +492,11 @@ public sealed class ExamServiceTests
         public Task<Exam?> GetByIdAsync(ulong id, CancellationToken cancellationToken) =>
             Task.FromResult(ExamsById.GetValueOrDefault(id));
 
-        public Task<Exam?> GetForDeleteAsync(ulong id, CancellationToken cancellationToken) =>
-            GetByIdAsync(id, cancellationToken);
+        public Task<Exam?> GetForDeleteAsync(ulong id, CancellationToken cancellationToken)
+        {
+            LockedReadCallCount++;
+            return GetByIdAsync(id, cancellationToken);
+        }
 
         public Task<ExamReferenceData> GetReferenceDataAsync(
             ulong semesterId,
@@ -483,7 +535,11 @@ public sealed class ExamServiceTests
 
         public Task<T> ExecuteInTransactionAsync<T>(
             Func<CancellationToken, Task<T>> operation,
-            CancellationToken cancellationToken = default) => operation(cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            TransactionCallCount++;
+            return operation(cancellationToken);
+        }
 
         public void Dispose()
         {

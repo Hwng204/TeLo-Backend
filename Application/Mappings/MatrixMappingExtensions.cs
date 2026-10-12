@@ -40,7 +40,8 @@ public static class MatrixMappingExtensions
                 Person(people, row.CreatedByUserId),
                 row.CreatedByUserId is null && row.CreatedAt == default ? null : row.CreatedAt,
                 Person(people, row.ApprovedByUserId),
-                row.ApprovedAt))
+                row.ApprovedAt,
+                row.SubjectName, row.GradeLevelName, row.AcademicYearName, row.SemesterName))
             .ToArray();
 
         return new MatrixPage(items, page.Page, page.PageSize, page.TotalCount);
@@ -173,7 +174,7 @@ public static class MatrixMappingExtensions
         }
         else if (matrix.Status == MatrixStatusCodes.Submitted)
         {
-            if (actor.Role == MatrixActorRole.Pht)
+            if (matrix.CanReview(actor))
             {
                 actions.Add("Approve");
                 actions.Add("Reject");

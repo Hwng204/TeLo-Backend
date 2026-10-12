@@ -107,6 +107,10 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.CreatedAt,
                 matrix.ApprovedByUserId,
                 matrix.ApprovedAt,
+                SubjectName = matrix.AcademicContext.Subject.Name,
+                GradeLevelName = matrix.AcademicContext.GradeLevel.Name,
+                AcademicYearName = matrix.AcademicContext.AcademicYear.Name,
+                SemesterName = matrix.Semester == null ? null : matrix.Semester.Name,
                 TotalQuestions = matrix.Details
                     .Select(detail => (long?)detail.QuestionCount)
                     .Sum() ?? 0,
@@ -126,7 +130,8 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             row.CreatedByUserId,
             row.CreatedAt,
             row.ApprovedByUserId,
-            row.ApprovedAt)).ToArray();
+            row.ApprovedAt,
+            row.SubjectName, row.GradeLevelName, row.AcademicYearName, row.SemesterName)).ToArray();
 
         return new PagedResult<MatrixListRow>(items, query.Page, query.PageSize, totalCount);
     }

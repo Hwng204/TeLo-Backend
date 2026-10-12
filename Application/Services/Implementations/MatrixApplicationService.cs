@@ -45,6 +45,9 @@ public sealed class MatrixApplicationService(
             var matrix = await BuildNewMatrixAsync(request, actor, ct);
             await uow.Matrices.AddAsync(matrix, ct);
             await uow.CompleteAsync(ct);
+            // Tổ trưởng lưu bản nháp đầu tiên của nhiệm vụ: nhiệm vụ chuyển Đang thực hiện.
+            if (matrix.TaskId is { } taskId)
+                await uow.Matrices.SetTaskStatusAsync(taskId, MatrixTaskStatusCodes.InProgress, actor.UserId, ct);
             return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
@@ -142,8 +145,12 @@ public sealed class MatrixApplicationService(
             }
 
             await EnsureUnchangedAsync(matrix, ct);
+            var taskId = matrix.TaskId;
             await uow.Matrices.DeleteAsync(matrix);
             await uow.CompleteAsync(ct);
+            // Không còn bản nháp nào: nhiệm vụ về lại Đã giao.
+            if (taskId is not null)
+                await uow.Matrices.SetTaskStatusAsync(taskId.Value, MatrixTaskStatusCodes.Assigned, actor.UserId, ct);
             return true;
         }, cancellationToken);
     }
@@ -155,7 +162,7 @@ public sealed class MatrixApplicationService(
         return TransitionAsync(
             matrixId,
             (matrix, actor) => matrix.Submit(actor),
-            MatrixTaskStatusCodes.Submitted,
+            MatrixTaskStatusCodes.PendingReview,
             cancellationToken);
     }
 
@@ -175,7 +182,7 @@ public sealed class MatrixApplicationService(
         return TransitionAsync(
             matrixId,
             (matrix, actor) => matrix.Reject(actor, comment, DateTime.UtcNow),
-            MatrixTaskStatusCodes.Assigned,
+            MatrixTaskStatusCodes.NeedsRevision,
             cancellationToken);
     }
 
@@ -376,6 +383,7 @@ public sealed class MatrixApplicationService(
             return directMatrix;
         }
 
+        await uow.MatrixTasks.LockAsync(request.TaskId.Value, cancellationToken);
         var task = await uow.MatrixTasks.GetAsync(request.TaskId.Value, cancellationToken);
         if (task is null)
         {
@@ -508,12 +516,12 @@ public sealed class MatrixApplicationService(
 
     private static void EnsureTaskAccess(WorkTask task, MatrixActor actor)
     {
-        if (actor.Role == MatrixActorRole.TeamLead &&
-            task.AssignedToUserId != actor.UserId)
+        if (!(actor.Role == MatrixActorRole.Pht && task.CreatedByUserId == actor.UserId) &&
+            !(actor.Role == MatrixActorRole.TeamLead && task.AssignedToUserId == actor.UserId))
         {
             throw new MatrixApplicationException(
                 "Forbidden",
-                "Bạn không phải Tổ trưởng được giao nhiệm vụ này.");
+                "Bạn không phải người giao hoặc Tổ trưởng được giao nhiệm vụ này.");
         }
     }
 
@@ -551,5 +559,8 @@ public sealed class MatrixApplicationService(
                 "InvalidRequest",
                 "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc tỷ lệ điểm (phải trong khoảng (0, 100]) vượt quá giới hạn cho phép.");
         }
+
+        if (request.Details.Sum(detail => (long)detail.QuestionCount) > uint.MaxValue)
+            throw new MatrixApplicationException("InvalidRequest", $"Tổng số câu tối đa {uint.MaxValue}.");
     }
 }

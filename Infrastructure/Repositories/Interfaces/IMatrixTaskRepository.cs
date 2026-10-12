@@ -12,6 +12,9 @@ public interface IMatrixTaskRepository : IGenericRepository<WorkTask>
     // Any task type; used when a matrix is created from a task.
     Task<WorkTask?> GetAsync(ulong taskId, CancellationToken cancellationToken);
 
+    // Lock before reading assignment and scope in the existing business transaction.
+    Task LockAsync(ulong taskId, CancellationToken cancellationToken);
+
     // Only tasks of type MATRIX.
     Task<WorkTask?> GetMatrixTaskAsync(ulong taskId, CancellationToken cancellationToken);
 
@@ -19,6 +22,6 @@ public interface IMatrixTaskRepository : IGenericRepository<WorkTask>
 
     Task<ulong?> GetContextBranchIdAsync(ulong academicContextId, CancellationToken cancellationToken);
 
-    // Deletes a MATRIX task only while no matrix exists for it; false when nothing was deleted.
+    // Deletes an ASSIGNED MATRIX task only before any product exists; false when nothing was deleted.
     Task<bool> DeleteIfNotStartedAsync(ulong taskId, CancellationToken cancellationToken);
 }

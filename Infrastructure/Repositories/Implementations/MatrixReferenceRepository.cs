@@ -253,7 +253,7 @@ public sealed class MatrixReferenceRepository(
         var contexts = db.AcademicContexts
             .AsNoTracking()
             .Where(context =>
-                context.AcademicYear.Status == "ACTIVE" &&
+                (academicContextId != null || context.AcademicYear.Status == "ACTIVE") &&
                 context.School.Status == "ACTIVE" &&
                 context.SchoolBranch.Status == "ACTIVE");
 
@@ -305,7 +305,7 @@ public sealed class MatrixReferenceRepository(
             .AsNoTracking()
             .Where(semester =>
                 academicYearIds.Contains(semester.AcademicYearId) &&
-                semester.AcademicYear.Status == "ACTIVE")
+                (academicContextId != null || semester.AcademicYear.Status == "ACTIVE"))
             .OrderBy(semester => semester.StartDate)
             .Select(semester => new MatrixSemesterOption(
                 semester.Id,

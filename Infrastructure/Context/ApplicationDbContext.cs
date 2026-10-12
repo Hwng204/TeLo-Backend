@@ -41,6 +41,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<MatrixDetail> MatrixDetails => Set<MatrixDetail>();
     public DbSet<QuestionTask> QuestionTasks => Set<QuestionTask>();
     public DbSet<QuestionTaskDetail> QuestionTaskDetails => Set<QuestionTaskDetail>();
+    public DbSet<ExamTaskPaper> ExamTaskPapers => Set<ExamTaskPaper>();
     public DbSet<QuestionBank> QuestionBanks => Set<QuestionBank>();
     public DbSet<Question> Questions => Set<Question>();
     public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();

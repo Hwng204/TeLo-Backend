@@ -129,36 +129,44 @@ public sealed class ExamService(IUnitOfWork unitOfWork) : IExamService
             return ValidationFailure<ExamDetailDto>(validation);
         }
 
-        var exam = await unitOfWork.Exams.GetByIdAsync(id, cancellationToken);
-        if (exam is null)
+        return await unitOfWork.ExecuteInTransactionAsync(async ct =>
         {
-            return NotFound<ExamDetailDto>();
-        }
+            var exam = await unitOfWork.Exams.GetForDeleteAsync(id, ct);
+            if (exam is null)
+            {
+                return NotFound<ExamDetailDto>();
+            }
 
-        var referenceFailure = await ValidateReferencesAsync(
-            request.SemesterId,
-            request.SchoolBranchId,
-            request.GradeLevelId,
-            request.SubjectId,
-            cancellationToken);
-        if (referenceFailure is not null)
-        {
-            return referenceFailure;
-        }
+            if ((exam.SemesterId != request.SemesterId || exam.SchoolBranchId != request.SchoolBranchId) &&
+                await unitOfWork.Exams.HasDependentDataAsync(id, ct))
+                return ServiceResult<ExamDetailDto>.Failure("EXAM_HAS_DEPENDENCIES",
+                    "Không đổi được học kỳ hoặc phân hiệu khi kỳ thi đã có dữ liệu.");
 
-        exam.SemesterId = request.SemesterId;
-        exam.SchoolBranchId = request.SchoolBranchId;
-        exam.GradeLevelId = request.GradeLevelId;
-        exam.SubjectId = request.SubjectId;
-        exam.Name = request.Name.Trim();
-        exam.StartDate = request.StartDate!.Value;
-        exam.StartTime = request.StartTime!.Value;
-        exam.EndDate = request.EndDate!.Value;
-        exam.EndTime = request.EndTime!.Value;
-        exam.Status = request.Status.Trim().ToUpperInvariant();
+            var referenceFailure = await ValidateReferencesAsync(
+                request.SemesterId,
+                request.SchoolBranchId,
+                request.GradeLevelId,
+                request.SubjectId,
+                ct);
+            if (referenceFailure is not null)
+            {
+                return referenceFailure;
+            }
 
-        await unitOfWork.CompleteAsync(cancellationToken);
-        return await LoadDetailAsync(id, cancellationToken);
+            exam.SemesterId = request.SemesterId;
+            exam.SchoolBranchId = request.SchoolBranchId;
+            exam.GradeLevelId = request.GradeLevelId;
+            exam.SubjectId = request.SubjectId;
+            exam.Name = request.Name.Trim();
+            exam.StartDate = request.StartDate!.Value;
+            exam.StartTime = request.StartTime!.Value;
+            exam.EndDate = request.EndDate!.Value;
+            exam.EndTime = request.EndTime!.Value;
+            exam.Status = request.Status.Trim().ToUpperInvariant();
+
+            await unitOfWork.CompleteAsync(ct);
+            return await LoadDetailAsync(id, ct);
+        }, cancellationToken);
     }
 
     public async Task<ServiceResult<bool>> DeleteAsync(

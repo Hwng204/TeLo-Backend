@@ -36,6 +36,11 @@ public static class CurriculumImportRules
     // Same rule as the column collation (utf8mb4_0900_as_ci): case-insensitive, accent-sensitive.
     public static string Fold(string? value) => Clean(value).ToUpperInvariant();
 
+    public static string FieldLabel(CurriculumFieldRow field, IReadOnlyList<CurriculumFieldRow> fields) =>
+        fields.Any(other => other.Id != field.Id && Fold(other.Name) == Fold(field.Name))
+            ? $"{Clean(field.SubjectName)} — {Clean(field.Name)}"
+            : Clean(field.Name);
+
     public static CurriculumImportPlan Evaluate(
         IReadOnlyList<CurriculumImportRawRow> rows,
         IReadOnlyList<CurriculumGradeRow> grades,
@@ -83,7 +88,9 @@ public static class CurriculumImportRules
             CurriculumFieldRow? field = null;
             if (fieldName.Length > 0)
             {
-                var matches = fields.Where(item => Fold(item.Name) == Fold(fieldName)).ToArray();
+                var matches = fields.Where(item =>
+                    Fold(item.Name) == Fold(fieldName) ||
+                    Fold($"{item.SubjectName} — {item.Name}") == Fold(fieldName)).ToArray();
                 if (matches.Length == 0)
                 {
                     rowErrors.Add($"Lĩnh vực \"{fieldName}\" không có trong danh sách hợp lệ.");

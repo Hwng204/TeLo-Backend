@@ -194,6 +194,7 @@ public static class CurriculumWorkbook
         "Chương chưa có bài: để trống Mã bài và Tên bài.",
         "Các cột có dấu (*) là bắt buộc. Mã bài và Tên bài phải điền cả hai hoặc bỏ trống cả hai.",
         "Khối lớp và Lĩnh vực chọn trong danh sách ở cuối trang này.",
+        "Lĩnh vực trùng tên giữa các môn học sẽ kèm tên môn. Chọn đúng giá trị trong danh sách.",
         "Mã và tên chương không được trùng trong cùng khối lớp và lĩnh vực; mã và tên bài không được trùng trong cùng chương.",
         "Chương đã có trong hệ thống (cùng khối, lĩnh vực, mã và tên) thì bài mới được thêm vào chương đó.",
         "Chương có bài thuộc hai lĩnh vực: nhập chương hai lần, mỗi lĩnh vực một lần, cùng mã chương.",

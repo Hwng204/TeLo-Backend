@@ -25,14 +25,22 @@ public sealed class MatrixTaskApplicationService(
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Người nhận, ngữ cảnh học thuật và tên nhiệm vụ là bắt buộc.");
+                "Người nhận, ngữ cảnh học thuật và nội dung nhiệm vụ là bắt buộc.");
         }
 
         if (request.Name.Trim().Length > 255)
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Tên nhiệm vụ tối đa 255 ký tự.");
+                "Nội dung nhiệm vụ tối đa 255 ký tự.");
+        }
+
+        // GB-52: hạn chọn bằng ô ngày nên so theo ngày, hôm nay vẫn được.
+        if (request.DueAt is { } dueAt && dueAt.Date < DateTime.Today)
+        {
+            throw new MatrixApplicationException(
+                "InvalidRequest",
+                "Hạn hoàn thành không được ở trong quá khứ.");
         }
 
         var actor = currentUser.Actor;
@@ -88,7 +96,7 @@ public sealed class MatrixTaskApplicationService(
         {
             AssignedToUserId = assignedToUserId,
             BranchId = MatrixApplicationService.BranchScope(actor)
-        }).ToFilter();
+        }).ToFilter() with { InvolvingUserId = actor.UserId };
 
         var page = await uow.MatrixTasks.ListAsync(filter, cancellationToken);
         return page.ToDto(await ResolveCreatorsAsync(page, cancellationToken));
@@ -134,11 +142,11 @@ public sealed class MatrixTaskApplicationService(
             throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
         }
 
-        if (actor.Role == MatrixActorRole.TeamLead && task.AssignedToUserId != actor.UserId)
+        if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId && task.ReviewerUserId != actor.UserId)
         {
             throw new MatrixApplicationException(
                 "Forbidden",
-                "Bạn không phải Tổ trưởng được giao nhiệm vụ này.");
+                "Bạn không phụ trách nhiệm vụ này nên không xem được.");
         }
 
         await EnsureSameBranchAsync(actor, task, cancellationToken);
@@ -161,11 +169,13 @@ public sealed class MatrixTaskApplicationService(
         {
             throw new MatrixApplicationException(
                 "Forbidden",
-                "Chỉ PHT mới được xoá nhiệm vụ ma trận.");
+                "Chỉ PHT mới được xóa nhiệm vụ ma trận.");
         }
 
         var task = await uow.MatrixTasks.GetMatrixTaskAsync(taskId, cancellationToken)
             ?? throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
+        if (task.CreatedByUserId != actor.UserId)
+            throw new MatrixApplicationException("Forbidden", "Chỉ người giao nhiệm vụ mới được xóa.");
         await EnsureSameBranchAsync(actor, task, cancellationToken);
 
         if (!await uow.MatrixTasks.DeleteIfNotStartedAsync(taskId, cancellationToken))

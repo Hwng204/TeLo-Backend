@@ -166,15 +166,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-
-
-// Demo credentials are for local development only. Production administrators
-// must be provisioned explicitly; starting the API must never create demo accounts.
-if (app.Environment.IsDevelopment())
-{
-    app.SeedIdentityData();
-}
-
 app.Run();
 
 public partial class Program;

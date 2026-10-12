@@ -24,7 +24,10 @@ public static class SchoolDirectoryValidator
         code = Required(request.Code, "code", 64, errors);
         fullName = Required(request.FullName, "fullName", 255, errors);
         status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
-        RequireId(request.SchoolClassId, "schoolClassId", errors);
+        if (request.SchoolClassId is not null)
+        {
+            RequireId(request.SchoolClassId, "schoolClassId", errors);
+        }
         return errors;
     }
 

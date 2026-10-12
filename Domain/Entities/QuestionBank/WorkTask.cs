@@ -19,6 +19,10 @@ public sealed class WorkTask
     public string TaskType { get; set; } = string.Empty;
     public ulong? AcademicContextId { get; set; }
     public ulong? SemesterId { get; set; }
+    // Null: người giao kiểm duyệt (mọi loại nhiệm vụ). Không còn gán mới, chỉ dữ liệu cũ có giá trị.
+    public ulong? ReviewerUserId { get; set; }
+    // Nhiệm vụ đề thi: ma trận đã duyệt dùng để tạo đề (kỳ thi chọn đề sau, khi tạo kỳ thi).
+    public ulong? ExamMatrixId { get; set; }
 
     public User CreatedByUser { get; set; } = null!;
     public User AssignedToUser { get; set; } = null!;

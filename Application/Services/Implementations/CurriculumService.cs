@@ -284,7 +284,7 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
         var fields = await repository.ListFieldsAsync(cancellationToken);
         var content = CurriculumWorkbook.CreateTemplate(
             grades.Select(grade => grade.Name).ToArray(),
-            fields.Select(field => field.Name).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+            fields.Select(field => CurriculumImportRules.FieldLabel(field, fields)).ToArray());
         return ServiceResult<CurriculumFile>.Success(new CurriculumFile(TemplateFileName, content));
     }
 

@@ -116,6 +116,17 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy(CurriculumController.ManagePolicy, policy =>
         policy.RequireAuthenticatedUser().RequireRole(curriculumManageRoles));
 
+    // Nhiệm vụ: PHT, Hiệu trưởng, Tổ trưởng và Giáo viên vào được; ai giao, sửa, xoá do TaskService kiểm tra.
+    string[] RoleCodes(string key, params string[] defaults) => builder.Configuration.GetSection(key).Get<string[]>() ?? defaults;
+    var taskRoles = RoleCodes("MatrixAuth:PhtRoleCodes", "PHT")
+        .Concat(RoleCodes("MatrixAuth:PrincipalRoleCodes", "HIEU_TRUONG", "PRINCIPAL"))
+        .Concat(RoleCodes("MatrixAuth:TeamLeadRoleCodes", "TEAM_LEAD", "TO_TRUONG"))
+        .Concat(Application.Services.Implement.TaskService.TeacherRoleCodes(builder.Configuration))
+        .ToArray();
+    options.AddPolicy(TasksController.ReadPolicy, policy =>
+        policy.RequireAuthenticatedUser().RequireAssertion(context => context.User.FindAll(ClaimTypes.Role)
+            .Any(claim => taskRoles.Contains(claim.Value, StringComparer.OrdinalIgnoreCase))));
+
     options.AddPolicy("OperationalAdmin", policy =>
         policy.RequireAuthenticatedUser().RequireAssertion(context =>
             context.User.IsInRole("OperationalAdmin") ||

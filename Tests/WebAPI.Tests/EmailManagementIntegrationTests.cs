@@ -15,8 +15,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -433,8 +431,6 @@ public sealed class EmailManagementIntegrationTests
             var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseMySql(connection.ConnectionString, new MySqlServerVersion(new Version(8, 0, 0))).Options;
             db = new ApplicationDbContext(options);
             await db.Database.MigrateAsync();
-            await db.GetService<IMigrator>().MigrateAsync("20260930132745_AddIdentityManagement");
-            await db.Database.MigrateAsync();
             var branchA = new SchoolBranch { Code = "A1", Name = "Phân hiệu A", School = SchoolA };
             var branchB = new SchoolBranch { Code = "B1", Name = "Phân hiệu B", School = SchoolB };
             var admin = Account("admin", null);
@@ -522,7 +518,7 @@ public sealed class EmailManagementIntegrationTests
                 CreatedAt = DateTime.UtcNow, CreatedByUserId = IncludedA.Id,
                 AcademicContext = new AcademicContext {
                     AcademicYear = year, SchoolId = SchoolA.Id, SchoolBranchId = IncludedA.SchoolBranchId!.Value,
-                    Textbook = new Textbook { Title = "Test book" }, Subject = new Subject { Name = "Math" }, GradeLevel = new GradeLevel { Name = "Grade 1" }
+                    Subject = new Subject { Name = "Math" }, GradeLevel = new GradeLevel { Name = "Grade 1" }
                 }
             };
             db.ExamMatrices.Add(matrix);
@@ -550,7 +546,7 @@ public sealed class EmailManagementIntegrationTests
             var context = new AcademicContext
             {
                 AcademicYear = year, SchoolId = SchoolA.Id, SchoolBranchId = IncludedA.SchoolBranchId!.Value,
-                Textbook = new Textbook { Title = "Sách test" }, Subject = new Subject { Name = "Toán" },
+                Subject = new Subject { Name = "Toán" },
                 GradeLevel = new GradeLevel { Name = "Lớp 1" }
             };
             db.AcademicContexts.Add(context);

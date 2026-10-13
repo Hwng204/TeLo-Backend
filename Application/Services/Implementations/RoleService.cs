@@ -16,7 +16,7 @@ namespace Application.Services.Implement;
 
 public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog roleCatalog, IConfiguration configuration) : IRoleService
 {
-    private static readonly Expression<Func<Role, RoleItem>> RoleProjection = IdentityProjections.Role;
+    private Expression<Func<Role, RoleItem>> RoleProjection => IdentityProjections.Role(db.NotificationTargets);
     private static readonly Expression<Func<User, IdentityUserItem>> UserProjection = IdentityProjections.User;
 
     public async Task<ServiceResult<DirectoryPage<RoleItem>>> ListAsync(IdentityListQuery query, CancellationToken ct)
@@ -27,8 +27,9 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         var search = query.Search?.Trim();
         if (!string.IsNullOrEmpty(search)) rows = rows.Where(r => r.Code.Contains(search) || r.Name.Contains(search));
         if (!string.IsNullOrEmpty(query.Status)) rows = rows.Where(r => r.Status == query.Status);
-        if (query.SchoolId.HasValue) rows = rows.Where(r => r.SchoolId == query.SchoolId);
-        if (query.SchoolBranchId.HasValue) rows = rows.Where(r => r.SchoolBranchId == query.SchoolBranchId);
+        if (query.SchoolId.HasValue) rows = rows.Where(r => r.SchoolId == query.SchoolId || r.SchoolId == null);
+        if (query.SchoolBranchId.HasValue) rows = rows.Where(r => r.SchoolBranchId == query.SchoolBranchId ||
+            (r.SchoolBranchId == null && (r.SchoolId == null || db.SchoolBranches.Any(b => b.Id == query.SchoolBranchId && b.SchoolId == r.SchoolId))));
         var count = await rows.CountAsync(ct);
         var items = await rows.OrderBy(r => r.Name).ThenBy(r => r.Id).Skip((query.Page - 1) * query.PageSize).Take(query.PageSize).Select(RoleProjection).ToArrayAsync(ct);
         return ServiceResult<DirectoryPage<RoleItem>>.Success(new(items, query.Page, query.PageSize, count));
@@ -42,7 +43,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
 
     public async Task<ServiceResult<RoleItem>> SaveAsync(ulong? id, SaveRoleRequest request, ulong actor, CancellationToken ct)
     {
-        var errors = IdentityManagementValidator.Role(request);
+        var errors = IdentityManagementValidator.Role(request, allowLegacyScope: id.HasValue);
         if (errors.Count > 0) return Invalid<RoleItem>(errors);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
@@ -122,10 +123,8 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
         if (role == null) return Missing<bool>();
         if (version == 0 || role.Version != version) return Conflict<bool>();
-        if (role.IsSystem || IsAdministrator(role.Code) || role.UsedAt.HasValue ||
-            await db.Roles.AnyAsync(r => r.Id == id && (r.UserRoles.Any() || r.Permissions.Any()), ct) ||
-            await db.NotificationTargets.AnyAsync(t => t.RoleId == id, ct))
-            return Conflict<bool>("Vai trò hệ thống hoặc đã phát sinh sử dụng không thể xóa. Hãy ngừng áp dụng để giữ lịch sử.");
+        var item = await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct);
+        if (!item.CanDelete) return Conflict<bool>(item.DeleteBlockedReason);
         Audit(actor, "ROLE", id, "DELETE", Snapshot(role));
         db.Roles.Remove(role);
         await db.SaveChangesAsync(ct);

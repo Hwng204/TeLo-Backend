@@ -16,7 +16,8 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
         branch.Code,
         branch.Name,
         branch.Address,
-        branch.Status);
+        branch.Status,
+        branch.Logo);
 
     public async Task<ServiceResult<SchoolBranchDetailDto>> CreateAsync(
         ulong schoolId,
@@ -31,9 +32,20 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
         if (validationResult != null)
             return validationResult;
 
-        var existingCount = await db.SchoolBranches.CountAsync(b => b.SchoolId == schoolId, cancellationToken);
-        var suffix = (char)('A' + existingCount);
-        var code = $"{school.Code}-{suffix}";
+        string code;
+        if (!string.IsNullOrWhiteSpace(request.Code))
+        {
+            code = request.Code.Trim().ToUpperInvariant();
+            var isCodeConflict = await db.SchoolBranches.AnyAsync(b => b.SchoolId == schoolId && b.Code == code, cancellationToken);
+            if (isCodeConflict)
+                return ServiceResult<SchoolBranchDetailDto>.Failure("CODE_CONFLICT", $"Mã cơ sở '{code}' đã tồn tại trong trường này.");
+        }
+        else
+        {
+            var existingCount = await db.SchoolBranches.CountAsync(b => b.SchoolId == schoolId, cancellationToken);
+            var suffix = (char)('A' + existingCount);
+            code = $"{school.Code}-{suffix}";
+        }
 
         var branch = new SchoolBranch
         {
@@ -41,6 +53,7 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
             Code = code,
             Name = request.Name.Trim(),
             Address = request.Address?.Trim(),
+            Logo = request.Logo?.Trim(),
             Status = string.IsNullOrWhiteSpace(request.Status) ? "ACTIVE" : request.Status.Trim()
         };
 
@@ -65,6 +78,7 @@ public sealed class SchoolBranchService(ApplicationDbContext db) : ISchoolBranch
 
         branch.Name = request.Name.Trim();
         branch.Address = request.Address?.Trim();
+        branch.Logo = request.Logo?.Trim();
 
         if (!string.IsNullOrWhiteSpace(request.Status))
         {

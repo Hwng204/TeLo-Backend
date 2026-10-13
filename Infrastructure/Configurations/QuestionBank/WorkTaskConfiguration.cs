@@ -1,4 +1,5 @@
 using Domain.Entities.Academic;
+using Domain.Entities.Identity;
 using Domain.Entities.QuestionBank;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -25,6 +26,16 @@ public sealed class WorkTaskConfiguration : IEntityTypeConfiguration<WorkTask>
         builder.Property(x => x.TaskType).HasColumnName("task_type").HasMaxLength(50).IsRequired();
         builder.Property(x => x.AcademicContextId).HasColumnName("academic_context_id").HasColumnType("bigint unsigned");
         builder.Property(x => x.SemesterId).HasColumnName("semester_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.ReviewerUserId).HasColumnName("reviewer_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.ExamMatrixId).HasColumnName("exam_matrix_id").HasColumnType("bigint unsigned");
+        builder.HasIndex(x => x.ReviewerUserId).HasDatabaseName("idx_tasks_reviewer");
+        builder.HasIndex(x => x.ExamMatrixId).HasDatabaseName("idx_tasks_exam_matrix");
+        builder.HasOne<User>().WithMany()
+            .HasForeignKey(x => x.ReviewerUserId).HasConstraintName("fk_tasks_reviewer")
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<ExamMatrix>().WithMany()
+            .HasForeignKey(x => x.ExamMatrixId).HasConstraintName("fk_tasks_exam_matrix")
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasIndex(x => new { x.AssignedToUserId, x.Status, x.DueAt })
             .HasDatabaseName("idx_tasks_assignee_status_due");
         builder.HasIndex(x => x.CreatedByUserId).HasDatabaseName("idx_tasks_creator");

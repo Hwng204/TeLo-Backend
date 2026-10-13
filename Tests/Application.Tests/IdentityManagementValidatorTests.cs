@@ -27,7 +27,15 @@ public sealed class IdentityManagementValidatorTests
 
     [Fact]
     public void AcceptsTrimmedVietnameseNameAndScope() => Assert.Empty(IdentityManagementValidator.Role(
-        new SaveRoleRequest { Code = "SCHOOL_ADMIN", Name = "  Quản trị trường  ", SchoolId = 1, SchoolBranchId = 2 }));
+        new SaveRoleRequest { Code = "SCHOOL_ADMIN", Name = "  Quản trị trường  ", SchoolId = 1 }));
+
+    [Fact]
+    public void NewRoleCanApplyToAllSchools() => Assert.Empty(
+        IdentityManagementValidator.Role(new SaveRoleRequest { Code = "TEST_ROLE", Name = "Vai trò" }));
+
+    [Fact]
+    public void NewRoleAppliesToEntireSchoolRatherThanOneBranch() => Assert.Contains("schoolBranchId",
+        IdentityManagementValidator.Role(new SaveRoleRequest { Code = "TEST_ROLE", Name = "Vai trò", SchoolId = 1, SchoolBranchId = 2 }).Keys);
 
     [Fact]
     public void RejectsOversizeNameAndDescription()

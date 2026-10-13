@@ -36,7 +36,11 @@ public sealed record MatrixListRow(
     ulong? CreatedByUserId = null,
     DateTime CreatedAt = default,
     ulong? ApprovedByUserId = null,
-    DateTime? ApprovedAt = null);
+    DateTime? ApprovedAt = null,
+    string? SubjectName = null,
+    string? GradeLevelName = null,
+    string? AcademicYearName = null,
+    string? SemesterName = null);
 
 // A user as shown next to a matrix or task: name plus the role codes the school configured for them.
 public sealed record MatrixPersonRow(ulong UserId, string FullName, IReadOnlyList<string> RoleCodes);
@@ -55,7 +59,8 @@ public sealed record MatrixTaskFilter(
     ulong? AcademicYearId = null,
     ulong? SubjectId = null,
     ulong? GradeLevelId = null,
-    ulong? SemesterId = null);
+    ulong? SemesterId = null,
+    ulong? InvolvingUserId = null);
 
 public sealed record MatrixTaskRow(
     ulong Id,

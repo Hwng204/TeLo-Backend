@@ -15,6 +15,7 @@ public sealed class SchoolBranchConfiguration : IEntityTypeConfiguration<SchoolB
         builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(50).IsRequired();
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(255).IsRequired();
         builder.Property(x => x.Address).HasColumnName("address").HasMaxLength(500);
+        builder.Property(x => x.Logo).HasColumnName("logo").HasMaxLength(1000);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("ACTIVE").IsRequired();
 
         builder.HasIndex(x => new { x.SchoolId, x.Code })

@@ -414,8 +414,11 @@ Người dùng có tối đa 100 vai trò. Gán hàng loạt là một giao dị
 sẽ không làm phát sinh gán một phần. Không được tự thu hồi vai trò quản trị; trạng thái
 vai trò quản trị được bảo vệ. Thay đổi quyền thu hồi token cũ của người bị ảnh hưởng.
 
-Tài khoản mẫu chỉ được seed ở môi trường `Development`. Production không tự tạo tài khoản
-mẫu hoặc schema; cần chạy migration và cấp tài khoản quản trị bằng quy trình triển khai riêng.
+API sử dụng dữ liệu có sẵn trong MySQL, không tự tạo schema, vai trò hoặc tài khoản mẫu
+khi khởi động, kể cả ở môi trường `Development`. Endpoint `POST /api/auth/seed-test`
+đã được loại bỏ. Cần chạy migration khi cập nhật schema và cấp tài khoản quản trị bằng
+quy trình triển khai riêng. Các migration và dữ liệu danh mục nghiệp vụ (khối lớp,
+môn học, sự kiện email) được giữ để bảo toàn lịch sử migration và các chức năng liên quan.
 
 Kiểm thử đã chạy: 136 kiểm thử BE, gồm quy trình HTTP/JWT/MySQL thực và nâng cấp schema
 có dữ liệu cũ; 22 self-check của FE; TypeScript, lint phần mới và build production.

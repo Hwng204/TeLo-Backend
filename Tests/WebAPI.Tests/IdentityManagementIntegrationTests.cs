@@ -6,6 +6,7 @@ using Application.Common;
 using Application.DTOs;
 using Domain.Entities.Identity;
 using Domain.Entities.Organization;
+using Domain.Entities.Notification;
 using Infrastructure.Context;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
@@ -73,13 +74,15 @@ public sealed class IdentityManagementIntegrationTests
             var schoolA = new School { Code = "A", Name = "Trường A" };
             var schoolB = new School { Code = "B", Name = "Trường B" };
             var branchA = new SchoolBranch { Code = "A1", Name = "Phân hiệu A", School = schoolA };
+            var branchA2 = new SchoolBranch { Code = "A2", Name = "Phân hiệu A2", School = schoolA };
             var branchB = new SchoolBranch { Code = "B1", Name = "Phân hiệu B", School = schoolB };
             var adminRole = new Role { Code = "ADMIN", Name = "Admin", IsSystem = true };
             var admin = Account("admin", null);
             admin.UserRoles.Add(new UserRole { Role = adminRole });
             var userA = Account("userA", branchA);
             var userB = Account("userB", branchB);
-            db.Users.AddRange(admin, userA, userB);
+            var userA2 = Account("userA2", branchA2);
+            db.Users.AddRange(admin, userA, userA2, userB);
             await db.SaveChangesAsync();
 
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -105,7 +108,9 @@ public sealed class IdentityManagementIntegrationTests
             Assert.Equal(2, scopes.TotalCount);
             Assert.Single(scopes.Items);
             var branches = await Read<DirectoryPage<IdentityScopeItem>>(await client.GetAsync($"/api/identity/scopes?kind=branch&schoolId={schoolA.Id}"));
-            Assert.Equal(branchA.Id, Assert.Single(branches.Items).Id);
+            Assert.Equal(2, branches.Items.Count);
+            Assert.Contains(branches.Items, b => b.Id == branchA.Id);
+            Assert.Contains(branches.Items, b => b.Id == branchA2.Id);
 
             // Full user lifecycle: normalize input, enforce uniqueness/versioning,
             // revoke sessions after credential/status changes, and retain audit history.
@@ -185,7 +190,7 @@ public sealed class IdentityManagementIntegrationTests
             foreach (var code in new[] { "PRINCIPAL", "HIEU_TRUONG", "HeadTeacher", "DirectoryAdmin" })
             {
                 Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.PostAsJsonAsync("/api/roles",
-                    new SaveRoleRequest { Code = code, Name = code, SchoolId = schoolA.Id, SchoolBranchId = branchA.Id })).StatusCode);
+                    new SaveRoleRequest { Code = code, Name = code, SchoolId = schoolA.Id })).StatusCode);
             }
             var principal = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles",
                 new SaveRoleRequest { Code = "HeadTeacher", Name = "Hiệu trưởng" }), HttpStatusCode.Created);
@@ -203,11 +208,52 @@ public sealed class IdentityManagementIntegrationTests
             using (var legacySession = await Login(factory, legacyUser.Username))
                 Assert.Equal(HttpStatusCode.Forbidden, (await legacySession.GetAsync("/api/roles")).StatusCode);
 
-            var request = new SaveRoleRequest { Code = "SCHOOL_REVIEW", Name = "Người duyệt", SchoolId = schoolA.Id, SchoolBranchId = branchA.Id };
+            // Null school means all schools, including schools added after creating the role.
+            var allSchools = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles",
+                new SaveRoleRequest { Code = "ALL_SCHOOLS", Name = "Phụ trách chung" }), HttpStatusCode.Created);
+            Assert.Null(allSchools.SchoolId);
+            Assert.Null(allSchools.SchoolBranchId);
+            Assert.False(allSchools.IsSystem);
+            var schoolC = new School { Code = "C", Name = "Trường C" };
+            var branchC = new SchoolBranch { Code = "C1", Name = "Phân hiệu C", School = schoolC };
+            var userC = Account("userC", branchC);
+            db.Users.Add(userC);
+            await db.SaveChangesAsync();
+            var allEligible = await Read<DirectoryPage<IdentityUserItem>>(await client.GetAsync($"/api/users?eligibleForRoleId={allSchools.Id}"));
+            Assert.Contains(allEligible.Items, u => u.Id == userA2.Id);
+            Assert.Contains(allEligible.Items, u => u.Id == userB.Id);
+            Assert.Contains(allEligible.Items, u => u.Id == userC.Id);
+            allSchools = await Read<RoleItem>(await client.PostAsJsonAsync($"/api/roles/{allSchools.Id}/users",
+                new AssignRoleUsersRequest([userA2.Id, userB.Id, userC.Id], allSchools.Version)));
+            Assert.Equal(3, allSchools.UserCount);
+            foreach (var school in new[] { schoolA, schoolB, schoolC })
+            {
+                var schoolRoles = await Read<DirectoryPage<RoleItem>>(await client.GetAsync($"/api/roles?schoolId={school.Id}"));
+                Assert.Contains(schoolRoles.Items, r => r.Id == allSchools.Id);
+            }
+            var globalBranchRoles = await Read<DirectoryPage<RoleItem>>(await client.GetAsync($"/api/roles?schoolId={schoolC.Id}&schoolBranchId={branchC.Id}"));
+            Assert.Contains(globalBranchRoles.Items, r => r.Id == allSchools.Id);
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.PostAsJsonAsync("/api/roles",
+                new SaveRoleRequest { Code = "BRANCH_ONLY", Name = "Riêng phân hiệu", SchoolId = schoolA.Id, SchoolBranchId = branchA.Id })).StatusCode);
+            var request = new SaveRoleRequest { Code = "SCHOOL_REVIEW", Name = "Người duyệt", SchoolId = schoolA.Id };
             var role = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", request), HttpStatusCode.Created);
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/roles", request)).StatusCode);
             var eligible = await Read<DirectoryPage<IdentityUserItem>>(await client.GetAsync($"/api/users?eligibleForRoleId={role.Id}"));
-            Assert.Equal(userA.Id, Assert.Single(eligible.Items).Id);
+            Assert.Equal(2, eligible.Items.Count);
+            Assert.Contains(eligible.Items, u => u.Id == userA.Id);
+            Assert.Contains(eligible.Items, u => u.Id == userA2.Id);
+            Assert.DoesNotContain(eligible.Items, u => u.Id == userB.Id);
+            Assert.Null(role.SchoolBranchId);
+            var branchRoles = await Read<DirectoryPage<RoleItem>>(await client.GetAsync($"/api/roles?schoolId={schoolA.Id}&schoolBranchId={branchA2.Id}"));
+            Assert.Contains(branchRoles.Items, r => r.Id == role.Id);
+
+            // A school-wide role can be assigned in another branch of the same school.
+            var wholeSchool = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles",
+                new SaveRoleRequest { Code = "WHOLE_SCHOOL", Name = "Áp dụng toàn trường", SchoolId = schoolA.Id }), HttpStatusCode.Created);
+            wholeSchool = await Read<RoleItem>(await client.PostAsJsonAsync($"/api/roles/{wholeSchool.Id}/users",
+                new AssignRoleUsersRequest([userA2.Id], wholeSchool.Version)));
+            Assert.Equal(1, wholeSchool.UserCount);
+            Assert.NotNull(wholeSchool.DeleteBlockedReason);
             // Batch is atomic: one mismatched user means no grants at all.
             Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync($"/api/roles/{role.Id}/users", new AssignRoleUsersRequest([userA.Id, userB.Id], role.Version))).StatusCode);
             role = await Read<RoleItem>(await client.GetAsync($"/api/roles/{role.Id}"));
@@ -222,6 +268,7 @@ public sealed class IdentityManagementIntegrationTests
                 await db.SaveChangesAsync();
                 Assert.Equal(HttpStatusCode.Unauthorized, (await scopedSession.GetAsync("/api/roles")).StatusCode);
                 request.Version = role.Version;
+                request.SchoolBranchId = null;
                 request.Description = "Vẫn được sửa mô tả khi trường ngừng hoạt động";
                 role = await Read<RoleItem>(await client.PutAsJsonAsync($"/api/roles/{role.Id}", request));
                 schoolA.Status = "ACTIVE";
@@ -269,8 +316,8 @@ public sealed class IdentityManagementIntegrationTests
             Assert.Contains("UPDATE", audit);
 
             // Multi-role replacement and role/member mutations use the same grant model.
-            var second = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "SECOND_ROLE", Name = "Vai trò hai" }), HttpStatusCode.Created);
-            var third = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "THIRD_ROLE", Name = "Vai trò ba" }), HttpStatusCode.Created);
+            var second = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "SECOND_ROLE", Name = "Vai trò hai", SchoolId = schoolA.Id }), HttpStatusCode.Created);
+            var third = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "THIRD_ROLE", Name = "Vai trò ba", SchoolId = schoolA.Id }), HttpStatusCode.Created);
             var userRoles = await Read<UserRolesDetail>(await client.GetAsync($"/api/users/{userA.Id}/roles"));
             var userVersion = userRoles.User.Version;
             userRoles = await Read<UserRolesDetail>(await client.PutAsJsonAsync($"/api/users/{userA.Id}/roles", new AssignUserRolesRequest([second.Id, third.Id], userVersion)));
@@ -281,7 +328,22 @@ public sealed class IdentityManagementIntegrationTests
             var adminItem = await Read<RoleItem>(await client.GetAsync($"/api/roles/{adminRole.Id}"));
             Assert.Equal(HttpStatusCode.Conflict, (await client.PatchAsJsonAsync($"/api/roles/{adminRole.Id}/status", new IdentityStatusRequest("INACTIVE", adminItem.Version))).StatusCode);
 
-            var unused = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "UNUSED_ROLE", Name = "Chưa sử dụng" }), HttpStatusCode.Created);
+            var unused = await Read<RoleItem>(await client.PostAsJsonAsync("/api/roles", new SaveRoleRequest { Code = "UNUSED_ROLE", Name = "Chưa sử dụng", SchoolId = schoolA.Id }), HttpStatusCode.Created);
+            var notificationTarget = new NotificationTarget { RoleId = unused.Id, Action = "INCLUDE", Config = new NotificationConfig
+            {
+                Code = "ROLE_TEST_NOTICE", EventCode = "TEST_EVENT", Timing = "IMMEDIATE", RecipientScope = "NONE",
+                TitleTemplate = "Kiểm thử", ContentTemplate = "Kiểm thử liên kết vai trò"
+            }};
+            db.NotificationTargets.Add(notificationTarget);
+            await db.SaveChangesAsync();
+            unused = await Read<RoleItem>(await client.GetAsync($"/api/roles/{unused.Id}"));
+            Assert.False(unused.CanDelete);
+            Assert.Contains("thông báo", unused.DeleteBlockedReason!);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync($"/api/roles/{unused.Id}?version={unused.Version}")).StatusCode);
+            db.NotificationTargets.Remove(notificationTarget);
+            await db.SaveChangesAsync();
+            unused = await Read<RoleItem>(await client.GetAsync($"/api/roles/{unused.Id}"));
+            Assert.True(unused.CanDelete);
             Assert.True(await Read<bool>(await client.DeleteAsync($"/api/roles/{unused.Id}?version={unused.Version}")));
             var page = await Read<DirectoryPage<RoleItem>>(await client.GetAsync("/api/roles?page=1&pageSize=1&search=ROLE"));
             Assert.Single(page.Items);

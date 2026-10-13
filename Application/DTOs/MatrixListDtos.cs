@@ -26,7 +26,11 @@ public sealed record MatrixListItem(
     MatrixPerson? CreatedBy = null,
     DateTime? CreatedAt = null,
     MatrixPerson? ApprovedBy = null,
-    DateTime? ApprovedAt = null)
+    DateTime? ApprovedAt = null,
+    string? SubjectName = null,
+    string? GradeLevelName = null,
+    string? AcademicYearName = null,
+    string? SemesterName = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

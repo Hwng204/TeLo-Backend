@@ -41,7 +41,7 @@ public sealed class ExamMatrix
         return Status switch
         {
             MatrixStatusCodes.Draft => actor.Role == MatrixActorRole.Pht || IsAssignedTeamLead(actor),
-            MatrixStatusCodes.Submitted => actor.Role == MatrixActorRole.Pht,
+            MatrixStatusCodes.Submitted => CanReview(actor),
             _ => false
         };
     }
@@ -150,14 +150,17 @@ public sealed class ExamMatrix
         ClearRejection();
     }
 
+    public bool CanReview(MatrixActor actor) => actor.Role == MatrixActorRole.Pht &&
+        (TaskId is null || Task is { } task && (task.ReviewerUserId ?? task.CreatedByUserId) == actor.UserId);
+
     // The PHT sends a submitted matrix back to the Team Lead (Draft) with an optional comment.
     public void Reject(MatrixActor actor, string? comment, DateTime rejectedAtUtc)
     {
-        if (actor.Role != MatrixActorRole.Pht)
+        if (!CanReview(actor))
         {
             throw new MatrixDomainException(
                 "Forbidden",
-                "Chỉ PHT mới được từ chối ma trận.");
+                "Chỉ PHT kiểm duyệt nhiệm vụ mới được từ chối ma trận.");
         }
 
         if (Status != MatrixStatusCodes.Submitted)
@@ -173,11 +176,11 @@ public sealed class ExamMatrix
 
     public void Approve(MatrixActor actor, DateTime? approvedAtUtc = null)
     {
-        if (actor.Role != MatrixActorRole.Pht)
+        if (!CanReview(actor))
         {
             throw new MatrixDomainException(
                 "Forbidden",
-                "Chỉ PHT mới được duyệt ma trận.");
+                "Chỉ PHT kiểm duyệt nhiệm vụ mới được duyệt ma trận.");
         }
 
         if (Status != MatrixStatusCodes.Submitted)

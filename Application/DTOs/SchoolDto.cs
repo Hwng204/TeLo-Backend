@@ -18,7 +18,8 @@ public sealed record SchoolBranchItem(
     string Code,
     string Name,
     string? Address,
-    string Status);
+    string Status,
+    string? Logo = null);
 
 public sealed record SchoolDetailDto(
     ulong Id,

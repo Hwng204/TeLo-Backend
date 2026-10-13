@@ -435,6 +435,71 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
+    public async Task ActivateAsync_ReplacesCurrentYearAndClosesItsTerms()
+    {
+        var repository = new FakeAcademicYearRepository();
+        var previous = ConfiguredYear(1, 2025);
+        previous.Activate();
+        var next = ConfiguredYear(2, 2026);
+        repository.AddedYears.AddRange([previous, next]);
+        var service = new AcademicYearService(repository);
+
+        var result = await service.ActivateAsync(next.Id, CancellationToken.None);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("CLOSED", previous.Status);
+        Assert.All(previous.Semesters, term => Assert.Equal("CLOSED", term.Status));
+        Assert.Equal("ACTIVE", next.Status);
+        Assert.Equal("ACTIVE", next.Semesters.Single(term => term.Order == 1).Status);
+        Assert.Equal("PLANNED", next.Semesters.Single(term => term.Order == 2).Status);
+        Assert.Single(repository.AddedYears, year => year.Status == "ACTIVE");
+    }
+
+    [Fact]
+    public async Task ActivateAsync_InvalidNewYearLeavesCurrentYearActive()
+    {
+        var repository = new FakeAcademicYearRepository();
+        var previous = ConfiguredYear(1, 2025);
+        previous.Activate();
+        var next = ConfiguredYear(2, 2026);
+        next.Semesters.Clear();
+        repository.AddedYears.AddRange([previous, next]);
+
+        var result = await new AcademicYearService(repository).ActivateAsync(next.Id, CancellationToken.None);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("INCOMPLETE_TERMS", result.Error?.Code);
+        Assert.Equal("ACTIVE", previous.Status);
+        Assert.Equal("ACTIVE", previous.Semesters.Single(term => term.Order == 1).Status);
+        Assert.Equal("DRAFT", next.Status);
+    }
+
+    private static AcademicYear ConfiguredYear(ulong id, int firstYear) => new()
+    {
+        Id = id, Name = $"{firstYear}-{firstYear + 1}", StartDate = new(firstYear, 8, 15), EndDate = new(firstYear + 1, 5, 31),
+        Semesters = [
+            new() { Order = 1, Name = "Học kỳ I", StartDate = new(firstYear, 8, 15), EndDate = new(firstYear + 1, 1, 15) },
+            new() { Order = 2, Name = "Học kỳ II", StartDate = new(firstYear + 1, 1, 16), EndDate = new(firstYear + 1, 5, 31) }
+        ]
+    };
+
+    [Fact]
+    public async Task ActivateAsync_ReturnsConcurrencyConflictWhenSwitchCannotBeSaved()
+    {
+        var repository = new FakeAcademicYearRepository { ActivationSucceeds = false };
+        var previous = ConfiguredYear(1, 2025);
+        previous.Activate();
+        var target = ConfiguredYear(2, 2026);
+        repository.AddedYears.AddRange([previous, target]);
+
+        var result = await new AcademicYearService(repository).ActivateAsync(target.Id, CancellationToken.None);
+
+        Assert.Equal("CONCURRENCY_CONFLICT", result.Error?.Code);
+        Assert.Equal("ACTIVE", previous.Status);
+        Assert.Equal("DRAFT", target.Status);
+    }
+
+    [Fact]
     public async Task ConfigureTermsAsync_UpdatesTermsSuccessfully()
     {
         var repository = new FakeAcademicYearRepository();
@@ -518,6 +583,7 @@ public sealed class AcademicYearServiceTests
             AcademicYearCreateOutcome.Created;
         public int CreateCallCount { get; private set; }
         public bool HasScheduleConflict { get; init; }
+        public bool ActivationSucceeds { get; init; } = true;
         public List<AcademicYear> AddedYears { get; } = [];
 
         public Task<AcademicYearCreateOutcome> TryAddAsync(
@@ -561,6 +627,15 @@ public sealed class AcademicYearServiceTests
             AcademicYear academicYear,
             CancellationToken cancellationToken) =>
             Task.FromResult(true);
+
+        public Task<bool> TryActivateAsync(AcademicYear year, CancellationToken cancellationToken)
+        {
+            if (!ActivationSucceeds) return Task.FromResult(false);
+            year.EnsureCanActivate();
+            foreach (var current in AddedYears.Where(item => item.Id != year.Id && item.Status == "ACTIVE")) current.Close();
+            year.Activate();
+            return Task.FromResult(true);
+        }
 
         public Task<int> CompleteAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(1);

@@ -26,7 +26,7 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
         school.Status,
         school.ProvinceCode,
         school.Branches
-            .Select(b => new SchoolBranchItem(b.Id, b.Code, b.Name, b.Address, b.Status))
+            .Select(b => new SchoolBranchItem(b.Id, b.Code, b.Name, b.Address, b.Status, b.Logo))
             .ToArray());
 
     // ─── List ─────────────────────────────────────────────────────────────────

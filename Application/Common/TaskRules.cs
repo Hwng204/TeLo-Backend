@@ -7,6 +7,7 @@ namespace Application.Common;
 // và ma trận trong phân hiệu. `current` là nhiệm vụ đang sửa (null khi tạo mới).
 public static class TaskRules
 {
+    public static DateOnly Today(TimeProvider time) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(time.GetUtcNow(), TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh")).DateTime);
     public const string Overdue = "OVERDUE";
     public const int MaxNameLength = 255;
     public const int MaxLessons = 50;

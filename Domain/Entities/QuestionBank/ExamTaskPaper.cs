@@ -5,6 +5,8 @@ public sealed class ExamTaskPaper
 {
     public ulong Id { get; set; }
     public ulong TaskId { get; set; }
+    public ulong? ExamSetId { get; set; }
+    public ExamSet? ExamSet { get; set; }
     public string Name { get; set; } = string.Empty;
     public uint SortOrder { get; set; }
 

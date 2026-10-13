@@ -2967,6 +2967,10 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
+                    b.Property<ulong?>("ExamSetId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("exam_set_id");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -2982,6 +2986,8 @@ namespace Infrastructure.Migrations
                         .HasColumnName("task_id");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ExamSetId");
 
                     b.HasIndex("TaskId")
                         .HasDatabaseName("idx_exam_task_papers_task");
@@ -3137,6 +3143,19 @@ namespace Infrastructure.Migrations
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("created_by_user_id");
 
+                    b.Property<DateTime?>("PracticeAt")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("practice_at");
+
+                    b.Property<ulong?>("PracticeByUserId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("practice_by_user_id");
+
+                    b.Property<string>("PracticeReason")
+                        .HasMaxLength(255)
+                        .HasColumnType("varchar(255)")
+                        .HasColumnName("practice_reason");
+
                     b.Property<ulong?>("QuestionBankId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("question_bank_id");
@@ -3281,6 +3300,70 @@ namespace Infrastructure.Migrations
                     b.ToTable("question_options", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Entities.QuestionBank.QuestionPackageSubmission", b =>
+                {
+                    b.Property<ulong>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("id");
+
+                    MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(1000)
+                        .HasColumnType("varchar(1000)")
+                        .HasColumnName("comment");
+
+                    b.Property<string>("NotesJson")
+                        .IsRequired()
+                        .HasColumnType("longtext")
+                        .HasColumnName("notes_json");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int")
+                        .HasColumnName("number");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<ulong?>("ReviewedByUserId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("reviewed_by_user_id");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("longtext")
+                        .HasColumnName("snapshot_json");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("varchar(32)")
+                        .HasColumnName("status");
+
+                    b.Property<DateTime>("SubmittedAt")
+                        .HasColumnType("datetime(6)")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<ulong>("TaskId")
+                        .HasColumnType("bigint unsigned")
+                        .HasColumnName("task_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("TaskId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("question_package_submissions", (string)null);
+                });
+
             modelBuilder.Entity("Domain.Entities.QuestionBank.QuestionTask", b =>
                 {
                     b.Property<ulong>("Id")
@@ -3407,6 +3490,12 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
                         .HasColumnName("name");
+
+                    b.Property<int>("QuestionVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0)
+                        .HasColumnName("question_version");
 
                     b.Property<ulong?>("ReviewerUserId")
                         .HasColumnType("bigint unsigned")
@@ -4468,12 +4557,19 @@ namespace Infrastructure.Migrations
 
             modelBuilder.Entity("Domain.Entities.QuestionBank.ExamTaskPaper", b =>
                 {
+                    b.HasOne("Domain.Entities.QuestionBank.ExamSet", "ExamSet")
+                        .WithMany()
+                        .HasForeignKey("ExamSetId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Domain.Entities.QuestionBank.WorkTask", "Task")
                         .WithMany()
                         .HasForeignKey("TaskId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_exam_task_papers_task");
+
+                    b.Navigation("ExamSet");
 
                     b.Navigation("Task");
                 });
@@ -4609,6 +4705,20 @@ namespace Infrastructure.Migrations
                         .HasConstraintName("fk_question_options_question");
 
                     b.Navigation("Question");
+                });
+
+            modelBuilder.Entity("Domain.Entities.QuestionBank.QuestionPackageSubmission", b =>
+                {
+                    b.HasOne("Domain.Entities.Identity.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domain.Entities.QuestionBank.WorkTask", null)
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Domain.Entities.QuestionBank.QuestionTask", b =>

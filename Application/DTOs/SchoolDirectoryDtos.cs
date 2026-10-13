@@ -20,7 +20,8 @@ public sealed record StudentListQuery(
     ulong? SchoolBranchId,
     string? Status,
     int Page = 1,
-    int PageSize = 20);
+    int PageSize = 20,
+    ulong? AcademicYearId = null);
 
 public sealed record ClassListQuery(
     string? Search,

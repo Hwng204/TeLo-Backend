@@ -19,7 +19,8 @@ public sealed record StudentDirectoryFilter(
     ulong? SchoolBranchId,
     string? Status,
     int Page,
-    int PageSize);
+    int PageSize,
+    ulong? AcademicYearId = null);
 
 public sealed record ClassDirectoryFilter(
     DirectoryScope Scope,

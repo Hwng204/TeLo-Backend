@@ -46,6 +46,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
         ValidatePaging(query.Page, query.PageSize, errors);
         ValidateId(query.GradeLevelId, "gradeLevelId", errors);
         ValidateId(query.ClassId, "classId", errors);
+        ValidateId(query.AcademicYearId, "academicYearId", errors);
         ValidateId(query.SchoolBranchId, "schoolBranchId", errors);
         if (errors.Count > 0)
         {
@@ -55,7 +56,7 @@ public sealed class SchoolDirectoryService(ISchoolDirectoryRepository repository
         var result = await repository.ListStudentsAsync(
             new StudentDirectoryFilter(
                 scope, search, query.GradeLevelId, query.ClassId, query.SchoolBranchId,
-                status, query.Page, query.PageSize),
+                status, query.Page, query.PageSize, query.AcademicYearId),
             cancellationToken);
         if (result.Value is null)
         {

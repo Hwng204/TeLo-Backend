@@ -44,10 +44,11 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             students = students.Where(s => s.Enrollments.Any(e => homeroomIds.Contains(e.SchoolClassId)));
         }
 
-        // Class/grade/branch filters apply to the current (active-year) enrollment inside this school.
-        if (filter.ClassId is not null || filter.GradeLevelId is not null || filter.SchoolBranchId is not null)
+        // An explicit year includes completed historical enrollments. Omitted year retains
+        // the existing directory behavior for school-side callers.
+        if (filter.AcademicYearId is not null || filter.ClassId is not null || filter.GradeLevelId is not null || filter.SchoolBranchId is not null)
         {
-            var current = CurrentEnrollments(schoolId);
+            var current = ListingEnrollments(schoolId, filter.AcademicYearId);
             if (filter.ClassId is { } classId)
             {
                 current = current.Where(e => e.SchoolClassId == classId);
@@ -88,7 +89,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .ToListAsync(cancellationToken);
 
         var ids = page.Select(s => s.Id).ToArray();
-        var currentRows = await CurrentEnrollments(schoolId)
+        var currentRows = await ListingEnrollments(schoolId, filter.AcademicYearId)
             .Where(e => ids.Contains(e.StudentId))
             .Select(e => new
             {
@@ -500,6 +501,17 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
             e.AcademicYear.Status == ActiveYear &&
             e.Status == StudentEnrollmentStatusCodes.Active);
+
+    private IQueryable<StudentEnrollment> ListingEnrollments(ulong schoolId, ulong? academicYearId)
+    {
+        if (academicYearId is null) return CurrentEnrollments(schoolId);
+        var inYear = db.StudentEnrollments.AsNoTracking().Where(e =>
+            e.AcademicYearId == academicYearId && e.SchoolClass.SchoolBranch.SchoolId == schoolId);
+        // Pick the latest class period before applying class/grade filters, so a transfer
+        // does not match a former class while displaying the student's later class.
+        return inYear.Where(e => !inYear.Any(later => later.StudentId == e.StudentId &&
+            (later.StartedOn > e.StartedOn || (later.StartedOn == e.StartedOn && later.Id > e.Id))));
+    }
 
     private async Task<Dictionary<ulong, (ulong Id, string Name)>> LoadTeachersAsync(
         ulong[] classIds,

@@ -11,6 +11,7 @@ public sealed class WorkTaskConfiguration : IEntityTypeConfiguration<WorkTask>
     public void Configure(EntityTypeBuilder<WorkTask> builder)
     {
         builder.ToTable("tasks");
+        builder.Property(x => x.QuestionVersion).HasColumnName("question_version").HasDefaultValue(0);
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.CreatedByUserId).HasColumnName("created_by_user_id").HasColumnType("bigint unsigned").IsRequired();

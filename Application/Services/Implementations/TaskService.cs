@@ -42,7 +42,7 @@ public sealed class TaskService(
         return configured.Length > 0 ? configured : ["GIAO_VIEN", "TEACHER"];
     }
 
-    private DateOnly Today => DateOnly.FromDateTime(time.GetLocalNow().DateTime);
+    private DateOnly Today => TaskRules.Today(time);
 
     public async Task<ServiceResult<DirectoryPage<TaskListItem>>> ListAsync(
         TaskActor actor,
@@ -420,7 +420,8 @@ public sealed class TaskService(
         var papers = await db.ExamTaskPapers.AsNoTracking()
             .Where(paper => paper.TaskId == task.Id)
             .OrderBy(paper => paper.SortOrder)
-            .Select(paper => new TaskPaperItem(paper.Name))
+            .Select(paper => new TaskPaperItem(paper.Name, paper.Id, paper.ExamSetId,
+                paper.ExamSetId == null ? 0 : db.ExamSetQuestions.Count(q => q.ExamSetId == paper.ExamSetId)))
             .ToListAsync(cancellationToken);
         return new TaskExamInfo(matrixId, matrix.Name, matrix.Subject, matrix.Grade, matrix.Year, papers);
     }

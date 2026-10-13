@@ -84,10 +84,10 @@ public sealed record TaskExamInfo(
     IReadOnlyList<TaskPaperItem> Papers);
 
 // shortcut: chưa có chức năng soạn từng đề nên đề nào cũng "Chưa tạo"; tính từ đề đã soạn khi chức năng đó có.
-public sealed record TaskPaperItem(string Name)
+public sealed record TaskPaperItem(string Name, ulong? Id = null, ulong? ExamSetId = null, int QuestionCount = 0)
 {
-    public string Status => "NOT_CREATED";
-    public string StatusLabel => "Chưa tạo";
+    public string Status => ExamSetId is null ? "NOT_CREATED" : "DRAFT";
+    public string StatusLabel => ExamSetId is null ? "Chưa tạo" : $"Đã chọn {QuestionCount} câu";
     public DateTime? UpdatedAt => null;
 }
 

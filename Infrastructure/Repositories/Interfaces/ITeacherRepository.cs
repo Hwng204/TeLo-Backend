@@ -13,7 +13,7 @@ public sealed record TeacherListRow(
 public sealed record TeacherFilter(
     string? Search, string? Department, ulong? MainSubjectId, string? EmploymentStatus,
     string? AccountStatus, bool? Gender, ulong? BranchId, string SortBy,
-    bool Descending, int Page, int PageSize);
+    bool Descending, int Page, int PageSize, ulong? AcademicYearId = null);
 public sealed record TeacherOptionRow(ulong Id, string Code, string Name, string Status);
 public sealed record TeacherReferenceRows(
     IReadOnlyList<TeacherOptionRow> Subjects, IReadOnlyList<string> Departments,

@@ -4,6 +4,9 @@ namespace Domain.Entities.QuestionBank;
 
 public sealed class Question
 {
+    public DateTime? PracticeAt { get; set; }
+    public ulong? PracticeByUserId { get; set; }
+    public string? PracticeReason { get; set; }
     public ulong Id { get; set; }
     public ulong QuestionTaskDetailId { get; set; }
     public ulong? QuestionBankId { get; set; }

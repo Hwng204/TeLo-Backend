@@ -742,7 +742,7 @@ public sealed class TasksIntegrationTests
         }
     }
 
-    private sealed class TaskFixture : IAsyncDisposable
+    internal sealed class TaskFixture : IAsyncDisposable
     {
         private const string Prefix = "telo_task_test_";
         private const string Password = "Task-test-password-123";

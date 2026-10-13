@@ -62,6 +62,7 @@ builder.Services.AddSwaggerGen(options =>
 });
 builder.Services.AddApplication();
 builder.Services.AddHostedService<WebAPI.EmailDeliveryWorker>();
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<WebAPI.QuestionPracticeWorker>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();

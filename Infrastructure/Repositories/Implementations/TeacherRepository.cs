@@ -63,6 +63,15 @@ public sealed class TeacherRepository(
     {
         await ValidateBranchFilterAsync(scope, filter.BranchId, ct);
         var query = Scoped(scope).AsNoTracking();
+        if (filter.AcademicYearId is { } yearId)
+        {
+            var yearEnd = await db.AcademicYears.AsNoTracking().Where(year => year.Id == yearId)
+                .Select(year => (DateOnly?)year.EndDate).SingleOrDefaultAsync(ct)
+                ?? throw Error("ACADEMIC_YEAR_NOT_FOUND", "Không tìm thấy năm học.");
+            // This is an entry-date cutoff, not a historical employment-status snapshot.
+            // Undated profiles remain visible so incomplete legacy data is not silently lost.
+            query = query.Where(teacher => teacher.JoinedOn == null || teacher.JoinedOn <= yearEnd);
+        }
         if (filter.BranchId is { } branchId) query = query.Where(x => x.User.SchoolBranchId == branchId);
         if (filter.Search is { } search) query = query.Where(x =>
             x.User.FullName.Contains(search) || (x.StaffCode != null && x.StaffCode.Contains(search)));

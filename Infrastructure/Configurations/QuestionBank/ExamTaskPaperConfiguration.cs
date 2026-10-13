@@ -9,6 +9,8 @@ public sealed class ExamTaskPaperConfiguration : IEntityTypeConfiguration<ExamTa
     public void Configure(EntityTypeBuilder<ExamTaskPaper> builder)
     {
         builder.ToTable("exam_task_papers");
+        builder.Property(x => x.ExamSetId).HasColumnName("exam_set_id").HasColumnType("bigint unsigned");
+        builder.HasOne(x => x.ExamSet).WithMany().HasForeignKey(x => x.ExamSetId).OnDelete(DeleteBehavior.SetNull);
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.TaskId).HasColumnName("task_id").HasColumnType("bigint unsigned").IsRequired();

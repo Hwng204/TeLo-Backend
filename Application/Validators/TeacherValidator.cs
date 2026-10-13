@@ -38,6 +38,7 @@ public static partial class TeacherValidator
     public static TeacherFilter Filter(TeacherListQuery query)
     {
         Page(query.Page, query.PageSize);
+        if (query.AcademicYearId == 0) throw Invalid("Năm học không hợp lệ.");
         if (query.MainSubjectId == 0 || query.SchoolBranchId == 0) throw Invalid("Mã môn/phân hiệu không hợp lệ.");
         var employment = Optional(query.EmploymentStatus, 32, "Trạng thái công tác")?.ToUpperInvariant();
         var account = Optional(query.AccountStatus, 32, "Trạng thái tài khoản")?.ToUpperInvariant();
@@ -48,7 +49,7 @@ public static partial class TeacherValidator
         if (query.SortDirection is not ("asc" or "desc")) throw Invalid("sortDirection phải là asc hoặc desc.");
         return new(Optional(query.Search, 200, "Từ khóa"), Optional(query.Department, 150, "Tổ chuyên môn"),
             query.MainSubjectId, employment, account, query.Gender, query.SchoolBranchId,
-            query.SortBy, query.SortDirection == "desc", query.Page, query.PageSize);
+            query.SortBy, query.SortDirection == "desc", query.Page, query.PageSize, query.AcademicYearId);
     }
 
     public static void Page(int page, int size)

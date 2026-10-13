@@ -14,7 +14,7 @@ public sealed class TeacherExceptionHandler : IExceptionHandler
             "VALIDATION_ERROR" => StatusCodes.Status422UnprocessableEntity,
             "UNAUTHORIZED" => StatusCodes.Status401Unauthorized,
             "FORBIDDEN" or "PROTECTED_ACCOUNT" => StatusCodes.Status403Forbidden,
-            "SCHOOL_NOT_FOUND" or "BRANCH_NOT_FOUND" or "TEACHER_NOT_FOUND" => StatusCodes.Status404NotFound,
+            "SCHOOL_NOT_FOUND" or "BRANCH_NOT_FOUND" or "TEACHER_NOT_FOUND" or "ACADEMIC_YEAR_NOT_FOUND" => StatusCodes.Status404NotFound,
             "TEACHER_ROLE_MISSING" => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status409Conflict
         };

@@ -9,6 +9,9 @@ public sealed class QuestionConfiguration : IEntityTypeConfiguration<Question>
     public void Configure(EntityTypeBuilder<Question> builder)
     {
         builder.ToTable("questions");
+        builder.Property(x => x.PracticeAt).HasColumnName("practice_at").HasColumnType("datetime(6)");
+        builder.Property(x => x.PracticeByUserId).HasColumnName("practice_by_user_id").HasColumnType("bigint unsigned");
+        builder.Property(x => x.PracticeReason).HasColumnName("practice_reason").HasMaxLength(255);
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.QuestionTaskDetailId).HasColumnName("question_task_detail_id").HasColumnType("bigint unsigned").IsRequired();

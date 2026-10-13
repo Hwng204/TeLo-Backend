@@ -44,6 +44,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ExamTaskPaper> ExamTaskPapers => Set<ExamTaskPaper>();
     public DbSet<QuestionBank> QuestionBanks => Set<QuestionBank>();
     public DbSet<Question> Questions => Set<Question>();
+    public DbSet<QuestionPackageSubmission> QuestionPackageSubmissions => Set<QuestionPackageSubmission>();
     public DbSet<QuestionOption> QuestionOptions => Set<QuestionOption>();
     public DbSet<ExamSet> ExamSets => Set<ExamSet>();
     public DbSet<ExamSetQuestion> ExamSetQuestions => Set<ExamSetQuestion>();

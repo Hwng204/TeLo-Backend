@@ -4,6 +4,7 @@ namespace Domain.Entities.QuestionBank;
 
 public sealed class WorkTask
 {
+    public int QuestionVersion { get; set; }
     public ulong Id { get; set; }
     public ulong CreatedByUserId { get; set; }
     public ulong AssignedToUserId { get; set; }

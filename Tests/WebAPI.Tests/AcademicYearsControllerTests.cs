@@ -148,6 +148,17 @@ public sealed class AcademicYearsControllerTests
     }
 
     [Fact]
+    public async Task Activate_Returns409ForConcurrentYearSwitch()
+    {
+        var service = new FakeAcademicYearService
+        {
+            ActivateResult = ServiceResult<AcademicYearDetailDto>.Failure("CONCURRENCY_CONFLICT", "Dữ liệu đã thay đổi.")
+        };
+        var result = await new AcademicYearsController(service).Activate(1, CancellationToken.None);
+        Assert.IsType<ConflictObjectResult>(result);
+    }
+
+    [Fact]
     public async Task StudentsEndpoint_RequiresAuthenticationAndResolvesDirectoryService()
     {
         await using var factory = new WebApplicationFactory<Program>()
@@ -176,6 +187,8 @@ public sealed class AcademicYearsControllerTests
         public AcademicYearPage? ListResult { get; init; }
         public ServiceResult<AcademicYearListItem> CreateResult { get; init; } =
             ServiceResult<AcademicYearListItem>.Failure("UNEXPECTED", "Not configured");
+        public ServiceResult<AcademicYearDetailDto> ActivateResult { get; init; } =
+            ServiceResult<AcademicYearDetailDto>.Failure("ACADEMIC_YEAR_NOT_FOUND", "Not found");
 
         public Task<ServiceResult<AcademicYearListItem>> CreateAsync(
             CreateAcademicYearRequest request,
@@ -204,7 +217,7 @@ public sealed class AcademicYearsControllerTests
         public Task<ServiceResult<AcademicYearDetailDto>> ActivateAsync(
             ulong id,
             CancellationToken cancellationToken) =>
-            Task.FromResult(ServiceResult<AcademicYearDetailDto>.Failure("ACADEMIC_YEAR_NOT_FOUND", "Not found"));
+            Task.FromResult(ActivateResult);
 
         public Task<ServiceResult<AcademicYearDetailDto>> CloseAsync(
             ulong id,

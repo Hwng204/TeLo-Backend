@@ -33,7 +33,7 @@ public sealed record AssignRoleUsersRequest(ulong[] UserIds, uint Version);
 public sealed record AssignUserRolesRequest(ulong[] RoleIds, uint Version);
 public sealed record RoleItem(ulong Id, string Code, string Name, string? Description, string Status,
     ulong? SchoolId, string? SchoolName, ulong? SchoolBranchId, string? SchoolBranchName,
-    bool IsSystem, uint Version, int UserCount, bool CanDelete);
+    bool IsSystem, uint Version, int UserCount, bool CanDelete, string? DeleteBlockedReason = null);
 public sealed record ModuleItem(ulong Id, string Code, string Name, string? Description,
     string Status, uint Version, int NavbarCount, bool CanDelete);
 public sealed record IdentityUserItem(ulong Id, string Username, string FullName, string Email, string Status,

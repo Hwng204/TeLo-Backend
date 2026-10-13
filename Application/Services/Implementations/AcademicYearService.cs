@@ -211,20 +211,8 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
             return DomainFailure<AcademicYearDetailDto>(exception);
         }
 
-        if (await uow.AcademicYears.HasActiveYearAsync(year.Id, cancellationToken))
-        {
-            return ServiceResult<AcademicYearDetailDto>.Failure(
-                "ACTIVE_YEAR_CONFLICT",
-                "Hệ thống đã có một năm học khác đang ở trạng thái áp dụng.");
-        }
-
-        year.Activate();
-        if (!await uow.AcademicYears.UpdateAsync(year, cancellationToken))
-        {
-            return ServiceResult<AcademicYearDetailDto>.Failure(
-                "ACTIVE_YEAR_CONFLICT",
-                "Không thể kích hoạt vì đã có năm học khác đang áp dụng.");
-        }
+        if (!await uow.AcademicYears.TryActivateAsync(year, cancellationToken))
+            return StaleVersion<AcademicYearDetailDto>();
 
         return ServiceResult<AcademicYearDetailDto>.Success(year.ToDetailDto());
     }

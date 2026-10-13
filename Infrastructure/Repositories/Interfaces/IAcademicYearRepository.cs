@@ -42,4 +42,7 @@ public interface IAcademicYearRepository
     Task<bool> UpdateAsync(
         AcademicYear academicYear,
         CancellationToken cancellationToken);
+
+    /// <summary>Closes the current year and activates the target in one transaction.</summary>
+    Task<bool> TryActivateAsync(AcademicYear academicYear, CancellationToken cancellationToken);
 }

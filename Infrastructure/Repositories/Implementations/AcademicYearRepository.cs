@@ -119,4 +119,31 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
 
     private static bool IsWriteConflict(Exception exception) =>
         exception.GetBaseException() is MySqlException { Number: 1062 or 1213 or 1205 };
+
+    public async Task<bool> TryActivateAsync(AcademicYear academicYear, CancellationToken cancellationToken)
+    {
+        academicYear.EnsureCanActivate();
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        try
+        {
+            var currentYears = await context.AcademicYears.Include(year => year.Semesters)
+                .Where(year => year.Status == "ACTIVE" && year.Id != academicYear.Id).ToArrayAsync(cancellationToken);
+            foreach (var current in currentYears) current.Close();
+            // Release the unique ACTIVE key before claiming it for the new year.
+            // Both saves remain invisible to other readers until the transaction commits.
+            await context.SaveChangesAsync(cancellationToken);
+            academicYear.Activate();
+            await context.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+        catch (Exception exception) when (IsWriteConflict(exception))
+        {
+            return false;
+        }
+    }
 }

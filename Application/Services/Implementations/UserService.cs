@@ -61,7 +61,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         }).SingleOrDefaultAsync(ct);
         if (user == null) return Missing<UserDetailItem>();
         var roles = await db.Roles.AsNoTracking().Where(r => r.UserRoles.Any(ur => ur.UserId == id))
-            .OrderBy(r => r.Name).Select(IdentityProjections.Role).ToArrayAsync(ct);
+            .OrderBy(r => r.Name).Select(IdentityProjections.Role(db.NotificationTargets)).ToArrayAsync(ct);
         return ServiceResult<UserDetailItem>.Success(new(user.Id, user.Username, user.FullName, user.Email, user.MoetIdentifier,
             user.Status, user.SchoolId, user.SchoolName, user.SchoolBranchId, user.SchoolBranchName,
             user.CreatedAt, user.IsTeacher, user.IsStudent, user.SecurityVersion, roles));

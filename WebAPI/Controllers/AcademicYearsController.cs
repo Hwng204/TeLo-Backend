@@ -145,7 +145,7 @@ public sealed class AcademicYearsController(IAcademicYearService service) : Cont
         return error.Code switch
         {
             "ACADEMIC_YEAR_NOT_FOUND" => NotFound(response),
-            "ACADEMIC_YEAR_ALREADY_ACTIVE" or "ACADEMIC_YEAR_CLOSED" or "INCOMPLETE_TERMS" or "ACTIVE_YEAR_CONFLICT" => Conflict(response),
+            "ACADEMIC_YEAR_ALREADY_ACTIVE" or "ACADEMIC_YEAR_CLOSED" or "INCOMPLETE_TERMS" or "ACTIVE_YEAR_CONFLICT" or "CONCURRENCY_CONFLICT" => Conflict(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
     }

@@ -30,12 +30,16 @@ public static partial class IdentityManagementValidator
         return errors;
     }
 
-    public static Dictionary<string, string[]> Role(SaveRoleRequest request)
+    public static Dictionary<string, string[]> Role(SaveRoleRequest request, bool allowLegacyScope = false)
     {
         var errors = Fields(request.Code, request.Name, request.Description);
         if (request.SchoolBranchId.HasValue && !request.SchoolId.HasValue) errors["schoolId"] = ["Chọn trường trước khi chọn phân hiệu."];
         if (request.SchoolId == 0) errors["schoolId"] = ["Trường không hợp lệ."];
         if (request.SchoolBranchId == 0) errors["schoolBranchId"] = ["Phân hiệu không hợp lệ."];
+        if (!allowLegacyScope)
+        {
+            if (request.SchoolBranchId.HasValue) errors["schoolBranchId"] = ["Vai trò mới áp dụng cho tất cả phân hiệu của trường đã chọn hoặc tất cả các trường, không chọn riêng phân hiệu."];
+        }
         return errors;
     }
 

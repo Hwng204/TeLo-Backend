@@ -102,4 +102,38 @@ public sealed class IdentityManagementValidatorTests
     [Fact]
     public void RejectsWeakResetPassword() => Assert.Contains("newPassword",
         IdentityManagementValidator.ResetPassword(new ResetUserPasswordRequest("short", 1)).Keys);
+
+    [Fact]
+    public void UpdateAllowsPasswordToRemainUnchanged()
+    {
+        var request = ValidUpdateUser();
+
+        Assert.Empty(IdentityManagementValidator.UpdateUser(request));
+    }
+
+    [Fact]
+    public void UpdateRejectsWeakNewPassword()
+    {
+        var request = ValidUpdateUser();
+        request.NewPassword = "short";
+
+        Assert.Contains("newPassword", IdentityManagementValidator.UpdateUser(request).Keys);
+    }
+
+    [Fact]
+    public void UpdateAcceptsStrongNewPassword()
+    {
+        var request = ValidUpdateUser();
+        request.NewPassword = "Strong-password-123";
+
+        Assert.Empty(IdentityManagementValidator.UpdateUser(request));
+    }
+
+    private static UpdateUserRequest ValidUpdateUser() => new()
+    {
+        Username = "valid.user",
+        Email = "user@example.com",
+        FullName = "Nguyen Van A",
+        Version = 1
+    };
 }

@@ -51,8 +51,13 @@ public static partial class IdentityManagementValidator
         return errors;
     }
 
-    public static Dictionary<string, string[]> UpdateUser(UpdateUserRequest request) =>
-        UserFields(request.Username, request.Email, request.FullName, request.MoetIdentifier, request.SchoolBranchId);
+    public static Dictionary<string, string[]> UpdateUser(UpdateUserRequest request)
+    {
+        var errors = UserFields(request.Username, request.Email, request.FullName, request.MoetIdentifier, request.SchoolBranchId);
+        if (!string.IsNullOrWhiteSpace(request.NewPassword))
+            Password(request.NewPassword, "newPassword", errors);
+        return errors;
+    }
 
     public static Dictionary<string, string[]> UserStatus(IdentityStatusRequest request)
     {

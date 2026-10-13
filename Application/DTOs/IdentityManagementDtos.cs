@@ -60,6 +60,7 @@ public sealed class UpdateUserRequest
     public string FullName { get; set; } = "";
     public string? MoetIdentifier { get; set; }
     public ulong? SchoolBranchId { get; set; }
+    public string? NewPassword { get; set; }
     public uint Version { get; set; }
 }
 public sealed record ResetUserPasswordRequest(string NewPassword, uint Version);

@@ -99,6 +99,10 @@ public sealed class IdentityManagementIntegrationTests
             using var client = await Login(factory, "admin");
             using var employee = await Login(factory, "userA");
             Assert.Equal(HttpStatusCode.Forbidden, (await employee.GetAsync("/api/roles")).StatusCode);
+            var currentAdmin = await Read<UserDetailItem>(await client.GetAsync($"/api/users/{admin.Id}"));
+            Assert.Equal(HttpStatusCode.Conflict, (await client.PatchAsJsonAsync($"/api/users/{admin.Id}/status",
+                new IdentityStatusRequest("INACTIVE", currentAdmin.Version))).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync($"/api/users/{admin.Id}?version={currentAdmin.Version}")).StatusCode);
             Assert.Equal(HttpStatusCode.UnprocessableEntity, (await client.GetAsync("/api/roles?pageSize=101")).StatusCode);
             var scopes = await Read<DirectoryPage<IdentityScopeItem>>(await client.GetAsync("/api/identity/scopes?kind=school&pageSize=1"));
             Assert.Equal(2, scopes.TotalCount);
@@ -140,10 +144,14 @@ public sealed class IdentityManagementIntegrationTests
                 FullName = "Người dùng đã cập nhật",
                 MoetIdentifier = createdUser.MoetIdentifier,
                 SchoolBranchId = branchB.Id,
+                NewPassword = "Updated-password-456!",
                 Version = createdUser.Version
             }));
             Assert.Equal(branchB.Id, createdUser.SchoolBranchId);
             Assert.True(createdUser.Version > originalVersion);
+            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Initial-password-123!"));
+            using (var managedSession = await Login(factory, createdUser.Username, "Updated-password-456!"))
+                Assert.Equal(HttpStatusCode.Forbidden, (await managedSession.GetAsync("/api/roles")).StatusCode);
             Assert.Equal(HttpStatusCode.Conflict, (await client.PutAsJsonAsync($"/api/users/{createdUser.Id}", new UpdateUserRequest
             {
                 Username = createdUser.Username,
@@ -155,15 +163,15 @@ public sealed class IdentityManagementIntegrationTests
             })).StatusCode);
 
             createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/password",
-                new ResetUserPasswordRequest("Updated-password-456!", createdUser.Version)));
-            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Initial-password-123!"));
-            using (var managedSession = await Login(factory, createdUser.Username, "Updated-password-456!"))
+                new ResetUserPasswordRequest("Reset-password-789!", createdUser.Version)));
+            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Updated-password-456!"));
+            using (var managedSession = await Login(factory, createdUser.Username, "Reset-password-789!"))
                 Assert.Equal(HttpStatusCode.Forbidden, (await managedSession.GetAsync("/api/roles")).StatusCode);
 
             createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/status",
                 new IdentityStatusRequest(" locked ", createdUser.Version)));
             Assert.Equal("LOCKED", createdUser.Status);
-            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Updated-password-456!"));
+            Assert.Equal(HttpStatusCode.Unauthorized, await LoginStatus(factory, createdUser.Username, "Reset-password-789!"));
             createdUser = await Read<UserDetailItem>(await client.PatchAsJsonAsync($"/api/users/{createdUser.Id}/status",
                 new IdentityStatusRequest("ACTIVE", createdUser.Version)));
             Assert.True(await Read<bool>(await client.DeleteAsync($"/api/users/{createdUser.Id}?version={createdUser.Version}")));

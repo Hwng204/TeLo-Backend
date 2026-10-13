@@ -119,6 +119,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var username = request.Username.Trim();
         var email = request.Email.Trim().ToLowerInvariant();
         var moet = NullIfEmpty(request.MoetIdentifier);
+        var newPassword = string.IsNullOrWhiteSpace(request.NewPassword) ? null : request.NewPassword;
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
@@ -148,12 +149,14 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
 
         // Chỉ tăng security_version khi thay đổi ảnh hưởng tới đăng nhập/phân quyền
         // để không buộc người dùng đăng xuất chỉ vì sửa họ tên.
-        if (branchChanged || user.Username != username || user.Email != email) user.SecurityVersion++;
+        if (branchChanged || user.Username != username || user.Email != email || newPassword != null) user.SecurityVersion++;
         user.Username = username;
         user.Email = email;
         user.FullName = request.FullName.Trim();
         user.MoetIdentifier = moet;
-        Audit(actor, "USER", id, "UPDATE", new { Before = before, After = Snapshot(user) });
+        if (newPassword != null)
+            user.PasswordHash = passwordHasher.HashPassword(user, newPassword);
+        Audit(actor, "USER", id, "UPDATE", new { Before = before, After = Snapshot(user), PasswordChanged = newPassword != null });
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return await GetAsync(id, ct);

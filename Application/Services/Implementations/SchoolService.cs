@@ -29,6 +29,11 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
             .Select(b => new SchoolBranchItem(b.Id, b.Code, b.Name, b.Address, b.Status, b.Logo))
             .ToArray());
 
+    // shortcut: v2 `school.province` is free text and the province catalog is locked, so any value is accepted.
+    private static Task<ServiceResult<SchoolListItem>?> ValidateProvinceAsync(
+        string? provinceCode,
+        CancellationToken cancellationToken) => Task.FromResult<ServiceResult<SchoolListItem>?>(null);
+
     // ─── List ─────────────────────────────────────────────────────────────────
 
     public async Task<SchoolListPage> ListAsync(string? search, CancellationToken cancellationToken)
@@ -77,7 +82,8 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
         var isCodeConflict = !string.IsNullOrWhiteSpace(request.Code) && 
                              await db.Schools.AnyAsync(s => s.Code == request.Code.Trim().ToUpperInvariant(), cancellationToken);
 
-        var validationResult = SchoolValidator.ValidateCreate(request, isCodeConflict);
+        var validationResult = SchoolValidator.ValidateCreate(request, isCodeConflict)
+            ?? await ValidateProvinceAsync(request.ProvinceCode, cancellationToken);
         if (validationResult != null)
             return validationResult;
 
@@ -113,7 +119,8 @@ public sealed class SchoolService(ApplicationDbContext db) : ISchoolService
         if (school is null)
             return ServiceResult<SchoolListItem>.Failure("SCHOOL_NOT_FOUND", "Không tìm thấy trường.");
 
-        var validationResult = SchoolValidator.ValidateUpdate(request);
+        var validationResult = SchoolValidator.ValidateUpdate(request)
+            ?? await ValidateProvinceAsync(request.ProvinceCode, cancellationToken);
         if (validationResult != null)
             return validationResult;
 

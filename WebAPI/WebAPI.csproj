@@ -24,4 +24,9 @@
     <ProjectReference Include="..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Khoá tạm DB v2: thay bằng Controllers/LockedFeaturesController.cs (501). Xem DB_V2.md mục 4. -->
+  <ItemGroup>
+    <Compile Remove="Controllers\ExamsController.cs;Controllers\ExamRoomsController.cs;Controllers\ExamSubjectsController.cs;Controllers\EmailsController.cs;Controllers\ProvincesController.cs;Controllers\StudentImportsController.cs;Controllers\StudentImportControllerBase.cs;Controllers\Admin\StudentImportsAdminController.cs;EmailDeliveryWorker.cs" />
+  </ItemGroup>
+
 </Project>

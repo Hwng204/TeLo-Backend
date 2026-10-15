@@ -9,10 +9,8 @@ public interface IMatrixRepository : IGenericRepository<ExamMatrix>
         MatrixListFilter filter,
         CancellationToken cancellationToken);
 
-    // Matrix with task, context and ordered details (each with lesson and chapter).
+    // Matrix with task and ordered details (each with lesson and chapter).
     Task<ExamMatrix?> GetAsync(ulong id, CancellationToken cancellationToken);
-
-    Task<bool> ExistsForTaskAsync(ulong taskId, CancellationToken cancellationToken);
 
     Task<bool> TryUpdateStatusAsync(
         ExamMatrix matrix,
@@ -32,6 +30,11 @@ public interface IMatrixRepository : IGenericRepository<ExamMatrix>
     Task SetTaskStatusAsync(
         ulong taskId,
         string status,
-        ulong updatedByUserId,
         CancellationToken cancellationToken);
+
+    // Tracked for the next CompleteAsync.
+    void AddTaskHistory(TaskHistory history);
+
+    // Newest task_history row of the task (the last rejection), or null.
+    Task<TaskHistory?> GetLatestTaskHistoryAsync(ulong taskId, CancellationToken cancellationToken);
 }

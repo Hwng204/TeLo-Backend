@@ -28,7 +28,7 @@ public sealed class TeacherService(
     public async Task<TeacherReferenceData> ReferencesAsync(TeacherScope scope, CancellationToken ct)
     {
         var rows = await repository.ReferencesAsync(await repository.ResolveScopeAsync(scope, false, ct), ct);
-        return new(rows.Subjects.Select(x => x.ToOption()).ToArray(), rows.Departments,
+        return new(rows.Subjects.Select(x => x.ToOption()).ToArray(), [],
             rows.Branches.Select(x => x.ToOption()).ToArray(), TeacherValidator.EmploymentStatuses, TeacherValidator.AccountStatuses);
     }
 
@@ -56,17 +56,11 @@ public sealed class TeacherService(
         var username = TeacherValidator.Username(request.Username);
         var email = TeacherValidator.Email(request.Email);
         TeacherValidator.Password(request.Password);
-        await repository.ValidateReferencesAsync(profile, null, ct);
-        await repository.ValidateUniqueAsync(null, null, profile.StaffCode, username, email, ct);
+        await repository.ValidateUniqueAsync(null, profile.StaffCode, username, ct);
         var role = await repository.GetTeacherRoleAsync(ct);
-        if ((role.SchoolId.HasValue && role.SchoolId != resolved.SchoolId) ||
-            (role.SchoolBranchId.HasValue && role.SchoolBranchId != resolved.BranchId))
-            throw new TeacherManagementException("TEACHER_ROLE_MISSING", "Vai trò giáo viên không áp dụng cho trường/phân hiệu này.");
-        role.UsedAt ??= timeProvider.GetUtcNow().UtcDateTime;
-        role.Version++;
         var user = new User
         {
-            Username = username, Email = email, FullName = profile.FullName,
+            Username = username, FullName = profile.FullName,
             SchoolBranchId = resolved.BranchId, CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
             Status = profile.EmploymentStatus is "RESIGNED" or "INACTIVE" ? "INACTIVE" : "ACTIVE"
         };
@@ -74,6 +68,7 @@ public sealed class TeacherService(
         user.UserRoles.Add(new UserRole { User = user, Role = role, RoleId = role.Id });
         var teacher = new Teacher { User = user };
         teacher.ApplyProfile(profile);
+        teacher.Email = email; // the account email is the teacher's only email (no user.email column)
         repository.Add(teacher);
         await repository.SaveAsync(ct);
         Audit("Create", scope, teacher.Id);
@@ -83,17 +78,15 @@ public sealed class TeacherService(
     public async Task<TeacherDetailDto> UpdateAsync(TeacherScope scope, ulong id, UpdateTeacherRequest request, CancellationToken ct)
     {
         var resolved = await repository.ResolveScopeAsync(scope, true, ct);
-        var teacher = await MutableAsync(resolved, id, request.Version, ct);
+        var teacher = await MutableAsync(resolved, id, ct);
         var profile = ValidateProfile(request.Profile);
-        await repository.ValidateReferencesAsync(profile, teacher.MainSubjectId, ct);
-        await repository.ValidateUniqueAsync(id, teacher.UserId, profile.StaffCode, teacher.User.Username, teacher.User.Email, ct);
+        await repository.ValidateUniqueAsync(teacher.UserId, profile.StaffCode, teacher.User.Username, ct);
         teacher.ApplyProfile(profile);
         if (profile.EmploymentStatus is "RESIGNED" or "INACTIVE" && teacher.User.Status != "INACTIVE")
         {
             teacher.User.Status = "INACTIVE";
             teacher.User.SecurityVersion++;
         }
-        teacher.Version++;
         await repository.SaveAsync(ct);
         Audit("UpdateProfile", scope, id);
         return (await repository.GetAsync(resolved, id, false, ct)).ToDetail();
@@ -102,10 +95,8 @@ public sealed class TeacherService(
     public async Task<TeacherDetailDto> DeleteAsync(TeacherScope scope, ulong id, uint version, CancellationToken ct)
     {
         var resolved = await repository.ResolveScopeAsync(scope, true, ct);
-        var teacher = await MutableAsync(resolved, id, version, ct);
-        teacher.EmploymentStatus = "INACTIVE";
+        var teacher = await MutableAsync(resolved, id, ct);
         teacher.User.Status = "INACTIVE";
-        teacher.Version++;
         teacher.User.SecurityVersion++;
         await repository.SaveAsync(ct);
         Audit("Deactivate", scope, id);
@@ -122,21 +113,18 @@ public sealed class TeacherService(
     public async Task<TeacherAccountDto> UpdateAccountAsync(TeacherScope scope, ulong id, UpdateTeacherAccountRequest request, CancellationToken ct)
     {
         var resolved = await repository.ResolveScopeAsync(scope, true, ct);
-        var teacher = await MutableAsync(resolved, id, request.Version, ct);
+        var teacher = await MutableAsync(resolved, id, ct);
         var username = TeacherValidator.Username(request.Username);
         var email = TeacherValidator.Email(request.Email);
         var status = request.Status?.Trim().ToUpperInvariant();
         if (status is null || !TeacherValidator.AccountStatuses.Contains(status))
             throw new TeacherManagementException("VALIDATION_ERROR", "Trạng thái tài khoản không hợp lệ.");
         if (status == "ACTIVE") EnsureActiveUnit(resolved);
-        if (status == "ACTIVE" && teacher.EmploymentStatus is "RESIGNED" or "INACTIVE")
-            throw new TeacherManagementException("EMPLOYMENT_INACTIVE", "Cần cập nhật trạng thái công tác trước khi mở tài khoản.");
-        await repository.ValidateUniqueAsync(id, teacher.UserId, teacher.StaffCode, username, email, ct);
+        await repository.ValidateUniqueAsync(teacher.UserId, teacher.User.MoetIdentifier, username, ct);
         teacher.User.Username = username;
-        teacher.User.Email = email;
+        teacher.Email = email;
         teacher.User.Status = status;
         teacher.User.SecurityVersion++;
-        teacher.Version++;
         await repository.SaveAsync(ct);
         Audit("UpdateAccount", scope, id);
         return teacher.ToAccount();
@@ -145,11 +133,10 @@ public sealed class TeacherService(
     public async Task<TeacherAccountDto> ResetPasswordAsync(TeacherScope scope, ulong id, ResetTeacherPasswordRequest request, CancellationToken ct)
     {
         var resolved = await repository.ResolveScopeAsync(scope, true, ct);
-        var teacher = await MutableAsync(resolved, id, request.Version, ct);
+        var teacher = await MutableAsync(resolved, id, ct);
         TeacherValidator.Password(request.NewPassword);
         teacher.User.PasswordHash = passwordHasher.HashPassword(teacher.User, request.NewPassword);
         teacher.User.SecurityVersion++;
-        teacher.Version++;
         await repository.SaveAsync(ct);
         Audit("ResetPassword", scope, id);
         return teacher.ToAccount();
@@ -164,13 +151,11 @@ public sealed class TeacherService(
             throw new TeacherManagementException("UNIT_INACTIVE", "Trường hoặc phân hiệu đã ngừng hoạt động; không thể tạo mới hoặc mở tài khoản.");
     }
 
-    private async Task<Teacher> MutableAsync(TeacherResolvedScope scope, ulong id, uint version, CancellationToken ct)
+    // teacher.version is gone: the client version is ignored (user.security_version still guards saves).
+    private async Task<Teacher> MutableAsync(TeacherResolvedScope scope, ulong id, CancellationToken ct)
     {
-        if (version == 0) throw new TeacherManagementException("VALIDATION_ERROR", "version là bắt buộc và phải lớn hơn 0.");
         var teacher = await repository.GetAsync(scope, id, true, ct);
         repository.EnsureManageable(teacher);
-        if (teacher.Version != version)
-            throw new TeacherManagementException("CONCURRENCY_CONFLICT", "Dữ liệu đã thay đổi. Vui lòng tải lại.");
         return teacher;
     }
 

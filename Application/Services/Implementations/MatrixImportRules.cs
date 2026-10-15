@@ -63,8 +63,8 @@ public static class MatrixImportRules
             }
             if (label == "tong diem")
             {
-                if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed > 0) score = parsed;
-                else errors.Add(new(i + 1, "Tổng điểm phải là số nguyên dương."));
+                if (int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) && parsed is > 0 and <= MatrixApplicationService.MaxTotalScore) score = parsed;
+                else errors.Add(new(i + 1, $"Tổng điểm phải là số nguyên dương, tối đa {MatrixApplicationService.MaxTotalScore}."));
             }
         }
 

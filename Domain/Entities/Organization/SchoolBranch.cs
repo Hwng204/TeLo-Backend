@@ -12,5 +12,4 @@ public sealed class SchoolBranch
 
     public School School { get; set; } = null!;
     public ICollection<SchoolClass> Classes { get; set; } = new List<SchoolClass>();
-    public ICollection<Room> Rooms { get; set; } = new List<Room>();
 }

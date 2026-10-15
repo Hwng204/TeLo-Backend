@@ -12,6 +12,7 @@ public static class StudentStatusCodes
     public static readonly string[] All = [Active, TemporaryLeave, Transferred, Inactive];
 }
 
+// API values only: ACTIVE = open row, COMPLETED = closed in a CLOSED year, otherwise TRANSFERRED_OUT.
 public static class StudentEnrollmentStatusCodes
 {
     public const string Active = "ACTIVE";
@@ -19,24 +20,17 @@ public static class StudentEnrollmentStatusCodes
     public const string TransferredOut = "TRANSFERRED_OUT";
 }
 
+// Key (SchoolClassId, StudentId): a student can be in a class only once. Open = EndedOn null; the
+// academic year comes from the class. Enrollment status is derived (see StudentEnrollmentStatusCodes).
 public sealed class StudentEnrollment
 {
-    public ulong Id { get; set; }
     public ulong StudentId { get; set; }
     public ulong SchoolClassId { get; set; }
-    public ulong AcademicYearId { get; set; }
-    public string Status { get; set; } = StudentEnrollmentStatusCodes.Active;
 
     // When this class period started and, once the student moves on, when it ended.
     public DateOnly StartedOn { get; set; }
     public DateOnly? EndedOn { get; set; }
 
-    // Database-generated: the academic year while this row is ACTIVE, otherwise NULL. A unique
-    // index over (StudentId, ActiveYearKey) lets one student hold many rows per year but only
-    // one active one.
-    public ulong? ActiveYearKey { get; private set; }
-
     public Student Student { get; set; } = null!;
     public Organization.SchoolClass SchoolClass { get; set; } = null!;
-    public Academic.AcademicYear AcademicYear { get; set; } = null!;
 }

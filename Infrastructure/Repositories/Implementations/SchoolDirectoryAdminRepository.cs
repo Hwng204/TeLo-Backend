@@ -2,15 +2,38 @@ using Domain.Entities.Identity;
 using Domain.Entities.Organization;
 using Infrastructure.Context;
 using Infrastructure.Repositories.Interface;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 
 namespace Infrastructure.Repositories.Implement;
 
-public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
-    : ISchoolDirectoryAdminRepository
+public sealed class SchoolDirectoryAdminRepository(
+    ApplicationDbContext db,
+    IPasswordHasher<User> passwordHasher) : ISchoolDirectoryAdminRepository
 {
     private const int DuplicateKeyErrorNumber = 1062;
+
+    // Every student owns a user row (student.user_id NOT NULL): username = student code, no role and
+    // a random password nobody knows, so the account cannot sign in.
+    internal static User NewStudentUser(
+        IPasswordHasher<User> hasher,
+        string code,
+        string fullName,
+        ulong branchId,
+        string status)
+    {
+        var user = new User
+        {
+            Username = code,
+            FullName = fullName,
+            SchoolBranchId = branchId,
+            Status = status,
+            CreatedAt = DateTime.UtcNow
+        };
+        user.PasswordHash = hasher.HashPassword(user, Guid.NewGuid().ToString());
+        return user;
+    }
 
     public async Task<DirectoryWriteResult<ulong>> CreateStudentAsync(
         CreateStudentCommand command,
@@ -28,32 +51,30 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
 
-        if (await db.Students.AnyAsync(s => s.Code == command.Code, cancellationToken))
+        // The student code is the account username, so it must not match any user at all.
+        if (await db.Users.AnyAsync(u => u.Username == command.Code, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
 
         var student = new Student
         {
-            Code = command.Code,
-            FullName = command.FullName,
+            User = NewStudentUser(
+                passwordHasher, command.Code, command.FullName, target.SchoolBranchId, command.Status),
             DateOfBirth = command.DateOfBirth,
             Gender = command.Gender,
-            Status = command.Status,
             Enrollments =
             {
                 new StudentEnrollment
                 {
                     SchoolClassId = target.Id,
-                    AcademicYearId = target.AcademicYearId,
-                    Status = StudentEnrollmentStatusCodes.Active,
                     StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                 }
             }
         };
         db.Students.Add(student);
 
-        // Profile and first enrollment land in the same SaveChanges transaction.
+        // User, profile and first enrollment land in the same SaveChanges transaction.
         return await SaveAsync(
             () => student.Id, DirectoryWriteStatus.DuplicateStudentCode, cancellationToken);
     }
@@ -69,22 +90,18 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.StudentNotFound);
         }
 
-        // Bringing a deleted student back claims its code again, so check that case too, not only
-        // an edited code, instead of leaning on the unique index and catching its error.
-        var reactivating = student.Status == StudentStatusCodes.Inactive &&
-            command.Status != StudentStatusCodes.Inactive;
-        if ((student.Code != command.Code || reactivating) &&
-            await db.Students.AnyAsync(
-                s => s.Code == command.Code && s.Id != student.Id, cancellationToken))
+        if (student.User.Username != command.Code &&
+            await db.Users.AnyAsync(
+                u => u.Username == command.Code && u.Id != student.UserId, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateStudentCode);
         }
 
-        student.Code = command.Code;
-        student.FullName = command.FullName;
+        student.User.Username = command.Code;
+        student.User.FullName = command.FullName;
+        student.User.Status = command.Status;
         student.DateOfBirth = command.DateOfBirth;
         student.Gender = command.Gender;
-        student.Status = command.Status;
 
         if (command.SchoolClassId is { } schoolClassId)
         {
@@ -98,17 +115,18 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             // Placing a student who has no live class in that year is fine. Moving one who does is
             // a class transfer, which must keep the old period, so it is refused here instead of
             // silently overwriting the enrollment row.
-            var current = student.Enrollments.FirstOrDefault(e =>
-                e.AcademicYearId == target.AcademicYearId &&
-                e.Status == StudentEnrollmentStatusCodes.Active);
+            var current = OpenEnrollmentInYear(student, target.AcademicYearId);
             if (current is null)
             {
+                if (student.Enrollments.Any(e => e.SchoolClassId == target.Id))
+                {
+                    return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.AlreadyEnrolledInClass);
+                }
+
                 student.Enrollments.Add(new StudentEnrollment
                 {
                     StudentId = student.Id,
                     SchoolClassId = target.Id,
-                    AcademicYearId = target.AcademicYearId,
-                    Status = StudentEnrollmentStatusCodes.Active,
                     StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                 });
             }
@@ -140,9 +158,7 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassNotFound);
         }
 
-        var current = student.Enrollments.FirstOrDefault(e =>
-            e.AcademicYearId == target.AcademicYearId &&
-            e.Status == StudentEnrollmentStatusCodes.Active);
+        var current = OpenEnrollmentInYear(student, target.AcademicYearId);
         if (current is null)
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.StudentNotEnrolledInYear);
@@ -154,27 +170,29 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Ok(student.Id);
         }
 
+        // (class_id, student_id) is the key: a class the student already left cannot be re-entered.
+        if (student.Enrollments.Any(e => e.SchoolClassId == target.Id))
+        {
+            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.AlreadyEnrolledInClass);
+        }
+
         var effectiveOn = command.EffectiveOn ?? DateOnly.FromDateTime(DateTime.UtcNow);
         if (effectiveOn < current.StartedOn)
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.InvalidEffectiveDate);
         }
 
-        // EF issues the UPDATE before the INSERT, so the old row has already left the ACTIVE
-        // state (and its generated unique key is NULL) when the new one is written.
-        current.Status = StudentEnrollmentStatusCodes.TransferredOut;
         current.EndedOn = effectiveOn;
         student.Enrollments.Add(new StudentEnrollment
         {
             StudentId = student.Id,
             SchoolClassId = target.Id,
-            AcademicYearId = target.AcademicYearId,
-            Status = StudentEnrollmentStatusCodes.Active,
             StartedOn = effectiveOn
         });
+        student.User.SchoolBranchId = target.SchoolBranchId;
 
         return await SaveAsync(
-            () => student.Id, DirectoryWriteStatus.DuplicateStudentCode, cancellationToken);
+            () => student.Id, DirectoryWriteStatus.AlreadyEnrolledInClass, cancellationToken);
     }
 
     public async Task<DirectoryWriteResult<ulong>> DeactivateStudentAsync(
@@ -189,11 +207,12 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         }
 
         // Logical delete: history rows and exam registrations stay untouched.
-        student.Status = StudentStatusCodes.Inactive;
-        foreach (var enrollment in student.Enrollments
-            .Where(e => e.Status == StudentEnrollmentStatusCodes.Active))
+        student.User.Status = StudentStatusCodes.Inactive;
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        foreach (var enrollment in student.Enrollments.Where(e => e.EndedOn == null))
         {
-            enrollment.Status = StudentEnrollmentStatusCodes.TransferredOut;
+            // A transfer may be dated ahead; never close a period before it starts.
+            enrollment.EndedOn = enrollment.StartedOn > today ? enrollment.StartedOn : today;
         }
 
         return await SaveAsync(
@@ -212,22 +231,6 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(validation);
         }
 
-        var teacher = await ResolveHomeroomTeacherAsync(
-            command.SchoolId, HomeroomOf(command.Status, command.HomeroomTeacherId), null, cancellationToken);
-        if (teacher.Status is not DirectoryWriteStatus.Success)
-        {
-            return DirectoryWriteResult<ulong>.Fail(teacher.Status);
-        }
-
-        if (await db.SchoolClasses.AnyAsync(
-            c => c.SchoolBranchId == command.SchoolBranchId &&
-                c.AcademicYearId == command.AcademicYearId &&
-                c.Code == command.Code,
-            cancellationToken))
-        {
-            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassCode);
-        }
-
         if (await NameTakenAsync(command.SchoolBranchId, command.AcademicYearId, command.Name, null, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassName);
@@ -236,7 +239,6 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         var schoolClass = new SchoolClass
         {
             SchoolBranchId = command.SchoolBranchId,
-            Code = command.Code,
             Name = command.Name,
             AcademicYearId = command.AcademicYearId,
             GradeLevelId = command.GradeLevelId,
@@ -244,27 +246,8 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         };
         db.SchoolClasses.Add(schoolClass);
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        var saved = await SaveAsync(
-            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassCode, cancellationToken);
-        if (saved.Status is not DirectoryWriteStatus.Success)
-        {
-            return saved;
-        }
-
-        if (teacher.Value is { } newTeacher)
-        {
-            newTeacher.ClassId = schoolClass.Id;
-            var assigned = await SaveAsync(
-                () => schoolClass.Id, DirectoryWriteStatus.TeacherAlreadyHomeroom, cancellationToken);
-            if (assigned.Status is not DirectoryWriteStatus.Success)
-            {
-                return assigned;
-            }
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return DirectoryWriteResult<ulong>.Ok(schoolClass.Id);
+        return await SaveAsync(
+            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassName, cancellationToken);
     }
 
     public async Task<DirectoryWriteResult<ulong>> UpdateClassAsync(
@@ -286,27 +269,13 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(validation);
         }
 
-        // Enrollment rows point at (class, academic year); moving the class to another year would
-        // strand them, so the year is fixed once anybody is enrolled.
+        // Enrollments take their academic year from the class; moving the class to another year
+        // would move the students' history with it, so the year is fixed once anybody is enrolled.
         if (schoolClass.AcademicYearId != command.AcademicYearId &&
             await db.StudentEnrollments.AnyAsync(
                 e => e.SchoolClassId == schoolClass.Id, cancellationToken))
         {
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.AcademicYearInvalid);
-        }
-
-        var code = string.IsNullOrEmpty(command.Code) ? schoolClass.Code : command.Code;
-        if ((schoolClass.Code != code ||
-                schoolClass.SchoolBranchId != command.SchoolBranchId ||
-                schoolClass.AcademicYearId != command.AcademicYearId) &&
-            await db.SchoolClasses.AnyAsync(
-                c => c.SchoolBranchId == command.SchoolBranchId &&
-                    c.AcademicYearId == command.AcademicYearId &&
-                    c.Code == code &&
-                    c.Id != schoolClass.Id,
-                cancellationToken))
-        {
-            return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.DuplicateClassCode);
         }
 
         if (await NameTakenAsync(command.SchoolBranchId, command.AcademicYearId, command.Name, schoolClass.Id, cancellationToken))
@@ -322,51 +291,14 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             return DirectoryWriteResult<ulong>.Fail(DirectoryWriteStatus.ClassHasActiveStudents);
         }
 
-        var homeroomTeacherId = HomeroomOf(command.Status, command.HomeroomTeacherId);
-        var teacher = await ResolveHomeroomTeacherAsync(
-            command.SchoolId, homeroomTeacherId, schoolClass.Id, cancellationToken);
-        if (teacher.Status is not DirectoryWriteStatus.Success)
-        {
-            return DirectoryWriteResult<ulong>.Fail(teacher.Status);
-        }
-
         schoolClass.SchoolBranchId = command.SchoolBranchId;
-        schoolClass.Code = code;
         schoolClass.Name = command.Name;
         schoolClass.AcademicYearId = command.AcademicYearId;
         schoolClass.GradeLevelId = command.GradeLevelId;
         schoolClass.Status = command.Status;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-
-        // teachers.class_id is unique, so the outgoing homeroom teacher is cleared in its own save.
-        var current = await db.Teachers
-            .FirstOrDefaultAsync(t => t.ClassId == schoolClass.Id, cancellationToken);
-        if (current is not null && current.Id != homeroomTeacherId)
-        {
-            current.ClassId = null;
-            var cleared = await SaveAsync(
-                () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassCode, cancellationToken);
-            if (cleared.Status is not DirectoryWriteStatus.Success)
-            {
-                return cleared;
-            }
-        }
-
-        if (teacher.Value is { } newTeacher && newTeacher.ClassId != schoolClass.Id)
-        {
-            newTeacher.ClassId = schoolClass.Id;
-        }
-
-        var saved = await SaveAsync(
-            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassCode, cancellationToken);
-        if (saved.Status is not DirectoryWriteStatus.Success)
-        {
-            return saved;
-        }
-
-        await transaction.CommitAsync(cancellationToken);
-        return DirectoryWriteResult<ulong>.Ok(schoolClass.Id);
+        return await SaveAsync(
+            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassName, cancellationToken);
     }
 
     public async Task<DirectoryWriteResult<ulong>> DeactivateClassAsync(
@@ -386,28 +318,21 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         }
 
         schoolClass.Status = SchoolClassStatusCodes.Inactive;
-        // Otherwise the teacher stays bound to a dead class and can never be given another one.
-        var homeroomTeacher = await db.Teachers
-            .FirstOrDefaultAsync(t => t.ClassId == classId, cancellationToken);
-        if (homeroomTeacher is not null)
-        {
-            homeroomTeacher.ClassId = null;
-        }
-
         return await SaveAsync(
-            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassCode, cancellationToken);
+            () => schoolClass.Id, DirectoryWriteStatus.DuplicateClassName, cancellationToken);
     }
 
-    // An inactive class keeps no homeroom teacher, so saving one never locks a teacher up.
-    private static ulong? HomeroomOf(string classStatus, ulong? teacherId) =>
-        classStatus == SchoolClassStatusCodes.Inactive ? null : teacherId;
+    // The live enrollment of one academic year; the service keeps it to at most one per student.
+    private static StudentEnrollment? OpenEnrollmentInYear(Student student, ulong academicYearId) =>
+        student.Enrollments.FirstOrDefault(e =>
+            e.SchoolClass.AcademicYearId == academicYearId && e.EndedOn == null);
 
     private Task<bool> HasActiveStudentsAsync(ulong classId, CancellationToken cancellationToken) =>
         db.StudentEnrollments.AnyAsync(
-            e => e.SchoolClassId == classId && e.Status == StudentEnrollmentStatusCodes.Active,
+            e => e.SchoolClassId == classId && e.EndedOn == null,
             cancellationToken);
 
-    // uq_classes_branch_year_name: checked up front so the error names the field, not the code.
+    // uq_class_branch_id_academic_year_id_name: checked up front so the error names the field.
     private Task<bool> NameTakenAsync(
         ulong branchId,
         ulong yearId,
@@ -443,7 +368,8 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
         ulong studentId,
         CancellationToken cancellationToken) =>
         db.Students
-            .Include(s => s.Enrollments)
+            .Include(s => s.User)
+            .Include(s => s.Enrollments).ThenInclude(e => e.SchoolClass)
             .SingleOrDefaultAsync(
                 s => s.Id == studentId &&
                     s.Enrollments.Any(e => e.SchoolClass.SchoolBranch.SchoolId == schoolId),
@@ -478,30 +404,6 @@ public sealed class SchoolDirectoryAdminRepository(ApplicationDbContext db)
             .AnyAsync(g => g.Id == gradeLevelId, cancellationToken)
             ? DirectoryWriteStatus.Success
             : DirectoryWriteStatus.GradeLevelNotFound;
-    }
-
-    private async Task<(DirectoryWriteStatus Status, Teacher? Value)> ResolveHomeroomTeacherAsync(
-        ulong schoolId,
-        ulong? teacherId,
-        ulong? classId,
-        CancellationToken cancellationToken)
-    {
-        if (teacherId is not { } id)
-        {
-            return (DirectoryWriteStatus.Success, null);
-        }
-
-        var teacher = await db.Teachers
-            .SingleOrDefaultAsync(
-                t => t.Id == id && t.User.SchoolBranch!.SchoolId == schoolId, cancellationToken);
-        if (teacher is null)
-        {
-            return (DirectoryWriteStatus.TeacherNotInSchool, null);
-        }
-
-        return teacher.ClassId is null || teacher.ClassId == classId
-            ? (DirectoryWriteStatus.Success, teacher)
-            : (DirectoryWriteStatus.TeacherAlreadyHomeroom, null);
     }
 
     private async Task<DirectoryWriteResult<ulong>> SaveAsync(

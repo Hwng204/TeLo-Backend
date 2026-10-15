@@ -9,10 +9,10 @@ public sealed record MatrixDetailRequest(
 
 public sealed record SaveMatrixRequest(
     string Name,
+    // MatrixScope.Key (phân hiệu, môn, khối); ignored for a task matrix, which takes the task's scope.
     ulong AcademicContextId,
-    ulong? SemesterId,
     ulong? TaskId,
-    // Số nguyên dương do người lập tự đặt.
+    // Số nguyên dương do người lập tự đặt, tối đa 999 (decimal(5,2)).
     int TotalScore,
     IReadOnlyList<MatrixDetailRequest> Details);
 
@@ -35,6 +35,7 @@ public sealed record MatrixResponse(
     string Status,
     ulong? TaskId,
     ulong AcademicContextId,
+    // Always null: matrices no longer have a semester.
     ulong? SemesterId,
     IReadOnlyList<MatrixDetailResponse> Details,
     uint TotalQuestions,

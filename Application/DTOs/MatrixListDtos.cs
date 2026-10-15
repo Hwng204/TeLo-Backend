@@ -4,7 +4,9 @@ public sealed record MatrixListQuery(
     int Page = 1,
     int PageSize = 20,
     string? Keyword = null,
+    // MatrixScope.Key.
     ulong? AcademicContextId = null,
+    // Ignored, as is AcademicYearId: matrices have no semester or year.
     ulong? SemesterId = null,
     string? Status = null,
     ulong? AssignedToUserId = null,

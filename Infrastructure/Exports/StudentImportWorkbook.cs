@@ -29,7 +29,7 @@ public static class StudentImportWorkbook
 
     public static readonly string[] Genders = ["NAM", "NU", "KHAC"];
 
-    // Column order is the contract with Read: A..F.
+    // Column order is the contract with Read: A..F. "classCode" holds the class name (DB v2 has no class code).
     public static readonly StudentImportColumn[] Columns =
     [
         new("code", "Mã học sinh (*)", true, "Chữ/số, tối đa 64 ký tự, không trùng", "HS2025001"),

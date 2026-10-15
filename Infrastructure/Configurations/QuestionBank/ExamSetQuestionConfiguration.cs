@@ -8,23 +8,18 @@ public sealed class ExamSetQuestionConfiguration : IEntityTypeConfiguration<Exam
 {
     public void Configure(EntityTypeBuilder<ExamSetQuestion> builder)
     {
-        builder.ToTable("exam_set_questions");
+        builder.ToTable("exam_set_question");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
+        builder.Property(x => x.Id).HasColumnName("exam_set_question_id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(x => x.ExamSetId).HasColumnName("exam_set_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.QuestionId).HasColumnName("question_id").HasColumnType("bigint unsigned").IsRequired();
-        builder.Property(x => x.MatrixDetailId).HasColumnName("matrix_detail_id").HasColumnType("bigint unsigned");
         builder.HasIndex(x => new { x.ExamSetId, x.QuestionId })
-            .IsUnique().HasDatabaseName("uq_exam_set_questions_question");
-        builder.HasIndex(x => x.MatrixDetailId).HasDatabaseName("idx_exam_set_questions_matrix_detail");
+            .IsUnique().HasDatabaseName("uq_exam_set_question_exam_set_id_question_id");
         builder.HasOne(x => x.ExamSet).WithMany(x => x.Questions)
-            .HasForeignKey(x => x.ExamSetId).HasConstraintName("fk_exam_set_questions_set")
+            .HasForeignKey(x => x.ExamSetId).HasConstraintName("fk_exam_set_question_exam_set_id")
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Question).WithMany()
-            .HasForeignKey(x => x.QuestionId).HasConstraintName("fk_exam_set_questions_question")
+            .HasForeignKey(x => x.QuestionId).HasConstraintName("fk_exam_set_question_question_id")
             .OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.MatrixDetail).WithMany()
-            .HasForeignKey(x => x.MatrixDetailId).HasConstraintName("fk_exam_set_questions_matrix_detail")
-            .OnDelete(DeleteBehavior.SetNull);
     }
 }

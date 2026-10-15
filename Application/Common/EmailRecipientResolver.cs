@@ -8,7 +8,8 @@ namespace Application.Common;
 
 public sealed class EmailRecipientResolver(ApplicationDbContext db)
 {
-    public IQueryable<User> EligibleUsers(ulong schoolId) => db.Users.AsNoTracking().Where(u => u.Status == "ACTIVE" &&
+    // Student accounts have no email and are never recipients.
+    public IQueryable<User> EligibleUsers(ulong schoolId) => db.Users.AsNoTracking().Where(u => u.Status == "ACTIVE" && !u.Students.Any() &&
         u.SchoolBranch != null && u.SchoolBranch.SchoolId == schoolId && u.SchoolBranch.Status == "ACTIVE" && u.SchoolBranch.School.Status == "ACTIVE");
 
     public async Task<Dictionary<string, string[]>> ValidateAsync(ulong schoolId, SaveEmailConfigRequest request, CancellationToken ct)
@@ -25,8 +26,7 @@ public sealed class EmailRecipientResolver(ApplicationDbContext db)
             errors["targets"] = ["Một nhóm/cá nhân chỉ được xuất hiện một lần trong cấu hình."];
         var roleIds = request.Targets.Where(t => t.RoleId.HasValue).Select(t => t.RoleId!.Value).ToArray();
         var userIds = request.Targets.Where(t => t.UserId.HasValue).Select(t => t.UserId!.Value).ToArray();
-        if (await db.Roles.CountAsync(r => roleIds.Contains(r.Id) && r.Status == "ACTIVE" &&
-            (r.SchoolId == null || r.SchoolId == schoolId) && (r.SchoolBranchId == null || (r.SchoolBranch!.Status == "ACTIVE" && r.SchoolBranch.SchoolId == schoolId)), ct) != roleIds.Length)
+        if (await db.Roles.CountAsync(r => roleIds.Contains(r.Id) && r.Status == "ACTIVE", ct) != roleIds.Length)
             errors["targets"] = ["Nhóm phải đang hoạt động và thuộc phạm vi trường."];
         if (await EligibleUsers(schoolId).CountAsync(u => userIds.Contains(u.Id), ct) != userIds.Length)
             errors["targets"] = ["Tài khoản phải đang hoạt động và thuộc trường."];

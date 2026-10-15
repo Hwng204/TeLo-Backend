@@ -10,13 +10,12 @@ public sealed class UserAuthenticationService(
     ApplicationDbContext db,
     IPasswordHasher<User> passwordHasher) : IUserAuthenticationService
 {
-    // Operational admins without a teacher profile do not need an assigned branch.
-    // A teacher cannot log in or keep using a token after their employing unit is disabled.
+    // Non-teacher users without a branch (system admins) need no unit; anyone with a branch (teacher or staff)
+    // cannot log in or keep using a token after their branch or school is disabled; a teacher always needs a branch.
+    // Resignation sets user.status = INACTIVE (no employment status column any more).
     private IQueryable<User> ActiveUsers() => db.Users.AsNoTracking().Where(user =>
-        user.Status == "ACTIVE" && (!user.Teachers.Any() ||
-            (user.SchoolBranch != null && user.SchoolBranch.Status == "ACTIVE" &&
-             user.SchoolBranch.School.Status == "ACTIVE" &&
-             !user.Teachers.Any(teacher => teacher.EmploymentStatus == "RESIGNED" || teacher.EmploymentStatus == "INACTIVE"))));
+        user.Status == "ACTIVE" && (user.SchoolBranchId == null && !user.Teachers.Any() ||
+            user.SchoolBranch != null && user.SchoolBranch.Status == "ACTIVE" && user.SchoolBranch.School.Status == "ACTIVE"));
 
     public async Task<bool> IsSessionValidAsync(ulong userId, uint securityVersion, IReadOnlyCollection<string> roleCodes, CancellationToken cancellationToken)
     {

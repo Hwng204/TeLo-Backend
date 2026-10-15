@@ -20,7 +20,6 @@ public sealed class Notification
     public bool IsTest { get; set; }
     public string SendKind { get; set; } = "AUTOMATIC";
     public string? RequestFingerprint { get; set; }
-    public uint Version { get; set; } = 1;
     public DateTime? CancelledAt { get; set; }
     public ulong? CreatedByUserId { get; set; }
 

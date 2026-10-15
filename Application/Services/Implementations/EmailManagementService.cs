@@ -23,7 +23,7 @@ public sealed class EmailManagementService(
     IConfiguration configuration) : IEmailManagementService
 {
     private static readonly Expression<Func<EmailTemplate, EmailTemplateItem>> TemplateProjection = t => new(
-        t.Id, t.Code, t.Name, t.EventCode, t.Status, t.Version,
+        t.Id, t.Code, t.Name, t.EventCode, t.Status,
         t.Revisions.OrderByDescending(r => r.Revision).Select(r => r.Id).FirstOrDefault(), t.UsedAt == null);
 
     private static readonly Expression<Func<EmailTemplateVersion, EmailRevisionItem>> RevisionProjection = r =>
@@ -34,7 +34,7 @@ public sealed class EmailManagementService(
         n.Recipients.Count(r => r.EmailStatus == "SENT"),
         n.Recipients.Count(r => r.EmailStatus == "PENDING" || r.EmailStatus == "SENDING"),
         n.Recipients.Count(r => r.EmailStatus == "ERROR"),
-        n.Recipients.Count(r => r.EmailStatus == "CANCELLED"), n.IsTest, n.ScheduledFor, n.SendKind, n.Version,
+        n.Recipients.Count(r => r.EmailStatus == "CANCELLED"), n.IsTest, n.ScheduledFor, n.SendKind,
         n.SendKind == "MANUAL" && n.CancelledAt == null && n.Recipients.Any() && !n.Recipients.Any(r => r.AttemptCount > 0 || r.EmailStatus == "SENDING" || r.EmailStatus == "SENT"));
 
     public async Task<ServiceResult<DirectoryPage<EmailSchoolItem>>> SchoolsAsync(EmailListQuery query, ulong actor, CancellationToken ct)
@@ -48,7 +48,7 @@ public sealed class EmailManagementService(
         var search = query.Search?.Trim();
         if (!string.IsNullOrEmpty(search)) rows = rows.Where(s => s.Code.Contains(search) || s.Name.Contains(search));
         return await PageAsync(rows.OrderBy(s => s.Name).ThenBy(s => s.Id)
-            .Select(s => new EmailSchoolItem(s.Id, s.Code, s.Name, access.GlobalAdmin || access.SchoolAdmin)), query, ct);
+            .Select(s => new EmailSchoolItem(s.Id, s.Code, s.Name, access.GlobalAdmin)), query, ct);
     }
 
     private IQueryable<EmailEvent> EventRows(ulong schoolId) => db.EmailEvents.Where(e => e.SchoolId == null || e.SchoolId == schoolId);
@@ -84,14 +84,13 @@ public sealed class EmailManagementService(
         var row = code == null ? new EmailEvent { SchoolId = schoolId, Code = normalized } : await EventRows(schoolId).SingleOrDefaultAsync(e => e.Code == code, ct);
         if (row == null) return Missing<EmailEventItem>();
         if (row.TriggerKind != "MANUAL" || row.SchoolId != schoolId) return Denied<EmailEventItem>();
-        if (code != null && (request.Version == 0 || row.Version != request.Version)) return Conflict<EmailEventItem>();
         if (code != null && row.Code != normalized) return FieldError<EmailEventItem>("code", "Không được đổi mã sự kiện đã tạo.");
         if (code == null && await EventRows(schoolId).AnyAsync(e => e.Code == normalized, ct)) return Conflict<EmailEventItem>("Mã sự kiện đã tồn tại trong trường hoặc thuộc sự kiện hệ thống.");
-        if (code == null) db.EmailEvents.Add(row); else row.Version++;
+        if (code == null) db.EmailEvents.Add(row);
         row.Name = request.Name.Trim(); row.Description = request.Description.Trim();
         row.VariablesJson = JsonSerializer.Serialize(EmailTemplateRules.CommonVariables.Concat(request.VariableDefinitions));
         await db.SaveChangesAsync(ct);
-        Audit(actor, "EMAIL_EVENT", row.Id, code == null ? "CREATE" : "UPDATE", new { row.SchoolId, row.Code, row.Name, row.Version, row.VariablesJson });
+        Audit(actor, "EMAIL_EVENT", row.Id, code == null ? "CREATE" : "UPDATE", new { row.SchoolId, row.Code, row.Name, row.VariablesJson });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         return ServiceResult<EmailEventItem>.Success(EmailTemplateRules.Definition(row));
     }
@@ -103,20 +102,18 @@ public sealed class EmailManagementService(
         var row = await db.EmailEvents.SingleOrDefaultAsync(e => e.SchoolId == schoolId && e.Code == code, ct);
         if (row == null) return Missing<EmailEventItem>();
         if (request.Status is not ("ACTIVE" or "INACTIVE")) return FieldError<EmailEventItem>("status", "Trạng thái không hợp lệ.");
-        if (request.Version == 0 || row.Version != request.Version) return Conflict<EmailEventItem>();
-        row.Status = request.Status; row.Version++;
-        Audit(actor, "EMAIL_EVENT", row.Id, "STATUS", new { row.Status, row.Version });
+        row.Status = request.Status;
+        Audit(actor, "EMAIL_EVENT", row.Id, "STATUS", new { row.Status });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         return ServiceResult<EmailEventItem>.Success(EmailTemplateRules.Definition(row));
     }
 
-    public async Task<ServiceResult<bool>> DeleteEventAsync(ulong schoolId, string code, uint version, ulong actor, CancellationToken ct)
+    public async Task<ServiceResult<bool>> DeleteEventAsync(ulong schoolId, string code, ulong actor, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await AuthorizeWriteAsync(schoolId, actor, true, ct)) return Denied<bool>();
         var row = await db.EmailEvents.SingleOrDefaultAsync(e => e.SchoolId == schoolId && e.Code == code, ct);
         if (row == null) return Missing<bool>();
-        if (version == 0 || row.Version != version) return Conflict<bool>();
         if (row.UsedAt != null || await db.EmailTemplates.AnyAsync(t => t.SchoolId == schoolId && t.EventCode == code, ct)
             || await db.NotificationConfigs.AnyAsync(c => c.SchoolId == schoolId && c.EventCode == code, ct))
             return Conflict<bool>("Sự kiện đã được sử dụng. Hãy ngừng áp dụng để giữ lịch sử.");
@@ -143,18 +140,17 @@ public sealed class EmailManagementService(
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return result;
     }
 
-    public async Task<ServiceResult<bool>> CancelAsync(ulong schoolId, ulong id, uint version, ulong actor, CancellationToken ct)
+    public async Task<ServiceResult<bool>> CancelAsync(ulong schoolId, ulong id, ulong actor, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeWriteAsync(schoolId, actor, false, ct)) return Denied<bool>();
-        var row = (await db.Notifications.FromSqlInterpolated($"SELECT * FROM notifications WHERE id = {id} AND school_id = {schoolId} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
+        var row = (await db.Notifications.FromSqlInterpolated($"SELECT * FROM notification WHERE notification_id = {id} AND school_id = {schoolId} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (row == null) return Missing<bool>();
-        if (version == 0 || row.Version != version) return Conflict<bool>();
         if (row.SendKind != "MANUAL" || row.CancelledAt != null || await db.NotificationRecipients.AnyAsync(r => r.NotificationId == id && (r.AttemptCount > 0 || r.EmailStatus == "SENDING" || r.EmailStatus == "SENT"), ct))
             return Conflict<bool>("Lần gửi đã bắt đầu hoặc đã được hủy. Vui lòng tải lại lịch sử.");
-        row.CancelledAt = DateTime.UtcNow; row.Version++;
+        row.CancelledAt = DateTime.UtcNow;
         await db.NotificationRecipients.Where(r => r.NotificationId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.EmailStatus, "CANCELLED").SetProperty(r => r.LastError, "CANCELLED_BY_MANAGER"), ct);
-        Audit(actor, "EMAIL_NOTIFICATION", id, "CANCEL", new { row.SchoolId, row.Version });
+        Audit(actor, "EMAIL_NOTIFICATION", id, "CANCEL", new { row.SchoolId });
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return ServiceResult<bool>.Success(true);
     }
 
@@ -189,7 +185,6 @@ public sealed class EmailManagementService(
             ? await db.EmailTemplates.SingleOrDefaultAsync(t => t.SchoolId == schoolId && t.Id == id, ct)
             : new EmailTemplate { SchoolId = schoolId };
         if (template == null) return Missing<EmailTemplateDetail>();
-        if (id.HasValue && (request.Version == 0 || request.Version != template.Version)) return Conflict<EmailTemplateDetail>();
         var code = request.Code.Trim().ToUpperInvariant();
         var eventCode = request.EventCode.Trim().ToUpperInvariant();
         if (id.HasValue && (template.Code != code || template.EventCode != eventCode))
@@ -206,12 +201,11 @@ public sealed class EmailManagementService(
             template.EventCode = eventCode;
             db.EmailTemplates.Add(template);
         }
-        else template.Version++;
         template.Name = request.Name.Trim();
         var newRevision = new EmailTemplateVersion
         {
             Template = template, Revision = revision, Subject = request.Subject.Trim(),
-            Body = request.Body.Trim(), CreatedByUserId = actor, VariablesJson = eventRow.VariablesJson, EventVersion = eventRow.Version
+            Body = request.Body.Trim(), CreatedByUserId = actor, VariablesJson = eventRow.VariablesJson, EventVersion = 1
         };
         eventRow.UsedAt ??= DateTime.UtcNow;
         db.EmailTemplateVersions.Add(newRevision);
@@ -241,12 +235,10 @@ public sealed class EmailManagementService(
         if (!await AuthorizeWriteAsync(schoolId, actor, true, ct)) return Denied<EmailTemplateDetail>();
         var template = await db.EmailTemplates.SingleOrDefaultAsync(t => t.SchoolId == schoolId && t.Id == id, ct);
         if (template == null) return Missing<EmailTemplateDetail>();
-        if (request.Version == 0 || request.Version != template.Version) return Conflict<EmailTemplateDetail>();
         if (template.Status != request.Status)
         {
             var before = TemplateSnapshot(template);
             template.Status = request.Status;
-            template.Version++;
             Audit(actor, "EMAIL_TEMPLATE", id, "STATUS", new { Before = before, After = TemplateSnapshot(template) });
             await db.SaveChangesAsync(ct);
         }
@@ -254,13 +246,12 @@ public sealed class EmailManagementService(
         return await ReadTemplateAsync(schoolId, id, ct);
     }
 
-    public async Task<ServiceResult<bool>> DeleteTemplateAsync(ulong schoolId, ulong id, uint version, ulong actor, CancellationToken ct)
+    public async Task<ServiceResult<bool>> DeleteTemplateAsync(ulong schoolId, ulong id, ulong actor, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await AuthorizeWriteAsync(schoolId, actor, true, ct)) return Denied<bool>();
         var template = await db.EmailTemplates.SingleOrDefaultAsync(t => t.SchoolId == schoolId && t.Id == id, ct);
         if (template == null) return Missing<bool>();
-        if (version == 0 || template.Version != version) return Conflict<bool>();
         if (template.UsedAt != null || await db.NotificationConfigs.AnyAsync(c => c.EmailTemplateVersion != null && c.EmailTemplateVersion.EmailTemplateId == id, ct)
             || await db.Notifications.AnyAsync(n => n.EmailTemplateVersion != null && n.EmailTemplateVersion.EmailTemplateId == id, ct))
             return Conflict<bool>("Mẫu đã được sử dụng. Hãy ngừng áp dụng để giữ lịch sử.");
@@ -295,7 +286,7 @@ public sealed class EmailManagementService(
         if (query.ConfigurationState == "DISABLED") rows = rows.Where(x => x.Config != null && !x.Config.IsActive);
         return await PageAsync(rows.OrderBy(x => x.Event.Name).ThenBy(x => x.Event.Id).Select(x => new EmailConfigurationListItem(
             x.Event.Code, x.Event.Name, x.Event.TriggerKind, x.Event.Status,
-            x.Config == null ? null : x.Config.Id, x.Config == null ? 0 : x.Config.Version,
+            x.Config == null ? null : x.Config.Id,
             x.Config == null ? "UNCONFIGURED" : x.Config.IsActive ? "ENABLED" : "DISABLED",
             x.Config == null || x.Config.EmailTemplateVersion == null ? null : x.Config.EmailTemplateVersion.Template.Name,
             x.Config == null || x.Config.EmailTemplateVersion == null ? null : x.Config.EmailTemplateVersion.Revision,
@@ -316,8 +307,6 @@ public sealed class EmailManagementService(
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
         if (!await AuthorizeWriteAsync(schoolId, actor, false, ct)) return Denied<EmailConfigItem>();
         var config = await ConfigRows(schoolId, eventCode).Include(c => c.Targets).SingleOrDefaultAsync(ct);
-        if ((config == null && request.Version != 0) || (config != null && (request.Version == 0 || config.Version != request.Version)))
-            return Conflict<EmailConfigItem>();
         // Turning off an existing rule must remain possible after a recipient becomes inactive.
         // This shortcut preserves every saved reference; changing references still validates them.
         if (config != null && !request.IsActive && request.EmailTemplateVersionId == config.EmailTemplateVersionId
@@ -327,7 +316,6 @@ public sealed class EmailManagementService(
         {
             var snapshot = ConfigSnapshot(config);
             config.IsActive = false;
-            config.Version++;
             Audit(actor, "EMAIL_CONFIG", config.Id, "UPDATE", new { Before = snapshot, After = ConfigSnapshot(config) });
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -352,7 +340,6 @@ public sealed class EmailManagementService(
         }
         else
         {
-            config.Version++;
             foreach (var target in config.Targets.Where(t => !request.Targets.Any(r => r.RoleId == t.RoleId && r.UserId == t.UserId)).ToArray())
             {
                 db.NotificationTargets.Remove(target);
@@ -371,10 +358,6 @@ public sealed class EmailManagementService(
             else config.Targets.Add(new NotificationTarget { RoleId = target.RoleId, UserId = target.UserId, Action = target.Action });
         }
         revision.Template.UsedAt ??= DateTime.UtcNow;
-        var roleIds = request.Targets.Where(t => t.RoleId.HasValue).Select(t => t.RoleId!.Value).ToArray();
-        if (roleIds.Length > 0)
-            await db.Roles.Where(r => roleIds.Contains(r.Id) && r.UsedAt == null)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(r => r.UsedAt, DateTime.UtcNow).SetProperty(r => r.Version, r => r.Version + 1), ct);
         await db.SaveChangesAsync(ct);
         Audit(actor, "EMAIL_CONFIG", config.Id, before == null ? "CREATE" : "UPDATE", new { Before = before, After = ConfigSnapshot(config) });
         await db.SaveChangesAsync(ct);
@@ -391,12 +374,11 @@ public sealed class EmailManagementService(
         var search = query.Search?.Trim();
         if (kind == "role")
         {
-            var roles = db.Roles.AsNoTracking().Where(r => r.Status == "ACTIVE" && (!r.SchoolId.HasValue || r.SchoolId == schoolId)
-                && (!r.SchoolBranchId.HasValue || (r.SchoolBranch!.SchoolId == schoolId && r.SchoolBranch.Status == "ACTIVE")));
-            if (query.BranchId.HasValue) roles = roles.Where(r => !r.SchoolBranchId.HasValue || r.SchoolBranchId == query.BranchId);
+            // Roles are global: every active role applies to every school and branch.
+            var roles = db.Roles.AsNoTracking().Where(r => r.Status == "ACTIVE");
             if (!string.IsNullOrEmpty(search)) roles = roles.Where(r => r.Name.Contains(search) || r.Code.Contains(search));
             return await PageAsync(roles.OrderBy(r => r.Name).ThenBy(r => r.Id)
-                .Select(r => new EmailRecipientOption(r.Id, r.Name, null, r.SchoolBranch == null ? null : r.SchoolBranch.Name, r.Code)), query, ct);
+                .Select(r => new EmailRecipientOption(r.Id, r.Name, null, null, r.Code)), query, ct);
         }
         return await UserPageAsync(recipients.Resolve(schoolId, new SaveEmailConfigRequest { RecipientScope = "ALL_SCHOOL" }), query, ct);
     }
@@ -470,15 +452,15 @@ public sealed class EmailManagementService(
 
     private async Task<EmailConfigItem> ReadConfigAsync(ulong schoolId, string eventCode, CancellationToken ct)
     {
-        var config = await ConfigRows(schoolId, eventCode).AsNoTracking().Select(c => new { c.Id, c.EmailTemplateVersionId, c.Version, c.IsActive, c.RecipientScope,
+        var config = await ConfigRows(schoolId, eventCode).AsNoTracking().Select(c => new { c.Id, c.EmailTemplateVersionId, c.IsActive, c.RecipientScope,
             TemplateName = c.EmailTemplateVersion == null ? null : c.EmailTemplateVersion.Template.Name,
             Revision = c.EmailTemplateVersion == null ? (uint?)null : c.EmailTemplateVersion.Revision,
             VariablesJson = c.EmailTemplateVersion == null ? null : c.EmailTemplateVersion.VariablesJson,
             TemplateStatus = c.EmailTemplateVersion == null ? null : c.EmailTemplateVersion.Template.Status }).SingleOrDefaultAsync(ct);
-        if (config == null) return new(null, eventCode, null, 0, false, "NONE", []);
+        if (config == null) return new(null, eventCode, null, false, "NONE", []);
         var targets = await db.NotificationTargets.AsNoTracking().Where(t => t.ConfigId == config.Id).OrderBy(t => t.Id)
             .Select(t => new EmailTargetItem(t.RoleId, t.UserId, t.Action, t.Role != null ? t.Role.Name : t.User!.FullName)).ToArrayAsync(ct);
-        return new(config.Id, eventCode, config.EmailTemplateVersionId, config.Version, config.IsActive, config.RecipientScope, targets,
+        return new(config.Id, eventCode, config.EmailTemplateVersionId, config.IsActive, config.RecipientScope, targets,
             config.TemplateName, config.Revision, config.TemplateStatus,
             config.EmailTemplateVersionId == null ? null : EmailTemplateRules.Variables(config.VariablesJson, eventCode));
     }
@@ -489,39 +471,39 @@ public sealed class EmailManagementService(
     private async Task<ServiceResult<DirectoryPage<EmailRecipientOption>>> UserPageAsync(IQueryable<User> rows, EmailListQuery query, CancellationToken ct)
     {
         var search = query.Search?.Trim();
-        if (!string.IsNullOrEmpty(search)) rows = rows.Where(u => u.FullName.Contains(search) || u.Username.Contains(search) || u.Email.Contains(search));
+        if (!string.IsNullOrEmpty(search)) rows = rows.Where(u => u.FullName.Contains(search) || u.Username.Contains(search) || u.Teachers.Any(t => t.Email != null && t.Email.Contains(search)));
         if (query.BranchId.HasValue) rows = rows.Where(u => u.SchoolBranchId == query.BranchId);
         return await PageAsync(rows.OrderBy(u => u.FullName).ThenBy(u => u.Id)
-            .Select(u => new EmailRecipientOption(u.Id, u.FullName, u.Email, u.SchoolBranch!.Name, u.Username)), query, ct);
+            .Select(u => new EmailRecipientOption(u.Id, u.FullName, u.Teachers.Select(t => t.Email).FirstOrDefault(), u.SchoolBranch!.Name, u.Username)), query, ct);
     }
 
-    private async Task<(bool GlobalAdmin, bool SchoolAdmin, ulong? SchoolId)> AccessAsync(ulong actor, CancellationToken ct)
+    // Roles are global: an administrator role manages every school; a PHT only reads (and sends) in their own school.
+    private async Task<(bool GlobalAdmin, ulong? SchoolId)> AccessAsync(ulong actor, CancellationToken ct)
     {
         var user = await db.Users.AsNoTracking().Where(u => u.Id == actor && u.Status == "ACTIVE")
             .Select(u => new { SchoolId = u.SchoolBranch != null && u.SchoolBranch.Status == "ACTIVE" && u.SchoolBranch.School.Status == "ACTIVE" ? (ulong?)u.SchoolBranch.SchoolId : null })
             .SingleOrDefaultAsync(ct);
-        if (user == null) return (false, false, null);
+        if (user == null) return (false, null);
         var roles = await db.UserRoles.AsNoTracking().Where(r => r.UserId == actor).WhereEffective()
-            .Select(r => new { r.Role.Code, r.Role.SchoolId, r.Role.SchoolBranchId }).ToArrayAsync(ct);
-        var global = roles.Any(r => IsAdministrator(r.Code.Trim()) && !r.SchoolId.HasValue && !r.SchoolBranchId.HasValue);
-        var schoolAdmin = user.SchoolId.HasValue && roles.Any(r => IsAdministrator(r.Code.Trim()) && r.SchoolId == user.SchoolId && !r.SchoolBranchId.HasValue);
-        var pht = user.SchoolId.HasValue && roles.Any(r => roleCatalog.IsPht(r.Code.Trim()) && !r.SchoolBranchId.HasValue && (!r.SchoolId.HasValue || r.SchoolId == user.SchoolId));
-        return (global, schoolAdmin, schoolAdmin || pht ? user.SchoolId : null);
+            .Select(r => r.Role.Code).ToArrayAsync(ct);
+        var global = roles.Any(code => IsAdministrator(code.Trim()));
+        var pht = user.SchoolId.HasValue && roles.Any(code => roleCatalog.IsPht(code.Trim()));
+        return (global, pht ? user.SchoolId : null);
     }
 
     private async Task<bool> AllowedAsync(ulong schoolId, ulong actor, bool requireAdmin, CancellationToken ct)
     {
         var access = await AccessAsync(actor, ct);
-        return (access.GlobalAdmin || (access.SchoolId == schoolId && (!requireAdmin || access.SchoolAdmin)))
+        return (access.GlobalAdmin || (!requireAdmin && access.SchoolId == schoolId))
             && await db.Schools.AnyAsync(s => s.Id == schoolId && s.Status == "ACTIVE", ct);
     }
 
     private async Task<bool> AuthorizeWriteAsync(ulong schoolId, ulong actor, bool requireAdmin, CancellationToken ct)
     {
-        await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id = {actor} FOR UPDATE").ToArrayAsync(ct);
+        await db.Users.FromSqlInterpolated($"SELECT * FROM `user` WHERE user_id = {actor} FOR UPDATE").ToArrayAsync(ct);
         if (!await AllowedAsync(schoolId, actor, requireAdmin, ct)) return false;
         // One school lock serializes first-time configuration creation and template revision allocation.
-        await db.Schools.FromSqlInterpolated($"SELECT * FROM schools WHERE id = {schoolId} FOR UPDATE").ToArrayAsync(ct);
+        await db.Schools.FromSqlInterpolated($"SELECT * FROM `school` WHERE school_id = {schoolId} FOR UPDATE").ToArrayAsync(ct);
         return true;
     }
 
@@ -543,10 +525,10 @@ public sealed class EmailManagementService(
 
     private static ServiceResult<T> Denied<T>() => ServiceResult<T>.Failure("FORBIDDEN", "Bạn không có quyền quản lý email tại trường này.");
     private static ServiceResult<T> FieldError<T>(string field, string message) => Invalid<T>(new Dictionary<string, string[]> { [field] = [message] });
-    private static object TemplateSnapshot(EmailTemplate template) => new { template.SchoolId, template.Code, template.Name, template.EventCode, template.Status, template.Version };
+    private static object TemplateSnapshot(EmailTemplate template) => new { template.SchoolId, template.Code, template.Name, template.EventCode, template.Status };
     private static object ConfigSnapshot(NotificationConfig config) => new
     {
-        config.SchoolId, config.EventCode, config.EmailTemplateVersionId, config.IsActive, config.RecipientScope, config.Version,
+        config.SchoolId, config.EventCode, config.EmailTemplateVersionId, config.IsActive, config.RecipientScope,
         Targets = config.Targets.Select(t => new { t.RoleId, t.UserId, t.Action }).ToArray()
     };
     private void Audit(ulong actor, string type, ulong id, string action, object snapshot) => db.IdentityAudits.Add(new IdentityAudit

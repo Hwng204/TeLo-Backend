@@ -14,11 +14,9 @@ public static class MatrixMappingExtensions
             query.PageSize,
             query.Keyword,
             query.AcademicContextId,
-            query.SemesterId,
             query.Status,
             query.AssignedToUserId,
             query.BranchId,
-            AcademicYearId: query.AcademicYearId,
             SubjectId: query.SubjectId,
             GradeLevelId: query.GradeLevelId);
     }
@@ -34,14 +32,14 @@ public static class MatrixMappingExtensions
                 row.Status,
                 row.TaskId,
                 row.AcademicContextId,
-                row.SemesterId,
+                null,
                 row.TotalQuestions,
                 row.TotalScore,
                 Person(people, row.CreatedByUserId),
-                row.CreatedByUserId is null && row.CreatedAt == default ? null : row.CreatedAt,
+                null,
                 Person(people, row.ApprovedByUserId),
-                row.ApprovedAt,
-                row.SubjectName, row.GradeLevelName, row.AcademicYearName, row.SemesterName))
+                null,
+                row.SubjectName, row.GradeLevelName))
             .ToArray();
 
         return new MatrixPage(items, page.Page, page.PageSize, page.TotalCount);
@@ -69,7 +67,7 @@ public static class MatrixMappingExtensions
             matrix.Status,
             matrix.TaskId,
             info.ContextLabel,
-            info.SemesterName ?? matrix.SemesterId?.ToString() ?? string.Empty,
+            string.Empty,
             matrix.TotalQuestions,
             matrix.TotalScore,
             rows);
@@ -103,11 +101,15 @@ public static class MatrixMappingExtensions
         yield return matrix.ApprovedByUserId;
     }
 
+    // lastHistory: newest task_history row of the matrix's task; it is the pending rejection while the matrix is a Draft.
     public static MatrixResponse ToResponse(
         this ExamMatrix matrix,
         MatrixActor actor,
-        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
+        IReadOnlyDictionary<ulong, MatrixPerson>? people = null,
+        TaskHistory? lastHistory = null)
     {
+        var rejection = matrix.Status == MatrixStatusCodes.Draft && matrix.TaskId is not null ? lastHistory : null;
+
         var details = matrix.Details
             .Select(detail => new MatrixDetailResponse(
                 detail.Id,
@@ -124,19 +126,19 @@ public static class MatrixMappingExtensions
             matrix.Name,
             matrix.Status,
             matrix.TaskId,
-            matrix.AcademicContextId,
-            matrix.SemesterId,
+            matrix.Scope.Key,
+            null,
             details,
             matrix.TotalQuestions,
             matrix.TotalScore,
             AllowedActions(matrix, actor),
-            matrix.RejectComment,
-            matrix.RejectedAt,
-            matrix.RejectedByUserId,
+            string.IsNullOrEmpty(rejection?.Content) ? null : rejection.Content,
+            rejection?.CreateAt,
+            rejection?.CreateBy,
             Person(people, matrix.CreatedByUserId),
-            matrix.CreatedAt == default ? null : matrix.CreatedAt,
+            null,
             Person(people, matrix.ApprovedByUserId),
-            matrix.ApprovedAt);
+            null);
     }
 
     private static IReadOnlyList<string> AllowedActions(
@@ -217,10 +219,8 @@ public static class MatrixTaskMappingExtensions
             query.BranchId,
             query.Keyword,
             query.AcademicContextId,
-            query.AcademicYearId,
             query.SubjectId,
-            query.GradeLevelId,
-            query.SemesterId);
+            query.GradeLevelId);
     }
 
     public static MatrixTaskPage ToDto(
@@ -237,9 +237,9 @@ public static class MatrixTaskMappingExtensions
                 row.TaskType,
                 row.Description,
                 row.AcademicContextId,
-                row.SemesterId,
+                null,
                 row.MatrixId,
-                row.Name ?? "",
+                row.Name,
                 MatrixMappingExtensions.Person(people, row.CreatedByUserId)))
             .ToArray();
 
@@ -260,22 +260,24 @@ public static class MatrixTaskMappingExtensions
             cognitiveLevels);
     }
 
+    // academicContextId is the scope key of the task's matrix; matrixId only once the matrix is started.
     public static MatrixTaskResponse ToResponse(
         this WorkTask task,
+        ulong academicContextId,
         ulong? matrixId,
         IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
     {
         return new MatrixTaskResponse(
             task.Id,
             task.AssignedToUserId,
-            task.AcademicContextId ?? 0,
-            task.SemesterId,
+            academicContextId,
+            null,
             task.DueAt,
             task.Status,
             task.TaskType,
             task.Description,
             matrixId,
-            task.Name ?? "",
+            task.Name,
             MatrixMappingExtensions.Person(people, task.CreatedByUserId));
     }
 }

@@ -57,7 +57,7 @@ public sealed class MatrixImportsControllerTests
         var response = await client.PostAsync(route + "?academicContextId=10&semesterId=20&totalScore=15&name=Toan", content);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(method, service.Method);
-        Assert.Equal(new MatrixImportContext(10, 20, 15, "Toan"), service.Context);
+        Assert.Equal(new MatrixImportContext(10, 15, "Toan"), service.Context);
         Assert.Equal("matrix.xlsx", service.Name);
         Assert.Equal(new byte[] { 1, 2, 3 }, service.Content);
     }

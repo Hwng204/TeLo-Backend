@@ -23,8 +23,7 @@ public sealed class AcademicYearsControllerTests
         var service = new FakeAcademicYearService
         {
             ListResult = new AcademicYearPage(hasActiveYear
-                ? [new(9, "01-2029-2030", "2029-2030", new DateOnly(2029, 1, 11),
-                    new DateOnly(2030, 1, 11), "ACTIVE", 1, 2)]
+                ? [new(9, "2029-2030", "2029-2030", "ACTIVE", 2)]
                 : [], 1, 1, hasActiveYear ? 1 : 0)
         };
         await using var factory = new WebApplicationFactory<Program>()
@@ -54,9 +53,7 @@ public sealed class AcademicYearsControllerTests
     [Fact]
     public async Task Current_ReturnsTheActiveAcademicYearAndAllowsAnonymousAccess()
     {
-        var active = new AcademicYearListItem(
-            9, "01-2029-2030", "2029-2030", new DateOnly(2029, 1, 11),
-            new DateOnly(2030, 1, 11), "ACTIVE", 1, 2);
+        var active = new AcademicYearListItem(9, "2029-2030", "2029-2030", "ACTIVE", 2);
         var service = new FakeAcademicYearService
         {
             ListResult = new AcademicYearPage([active], 1, 1, 1)
@@ -115,10 +112,7 @@ public sealed class AcademicYearsControllerTests
                 "Conflict")
         };
         var controller = new AcademicYearsController(service);
-        var request = new CreateAcademicYearRequest(
-            "2026-2027",
-            new DateOnly(2026, 8, 15),
-            new DateOnly(2027, 5, 31));
+        var request = new CreateAcademicYearRequest("2026-2027");
 
         var result = await controller.Create(request, CancellationToken.None);
 

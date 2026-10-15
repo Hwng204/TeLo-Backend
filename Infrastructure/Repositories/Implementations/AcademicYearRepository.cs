@@ -16,10 +16,8 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
-            // The conflict read and insert share range locks, including overlapping years with different names.
             if (await context.AcademicYears.AsNoTracking().AnyAsync(
-                year => year.Name == academicYear.Name ||
-                    (year.StartDate <= academicYear.EndDate && academicYear.StartDate <= year.EndDate), cancellationToken))
+                year => year.Name == academicYear.Name, cancellationToken))
                 return AcademicYearCreateOutcome.Conflict;
 
             context.AcademicYears.Add(academicYear);
@@ -54,8 +52,7 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
 
         var totalCount = await query.CountAsync(cancellationToken);
         var items = await query
-            .OrderByDescending(year => year.StartDate)
-            .ThenByDescending(year => year.Id)
+            .OrderByDescending(year => year.Id)
             .Skip((filter.Page - 1) * filter.PageSize)
             .Take(filter.PageSize)
             .ToArrayAsync(cancellationToken);
@@ -73,13 +70,9 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
     public Task<bool> HasConflictExceptCurrentAsync(
         ulong currentYearId,
         string name,
-        DateOnly startDate,
-        DateOnly endDate,
         CancellationToken cancellationToken) =>
         context.AcademicYears.AsNoTracking().AnyAsync(
-            year => year.Id != currentYearId &&
-                    (year.Name == name ||
-                     (year.StartDate <= endDate && startDate <= year.EndDate)),
+            year => year.Id != currentYearId && year.Name == name,
             cancellationToken);
 
     public Task<bool> HasActiveYearAsync(
@@ -97,11 +90,8 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         try
         {
             context.ChangeTracker.DetectChanges();
-            var entry = context.Entry(academicYear);
-            var scheduleChanged = entry.Property(year => year.Name).IsModified ||
-                entry.Property(year => year.StartDate).IsModified || entry.Property(year => year.EndDate).IsModified;
-            if (scheduleChanged && await HasConflictExceptCurrentAsync(
-                academicYear.Id, academicYear.Name, academicYear.StartDate, academicYear.EndDate, cancellationToken))
+            if (context.Entry(academicYear).Property(year => year.Name).IsModified && await HasConflictExceptCurrentAsync(
+                academicYear.Id, academicYear.Name, cancellationToken))
                 return false;
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
@@ -126,12 +116,10 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
         try
         {
-            var currentYears = await context.AcademicYears.Include(year => year.Semesters)
+            // Single active year is enforced only by this serializable read-then-write (no DB unique key in v2).
+            var currentYears = await context.AcademicYears
                 .Where(year => year.Status == "ACTIVE" && year.Id != academicYear.Id).ToArrayAsync(cancellationToken);
             foreach (var current in currentYears) current.Close();
-            // Release the unique ACTIVE key before claiming it for the new year.
-            // Both saves remain invisible to other readers until the transaction commits.
-            await context.SaveChangesAsync(cancellationToken);
             academicYear.Activate();
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);

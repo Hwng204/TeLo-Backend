@@ -4,8 +4,8 @@ namespace Application.DTOs;
 
 public sealed record CreateMatrixTaskRequest(
     ulong AssignedToUserId,
+    // MatrixScope.Key (phân hiệu, môn, khối); semesterId in the body is ignored.
     ulong AcademicContextId,
-    ulong? SemesterId,
     DateTime? DueAt,
     string Name,
     string? Description);
@@ -14,6 +14,7 @@ public sealed record MatrixTaskResponse(
     ulong Id,
     ulong AssignedToUserId,
     ulong AcademicContextId,
+    // Always null: tasks no longer have a semester.
     ulong? SemesterId,
     DateTime? DueAt,
     string Status,
@@ -35,7 +36,7 @@ public sealed record MatrixTaskQuery(
     ulong? BranchId = null,
     string? Keyword = null,
     ulong? AcademicContextId = null,
-    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
+    // Lọc từng chiều độc lập. AcademicYearId và SemesterId bị bỏ qua: nhiệm vụ không còn năm học, học kỳ.
     ulong? AcademicYearId = null,
     ulong? SubjectId = null,
     ulong? GradeLevelId = null,
@@ -50,6 +51,7 @@ public sealed record MatrixTaskListItem(
     string TaskType,
     string? Description,
     ulong? AcademicContextId,
+    // Always null: tasks no longer have a semester.
     ulong? SemesterId,
     ulong? MatrixId,
     string Name = "",

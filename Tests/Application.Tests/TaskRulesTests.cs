@@ -22,7 +22,7 @@ public sealed class TaskRulesTests
         new("Tạo bộ đề cuối học kỳ I", 9, 3, due is null ? null : Day(due.Value), paperCount);
 
     private static CreateMatrixTaskRequest Matrix(int? due = null) =>
-        new(3, 100, null, due is null ? null : Day(due.Value), "Ma trận Toán 5", null);
+        new(3, 100, due is null ? null : Day(due.Value), "Ma trận Toán 5", null);
 
     [Fact]
     public void ValidRequestsHaveNoErrors()

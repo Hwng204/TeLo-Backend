@@ -7,6 +7,7 @@ using Application.Services.Interface;
 using Domain.Entities.Identity;
 using Domain.Entities.Organization;
 using Infrastructure.Context;
+using Infrastructure.Security;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using static Application.Common.IdentityManagementRules;
@@ -18,7 +19,7 @@ namespace Application.Services.Implement;
 /// mọi thao tác ghi chạy trong transaction Serializable, kiểm tra lại quyền admin của actor,
 /// kiểm tra security version để chống ghi đè và ghi identity_audits.
 /// </summary>
-public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> passwordHasher) : IUserService
+public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> passwordHasher, IMatrixRoleCatalog roleCatalog) : IUserService
 {
     private static Dictionary<string, string[]> InactiveBranchError() =>
         new() { ["schoolBranchId"] = ["Phân hiệu không tồn tại hoặc đã ngừng hoạt động."] };
@@ -27,9 +28,10 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
     {
         var errors = IdentityManagementValidator.Query(query, allowLockedAccount: true);
         if (errors.Count > 0) return Invalid<DirectoryPage<IdentityUserItem>>(errors);
-        var rows = db.Users.AsNoTracking();
+        // Every student has a user row (DB v2); student accounts are not managed here (risk R4).
+        var rows = db.Users.AsNoTracking().Where(u => !u.Students.Any());
         var search = query.Search?.Trim();
-        if (!string.IsNullOrEmpty(search)) rows = rows.Where(u => u.Username.Contains(search) || u.FullName.Contains(search) || u.Email.Contains(search));
+        if (!string.IsNullOrEmpty(search)) rows = rows.Where(u => u.Username.Contains(search) || u.FullName.Contains(search));
         if (!string.IsNullOrEmpty(query.Status)) rows = rows.Where(u => u.Status == query.Status);
         if (query.SchoolId.HasValue) rows = rows.Where(u => u.SchoolBranch != null && u.SchoolBranch.SchoolId == query.SchoolId);
         if (query.SchoolBranchId.HasValue) rows = rows.Where(u => u.SchoolBranchId == query.SchoolBranchId);
@@ -39,8 +41,6 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
             var role = await db.Roles.AsNoTracking().SingleOrDefaultAsync(r => r.Id == query.EligibleForRoleId, ct);
             if (role == null) return Missing<DirectoryPage<IdentityUserItem>>();
             rows = rows.Where(u => role.Status == "ACTIVE" && u.Status == "ACTIVE" && !u.UserRoles.Any(ur => ur.RoleId == role.Id));
-            if (role.SchoolId.HasValue) rows = rows.Where(u => u.SchoolBranch != null && u.SchoolBranch.SchoolId == role.SchoolId && u.SchoolBranch.Status == "ACTIVE" && u.SchoolBranch.School.Status == "ACTIVE");
-            if (role.SchoolBranchId.HasValue) rows = rows.Where(u => u.SchoolBranchId == role.SchoolBranchId);
         }
         var count = await rows.CountAsync(ct);
         var items = await rows.OrderBy(u => u.Username).ThenBy(u => u.Id).Skip((query.Page - 1) * query.PageSize).Take(query.PageSize)
@@ -52,7 +52,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
     {
         var user = await db.Users.AsNoTracking().Where(u => u.Id == id).Select(u => new
         {
-            u.Id, u.Username, u.FullName, u.Email, u.MoetIdentifier, u.Status,
+            u.Id, u.Username, u.FullName, Email = u.Teachers.Select(t => t.Email).FirstOrDefault() ?? "", u.MoetIdentifier, u.Status,
             SchoolId = u.SchoolBranch == null ? (ulong?)null : u.SchoolBranch.SchoolId,
             SchoolName = u.SchoolBranch == null ? null : u.SchoolBranch.School.Name,
             u.SchoolBranchId,
@@ -61,7 +61,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         }).SingleOrDefaultAsync(ct);
         if (user == null) return Missing<UserDetailItem>();
         var roles = await db.Roles.AsNoTracking().Where(r => r.UserRoles.Any(ur => ur.UserId == id))
-            .OrderBy(r => r.Name).Select(IdentityProjections.Role(db.NotificationTargets)).ToArrayAsync(ct);
+            .OrderBy(r => r.Name).Select(IdentityProjections.Role(SystemRoleCodes(roleCatalog))).ToArrayAsync(ct);
         return ServiceResult<UserDetailItem>.Success(new(user.Id, user.Username, user.FullName, user.Email, user.MoetIdentifier,
             user.Status, user.SchoolId, user.SchoolName, user.SchoolBranchId, user.SchoolBranchName,
             user.CreatedAt, user.IsTeacher, user.IsStudent, user.SecurityVersion, roles));
@@ -72,7 +72,6 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var errors = IdentityManagementValidator.CreateUser(request);
         if (errors.Count > 0) return Invalid<UserDetailItem>(errors);
         var username = request.Username.Trim();
-        var email = request.Email.Trim().ToLowerInvariant();
         var moet = NullIfEmpty(request.MoetIdentifier);
         var roleIds = request.RoleIds ?? [];
 
@@ -80,13 +79,12 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
         var (branchOk, branch) = await ActiveBranchAsync(request.SchoolBranchId, ct);
         if (!branchOk) return Invalid<UserDetailItem>(InactiveBranchError());
-        var duplicates = await DuplicatesAsync(null, username, email, moet, ct);
+        var duplicates = await DuplicatesAsync(null, username, moet, ct);
         if (duplicates.Count > 0) return Duplicate<UserDetailItem>(duplicates);
 
-        // Gán cả FK lẫn navigation: CanAssign/FitsScope đọc cả hai trước khi SaveChanges.
         var user = new User
         {
-            Username = username, Email = email, FullName = request.FullName.Trim(), MoetIdentifier = moet,
+            Username = username, FullName = request.FullName.Trim(), MoetIdentifier = moet,
             SchoolBranchId = branch?.Id, SchoolBranch = branch,
             Status = IdentityManagementValidator.NormalizeStatus(request.Status), CreatedAt = DateTime.UtcNow
         };
@@ -95,15 +93,13 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var roles = await db.Roles.Where(r => roleIds.Contains(r.Id)).ToArrayAsync(ct);
         if (roles.Length != roleIds.Length) return Conflict<UserDetailItem>("Một hoặc nhiều vai trò không còn tồn tại.");
         if (roles.Any(r => !CanAssign(r, user)))
-            return Conflict<UserDetailItem>("Vai trò hoặc tài khoản ngừng hoạt động, hoặc phạm vi trường/phân hiệu không phù hợp.");
+            return Conflict<UserDetailItem>("Vai trò hoặc tài khoản ngừng hoạt động.");
 
         db.Users.Add(user);
         await db.SaveChangesAsync(ct); // cần user.Id cho user_roles và audit
         foreach (var role in roles)
         {
             db.UserRoles.Add(new UserRole { RoleId = role.Id, UserId = user.Id });
-            role.UsedAt ??= DateTime.UtcNow;
-            role.Version++;
             Audit(actor, "ROLE", role.Id, "GRANT", new { UserId = user.Id, role.Code });
         }
         Audit(actor, "USER", user.Id, "CREATE", Snapshot(user));
@@ -117,7 +113,6 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var errors = IdentityManagementValidator.UpdateUser(request);
         if (errors.Count > 0) return Invalid<UserDetailItem>(errors);
         var username = request.Username.Trim();
-        var email = request.Email.Trim().ToLowerInvariant();
         var moet = NullIfEmpty(request.MoetIdentifier);
         var newPassword = string.IsNullOrWhiteSpace(request.NewPassword) ? null : request.NewPassword;
 
@@ -129,7 +124,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
             .SingleOrDefaultAsync(u => u.Id == id, ct);
         if (user == null) return Missing<UserDetailItem>();
         if (request.Version == 0 || user.SecurityVersion != request.Version) return Conflict<UserDetailItem>();
-        var duplicates = await DuplicatesAsync(id, username, email, moet, ct);
+        var duplicates = await DuplicatesAsync(id, username, moet, ct);
         if (duplicates.Count > 0) return Duplicate<UserDetailItem>(duplicates);
 
         var before = Snapshot(user);
@@ -143,15 +138,12 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
             if (!branchOk) return Invalid<UserDetailItem>(InactiveBranchError());
             user.SchoolBranchId = branch?.Id;
             user.SchoolBranch = branch;
-            if (user.UserRoles.Any(ur => !FitsScope(ur.Role, user)))
-                return Conflict<UserDetailItem>("Phân hiệu mới không phù hợp với phạm vi vai trò đang gán. Hãy thu hồi vai trò không phù hợp trước.");
         }
 
         // Chỉ tăng security_version khi thay đổi ảnh hưởng tới đăng nhập/phân quyền
         // để không buộc người dùng đăng xuất chỉ vì sửa họ tên.
-        if (branchChanged || user.Username != username || user.Email != email || newPassword != null) user.SecurityVersion++;
+        if (branchChanged || user.Username != username || newPassword != null) user.SecurityVersion++;
         user.Username = username;
-        user.Email = email;
         user.FullName = request.FullName.Trim();
         user.MoetIdentifier = moet;
         if (newPassword != null)
@@ -173,8 +165,6 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         if (user == null) return Missing<UserDetailItem>();
         if (request.Version == 0 || user.SecurityVersion != request.Version) return Conflict<UserDetailItem>();
         if (id == actor && status != "ACTIVE") return Conflict<UserDetailItem>("Không thể tự khóa/ngừng hoạt động tài khoản đang dùng.");
-        if (status == "ACTIVE" && await db.Teachers.AnyAsync(t => t.UserId == id && (t.EmploymentStatus == "RESIGNED" || t.EmploymentStatus == "INACTIVE"), ct))
-            return Conflict<UserDetailItem>("Giáo viên đã nghỉ/ngừng công tác. Cần cập nhật trạng thái công tác trước khi mở tài khoản.");
         if (user.Status != status)
         {
             Audit(actor, "USER", id, "STATUS", new { Before = user.Status, After = status });
@@ -220,8 +210,6 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
             return Conflict<bool>("Tài khoản gắn hồ sơ giáo viên/học sinh không thể xóa. Hãy ngừng hoạt động để giữ lịch sử.");
         foreach (var assignment in user.UserRoles)
         {
-            assignment.Role.UsedAt ??= DateTime.UtcNow;
-            assignment.Role.Version++;
             Audit(actor, "ROLE", assignment.RoleId, "REVOKE", new { UserId = id, assignment.Role.Code });
         }
         db.UserRoles.RemoveRange(user.UserRoles.ToArray());
@@ -245,17 +233,16 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
     private Task<bool> HasProfileAsync(ulong id, CancellationToken ct) =>
         db.Users.AnyAsync(u => u.Id == id && (u.Teachers.Any() || u.Students.Any()), ct);
 
-    private async Task<Dictionary<string, string[]>> DuplicatesAsync(ulong? id, string username, string email, string? moet, CancellationToken ct)
+    private async Task<Dictionary<string, string[]>> DuplicatesAsync(ulong? id, string username, string? moet, CancellationToken ct)
     {
         var others = db.Users.Where(u => !id.HasValue || u.Id != id.Value);
         var matches = await others
-            .Where(u => u.Username == username || u.Email == email || (moet != null && u.MoetIdentifier == moet))
-            .Select(u => new { u.Username, u.Email, u.MoetIdentifier })
+            .Where(u => u.Username == username || (moet != null && u.MoetIdentifier == moet))
+            .Select(u => new { u.Username, u.MoetIdentifier })
             .ToArrayAsync(ct);
 
         var errors = new Dictionary<string, string[]>();
         if (matches.Any(u => u.Username == username)) errors["username"] = ["Tên đăng nhập đã tồn tại."];
-        if (matches.Any(u => u.Email == email)) errors["email"] = ["Email đã được sử dụng."];
         if (moet != null && matches.Any(u => u.MoetIdentifier == moet)) errors["moetIdentifier"] = ["Mã định danh Bộ GD đã tồn tại."];
         return errors;
     }
@@ -263,7 +250,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
     private static ServiceResult<T> Duplicate<T>(IReadOnlyDictionary<string, string[]> errors) =>
         ServiceResult<T>.Failure("CONFLICT", "Dữ liệu bị trùng với tài khoản khác.", errors);
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
-    private static object Snapshot(User u) => new { u.Username, u.Email, u.FullName, u.MoetIdentifier, u.SchoolBranchId, u.Status, u.SecurityVersion };
-    private void Audit(ulong actor, string type, ulong id, string action, object data) => db.IdentityAudits.Add(new IdentityAudit
-    { ActorUserId = actor, EntityType = type, EntityId = id, Action = action, Data = JsonSerializer.Serialize(data) });
+    private static object Snapshot(User u) => new { u.Username, u.FullName, u.MoetIdentifier, u.SchoolBranchId, u.Status, u.SecurityVersion };
+    // shortcut: ERD v2 has no audit table (identity_audits), so audit entries are dropped until one is added.
+    private static void Audit(ulong actor, string type, ulong id, string action, object data) { }
 }

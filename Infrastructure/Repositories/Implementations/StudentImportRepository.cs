@@ -2,12 +2,15 @@ using Domain.Entities.Identity;
 using Domain.Entities.Organization;
 using Infrastructure.Context;
 using Infrastructure.Repositories.Interface;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 
 namespace Infrastructure.Repositories.Implement;
 
-public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentImportRepository
+public sealed class StudentImportRepository(
+    ApplicationDbContext db,
+    IPasswordHasher<User> passwordHasher) : IStudentImportRepository
 {
     private const int DuplicateKeyErrorNumber = 1062;
     private const string CodeTaken = "CODE_TAKEN";
@@ -48,7 +51,7 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
             ? await yearQuery.Where(y => y.Id == requested)
                 .Select(y => new { y.Id, y.Name }).SingleOrDefaultAsync(cancellationToken)
             : await yearQuery.Where(y => y.Status == "ACTIVE")
-                .OrderByDescending(y => y.StartDate)
+                .OrderByDescending(y => y.Id)
                 .Select(y => new { y.Id, y.Name }).FirstOrDefaultAsync(cancellationToken);
         if (year is null)
         {
@@ -63,14 +66,16 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
                 c.AcademicYearId == year.Id &&
                 c.Status == SchoolClassStatusCodes.Active)
             .OrderBy(c => c.GradeLevel.Name).ThenBy(c => c.Name).ThenBy(c => c.Id)
-            .Select(c => new ImportClassRow(c.Id, c.Code, c.Name))
+            // DB v2 classes have no code: the file's class column is matched against the name.
+            .Select(c => new ImportClassRow(c.Id, c.Name, c.Name))
             .ToListAsync(cancellationToken);
 
+        // A student code becomes the account username, so any user with that name blocks it.
         var existing = codes.Count == 0
             ? new List<string>()
-            : await db.Students.AsNoTracking()
-                .Where(s => codes.Contains(s.Code))
-                .Select(s => s.Code)
+            : await db.Users.AsNoTracking()
+                .Where(u => codes.Contains(u.Username))
+                .Select(u => u.Username)
                 .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<ImportLookup>.Ok(new ImportLookup(
@@ -251,23 +256,25 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
         var rows = await db.StudentImportRows
             .Where(r => rowIds.Contains(r.Id))
             .ToDictionaryAsync(r => r.Id, cancellationToken);
+        var classIds = students.Select(s => s.SchoolClassId).Distinct().ToArray();
+        var branchByClass = await db.SchoolClasses.AsNoTracking()
+            .Where(c => classIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.SchoolBranchId, cancellationToken);
 
         foreach (var item in students)
         {
             var student = new Student
             {
-                Code = item.Code,
-                FullName = item.FullName,
+                User = SchoolDirectoryAdminRepository.NewStudentUser(
+                    passwordHasher, item.Code, item.FullName, branchByClass[item.SchoolClassId],
+                    StudentStatusCodes.Active),
                 DateOfBirth = item.DateOfBirth,
                 Gender = item.Gender,
-                Status = StudentStatusCodes.Active,
                 Enrollments =
                 {
                     new StudentEnrollment
                     {
                         SchoolClassId = item.SchoolClassId,
-                        AcademicYearId = batch.AcademicYearId,
-                        Status = StudentEnrollmentStatusCodes.Active,
                         StartedOn = DateOnly.FromDateTime(DateTime.UtcNow)
                     }
                 }
@@ -304,9 +311,9 @@ public sealed class StudentImportRepository(ApplicationDbContext db) : IStudentI
     {
         var conflicts = new List<ImportRowConflict>();
         var codes = students.Select(s => s.Code).ToArray();
-        var taken = (await db.Students.AsNoTracking()
-                .Where(s => codes.Contains(s.Code))
-                .Select(s => s.Code)
+        var taken = (await db.Users.AsNoTracking()
+                .Where(u => codes.Contains(u.Username))
+                .Select(u => u.Username)
                 .ToListAsync(cancellationToken))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 

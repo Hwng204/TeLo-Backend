@@ -22,4 +22,16 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Khoá tạm DB v2: cấu hình + repository của bảng DB cũ chưa có trong ERD. Xem DB_V2.md mục 4. -->
+  <ItemGroup>
+    <Compile Remove="Configurations\Examination\ExamAttemptAnswerConfiguration.cs;Configurations\Examination\ExamAttemptConfiguration.cs;Configurations\Examination\ExamConfiguration.cs;Configurations\Examination\ExamProctorConfiguration.cs;Configurations\Examination\ExamRegistrationConfiguration.cs;Configurations\Examination\ExamRoomConfiguration.cs;Configurations\Examination\ExamSessionConfiguration.cs;Configurations\Examination\ExamSubjectConfiguration.cs;Configurations\Examination\ExamSubjectGradeLevelConfiguration.cs;Configurations\Examination\ProctorAssignmentConfiguration.cs;Configurations\Examination\SessionRoomConfiguration.cs;Configurations\Examination\TechnicalIncidentConfiguration.cs;Configurations\Examination\ViolationConfiguration.cs" />
+    <Compile Remove="Configurations\Notification\EmailEventConfiguration.cs;Configurations\Notification\EmailTemplateConfiguration.cs;Configurations\Notification\NotificationTargetConfiguration.cs;Configurations\Organization\ProvinceConfiguration.cs;Configurations\Organization\RoomConfiguration.cs" />
+    <!-- Thay bằng bản đúng ERD trong Configurations\Notification\V2. -->
+    <Compile Remove="Configurations\Notification\NotificationConfigConfiguration.cs;Configurations\Notification\NotificationConfiguration.cs;Configurations\Notification\NotificationRecipientConfiguration.cs" />
+    <Compile Remove="Configurations\Identity\StudentImportBatchConfiguration.cs;Configurations\Identity\StudentImportRowConfiguration.cs;Configurations\Identity\IdentityAuditConfiguration.cs;Configurations\QuestionBank\ExamVariantQuestionConfiguration.cs" />
+    <Compile Remove="Repositories\Implementations\ExamRepository.cs;Repositories\Implementations\ExamRoomRepository.cs;Repositories\Implementations\ExamSubjectRepository.cs;Repositories\Implementations\StudentImportRepository.cs;Repositories\Implementations\ProvinceRepository.cs" />
+    <Compile Remove="Repositories\Interfaces\IExamRepository.cs;Repositories\Interfaces\IExamRoomRepository.cs;Repositories\Interfaces\IExamSubjectRepository.cs;Repositories\Interfaces\IStudentImportRepository.cs;Repositories\Interfaces\IProvinceRepository.cs" />
+    <Compile Remove="External\Provinces\IProvinceProvider.cs;External\Provinces\NsoProvinceProvider.cs;Exports\StudentImportWorkbook.cs" />
+  </ItemGroup>
+
 </Project>

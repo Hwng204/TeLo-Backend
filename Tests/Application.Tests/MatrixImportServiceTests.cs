@@ -12,7 +12,8 @@ namespace Application.Tests;
 
 public sealed class MatrixImportServiceTests
 {
-    private static readonly MatrixImportContext Context = new(10, 20, 10, "Toán");
+    private const ulong ScopeKey = 100_040_050; // new MatrixScope(100, 40, 50).Key
+    private static readonly MatrixImportContext Context = new(ScopeKey, 10, "Toán");
 
     [Fact]
     public async Task Template_ContainsScopedLessonsAndThreeLevels()
@@ -20,22 +21,22 @@ public sealed class MatrixImportServiceTests
         var repository = new References();
         var file = await Service(repository).BuildTemplateAsync(Context, default);
         var sheet = MatrixImportWorkbook.Read(file.Content);
-        Assert.Equal("mau-ma-tran-10.xlsx", file.FileName);
+        Assert.Equal($"mau-ma-tran-{ScopeKey}.xlsx", file.FileName);
         Assert.Equal(11, sheet.Rows.Count);
-        Assert.All(sheet.Rows.Skip(8), row => Assert.Contains("Bài 1. Phân số — Chương I. Số", row[0]));
+        Assert.All(sheet.Rows.Skip(8), row => Assert.Equal("Bài Phân số — Chương Số", row[0]));
         Assert.Equal(new MatrixActor(1, MatrixActorRole.Pht, 100), repository.Actor);
     }
 
     [Theory]
-    [InlineData(0, 20, 10)]
-    [InlineData(11, 20, 10)]
-    [InlineData(10, 99, 10)]
-    [InlineData(10, 20, 0)]
-    public async Task InvalidContextOrSemester_IsRejected(int id, int semester, int score)
+    [InlineData(0UL, 10, "InvalidRequest")]
+    [InlineData(ScopeKey + 1, 10, "InvalidReference")]
+    [InlineData(ScopeKey, 0, "InvalidRequest")]
+    [InlineData(ScopeKey, 1000, "InvalidRequest")]
+    public async Task InvalidScopeOrScore_IsRejected(ulong key, int score, string code)
     {
         var error = await Assert.ThrowsAsync<MatrixApplicationException>(() =>
-            Service(new References()).BuildTemplateAsync(new((ulong)id, (ulong)semester, score), default));
-        Assert.Contains(error.Code, new[] { "InvalidRequest", "InvalidReference" });
+            Service(new References()).BuildTemplateAsync(new(key, score), default));
+        Assert.Equal(code, error.Code);
     }
 
     [Theory]
@@ -107,11 +108,11 @@ public sealed class MatrixImportServiceTests
             Actor = actor;
             Reads++;
             if (Forbidden) throw new MatrixDomainException("Forbidden", "Ngoài chi nhánh");
-            return Task.FromResult(new MatrixReferenceModel([new(10, "Toán 5", 30, 100, 40, 50)],
+            return Task.FromResult(new MatrixReferenceModel([new(ScopeKey, "Toán 5", 30, 100, 40, 50)],
                 [new(20, 30, "HK I", null, null)], Lessons, []));
         }
-        public Task EnsureValidAsync(ulong id, ulong? semester, IReadOnlyCollection<ulong> lessons, CancellationToken ct, ulong? branch = null) => throw new NotSupportedException();
-        public Task<MatrixExportInfo> GetExportInfoAsync(ulong id, ulong? semester, IReadOnlyCollection<ulong> lessons, CancellationToken ct) => throw new NotSupportedException();
-        public Task EnsureAssignmentValidAsync(MatrixActor actor, ulong user, ulong context, ulong? semester, CancellationToken ct) => throw new NotSupportedException();
+        public Task EnsureValidAsync(MatrixScope scope, IReadOnlyCollection<ulong> lessons, CancellationToken ct, ulong? branch = null) => throw new NotSupportedException();
+        public Task<MatrixExportInfo> GetExportInfoAsync(MatrixScope scope, IReadOnlyCollection<ulong> lessons, CancellationToken ct) => throw new NotSupportedException();
+        public Task EnsureAssignmentValidAsync(MatrixActor actor, ulong user, MatrixScope scope, CancellationToken ct) => throw new NotSupportedException();
     }
 }

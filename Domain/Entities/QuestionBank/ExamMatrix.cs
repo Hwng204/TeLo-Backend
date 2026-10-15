@@ -1,4 +1,5 @@
 using Domain.Entities.Academic;
+using Domain.Entities.Organization;
 
 namespace Domain.Entities.QuestionBank;
 
@@ -8,22 +9,23 @@ public sealed class ExamMatrix
     public string Name { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public ulong? TaskId { get; set; }
-    public ulong? SemesterId { get; set; }
-    public ulong AcademicContextId { get; set; }
-    public string? RejectComment { get; set; }
-    public ulong? RejectedByUserId { get; set; }
-    public DateTime? RejectedAt { get; set; }
-
-    // Null for matrices that predate authorship tracking and had no task to infer it from.
-    public ulong? CreatedByUserId { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public ulong? ApprovedByUserId { get; set; }
-    public DateTime? ApprovedAt { get; set; }
+    public ulong BranchId { get; set; }
+    public ulong SubjectId { get; set; }
+    public ulong GradeLevelId { get; set; }
+    public ulong CreatedByUserId { get; set; }
 
     public WorkTask? Task { get; set; }
-    public Semester? Semester { get; set; }
-    public AcademicContext AcademicContext { get; set; } = null!;
+    public SchoolBranch Branch { get; set; } = null!;
+    public Subject Subject { get; set; } = null!;
+    public GradeLevel GradeLevel { get; set; } = null!;
     public ICollection<MatrixDetail> Details { get; set; } = new List<MatrixDetail>();
+
+    public MatrixScope Scope => new(BranchId, SubjectId, GradeLevelId);
+
+    // No column: the reviewer is the task's creator (direct matrix: its author), known once approved.
+    public ulong? ApprovedByUserId => Status is MatrixStatusCodes.Approved or MatrixStatusCodes.Archived
+        ? TaskId is null ? CreatedByUserId : Task?.CreatedByUserId
+        : null;
 
     public uint TotalQuestions =>
         Details.Aggregate(0u, (total, detail) => checked(total + detail.QuestionCount));
@@ -147,14 +149,13 @@ public sealed class ExamMatrix
         EnsureRequiredTotalPercentage(Details.Sum(detail => detail.Percentage));
 
         Status = MatrixStatusCodes.Submitted;
-        ClearRejection();
     }
 
     public bool CanReview(MatrixActor actor) => actor.Role == MatrixActorRole.Pht &&
-        (TaskId is null || Task is { } task && (task.ReviewerUserId ?? task.CreatedByUserId) == actor.UserId);
+        (TaskId is null || Task is { } task && task.CreatedByUserId == actor.UserId);
 
-    // The PHT sends a submitted matrix back to the Team Lead (Draft) with an optional comment.
-    public void Reject(MatrixActor actor, string? comment, DateTime rejectedAtUtc)
+    // The PHT sends a submitted matrix back to the Team Lead (Draft); the comment goes to task_history.
+    public void Reject(MatrixActor actor)
     {
         if (!CanReview(actor))
         {
@@ -169,12 +170,9 @@ public sealed class ExamMatrix
         }
 
         Status = MatrixStatusCodes.Draft;
-        RejectComment = string.IsNullOrWhiteSpace(comment) ? null : comment.Trim();
-        RejectedByUserId = actor.UserId;
-        RejectedAt = rejectedAtUtc;
     }
 
-    public void Approve(MatrixActor actor, DateTime? approvedAtUtc = null)
+    public void Approve(MatrixActor actor)
     {
         if (!CanReview(actor))
         {
@@ -189,11 +187,9 @@ public sealed class ExamMatrix
         }
 
         Status = MatrixStatusCodes.Approved;
-        ApprovedByUserId = actor.UserId;
-        ApprovedAt = approvedAtUtc ?? DateTime.UtcNow;
     }
 
-    public void ConfirmDirect(MatrixActor actor, DateTime? approvedAtUtc = null)
+    public void ConfirmDirect(MatrixActor actor)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -210,7 +206,7 @@ public sealed class ExamMatrix
         }
 
         Submit(actor);
-        Approve(actor, approvedAtUtc);
+        Approve(actor);
     }
 
     public void Archive(MatrixActor actor)
@@ -230,7 +226,7 @@ public sealed class ExamMatrix
         Status = MatrixStatusCodes.Archived;
     }
 
-    public ExamMatrix CloneAsDraft(MatrixActor actor, DateTime? createdAtUtc = null)
+    public ExamMatrix CloneAsDraft(MatrixActor actor)
     {
         if (actor.Role != MatrixActorRole.Pht)
         {
@@ -250,12 +246,12 @@ public sealed class ExamMatrix
             Name = Name,
             Status = MatrixStatusCodes.Draft,
             TaskId = null,
-            SemesterId = SemesterId,
-            AcademicContextId = AcademicContextId,
+            BranchId = BranchId,
+            SubjectId = SubjectId,
+            GradeLevelId = GradeLevelId,
             TotalScore = TotalScore,
             // The copy is a new matrix authored by whoever made the copy, not by the original author.
-            CreatedByUserId = actor.UserId,
-            CreatedAt = createdAtUtc ?? DateTime.UtcNow
+            CreatedByUserId = actor.UserId
         };
 
         foreach (var detail in Details)
@@ -289,13 +285,6 @@ public sealed class ExamMatrix
                 "InvalidTotalScore",
                 $"Tổng tỷ lệ điểm của ma trận phải bằng {RequiredTotalPercentage:0}% (hiện là {totalPercentage:0.##}%).");
         }
-    }
-
-    private void ClearRejection()
-    {
-        RejectComment = null;
-        RejectedByUserId = null;
-        RejectedAt = null;
     }
 
     private bool IsAssignedTeamLead(MatrixActor actor)

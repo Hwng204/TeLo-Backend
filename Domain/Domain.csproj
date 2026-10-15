@@ -6,4 +6,15 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Khoá tạm DB v2: entity của DB cũ chưa có bảng trong ERD. File giữ nguyên để chủ module viết lại
+       trên bảng v2; viết xong thì xoá dòng tương ứng. Xem DB_V2.md mục 4. -->
+  <ItemGroup>
+    <Compile Remove="Entities\Examination\Exam.cs;Entities\Examination\ExamAttempt.cs;Entities\Examination\ExamAttemptAnswer.cs;Entities\Examination\ExamProctor.cs;Entities\Examination\ExamRegistration.cs;Entities\Examination\ExamRoom.cs;Entities\Examination\ExamSession.cs;Entities\Examination\ExamSubject.cs;Entities\Examination\ExamSubjectGradeLevel.cs;Entities\Examination\ProctorAssignment.cs;Entities\Examination\SessionRoom.cs;Entities\Examination\TechnicalIncident.cs;Entities\Examination\Violation.cs" />
+    <Compile Remove="Entities\Organization\Room.cs;Entities\Organization\Province.cs" />
+    <Compile Remove="Entities\Notification\EmailEvent.cs;Entities\Notification\EmailTemplate.cs;Entities\Notification\EmailTemplateVersion.cs;Entities\Notification\NotificationTarget.cs" />
+    <!-- Thay bằng bản đúng ERD trong Entities\Notification\V2. -->
+    <Compile Remove="Entities\Notification\Notification.cs;Entities\Notification\NotificationConfig.cs;Entities\Notification\NotificationRecipient.cs" />
+    <Compile Remove="Entities\Identity\StudentImportBatch.cs;Entities\Identity\StudentImportRow.cs;Entities\Identity\IdentityAudit.cs;Entities\QuestionBank\ExamVariantQuestion.cs" />
+  </ItemGroup>
+
 </Project>

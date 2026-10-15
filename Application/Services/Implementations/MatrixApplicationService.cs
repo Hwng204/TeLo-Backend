@@ -16,6 +16,9 @@ public sealed class MatrixApplicationService(
     IMatrixPeopleResolver peopleResolver,
     IEmailNotificationService emailNotifications) : IMatrixApplicationService
 {
+    // matrix.total_score is decimal(5,2).
+    internal const int MaxTotalScore = 999;
+
     public async Task<MatrixPage> ListAsync(
         MatrixListQuery query,
         CancellationToken cancellationToken)
@@ -43,11 +46,13 @@ public sealed class MatrixApplicationService(
         return await uow.ExecuteInTransactionAsync(async ct =>
         {
             var matrix = await BuildNewMatrixAsync(request, actor, ct);
-            await uow.Matrices.AddAsync(matrix, ct);
+            // A task's matrix row already exists (created with the task) and is filled in place.
+            if (matrix.Id == 0)
+                await uow.Matrices.AddAsync(matrix, ct);
             await uow.CompleteAsync(ct);
             // Tổ trưởng lưu bản nháp đầu tiên của nhiệm vụ: nhiệm vụ chuyển Đang thực hiện.
             if (matrix.TaskId is { } taskId)
-                await uow.Matrices.SetTaskStatusAsync(taskId, MatrixTaskStatusCodes.InProgress, actor.UserId, ct);
+                await uow.Matrices.SetTaskStatusAsync(taskId, MatrixTaskStatusCodes.InProgress, ct);
             return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
@@ -80,9 +85,8 @@ public sealed class MatrixApplicationService(
                     "Không thể chuyển ma trận giữa dạng trực tiếp và dạng giao nhiệm vụ.");
             }
 
-            var academicContextId = matrix.AcademicContextId;
-            var semesterId = matrix.SemesterId;
-
+            // A task matrix keeps the scope the task gave it.
+            var scope = matrix.Scope;
             if (matrix.TaskId is not null)
             {
                 var task = await uow.MatrixTasks.GetAsync(matrix.TaskId.Value, ct);
@@ -94,26 +98,23 @@ public sealed class MatrixApplicationService(
                 }
 
                 EnsureTaskAccess(task, actor);
-                academicContextId = RequireTaskContext(task);
-                semesterId = task.SemesterId;
             }
             else
             {
-                academicContextId = request.AcademicContextId;
-                semesterId = request.SemesterId;
+                scope = ParseScope(request.AcademicContextId);
             }
 
             await uow.MatrixReferences.EnsureValidAsync(
-                academicContextId,
-                semesterId,
+                scope,
                 LessonIds(request.Details),
                 ct,
                 BranchScope(actor));
 
             await EnsureUnchangedAsync(matrix, ct);
             matrix.Name = request.Name.Trim();
-            matrix.AcademicContextId = academicContextId;
-            matrix.SemesterId = semesterId;
+            matrix.BranchId = scope.BranchId;
+            matrix.SubjectId = scope.SubjectId;
+            matrix.GradeLevelId = scope.GradeLevelId;
             matrix.TotalScore = request.TotalScore;
             ReplaceDetails(matrix, request.Details, actor);
             await uow.CompleteAsync(ct);
@@ -146,11 +147,15 @@ public sealed class MatrixApplicationService(
 
             await EnsureUnchangedAsync(matrix, ct);
             var taskId = matrix.TaskId;
-            await uow.Matrices.DeleteAsync(matrix);
+            // A task's matrix row holds the task's scope: emptying it un-starts the task.
+            if (taskId is null)
+                await uow.Matrices.DeleteAsync(matrix);
+            else
+                matrix.Details.Clear();
             await uow.CompleteAsync(ct);
             // Không còn bản nháp nào: nhiệm vụ về lại Đã giao.
             if (taskId is not null)
-                await uow.Matrices.SetTaskStatusAsync(taskId.Value, MatrixTaskStatusCodes.Assigned, actor.UserId, ct);
+                await uow.Matrices.SetTaskStatusAsync(taskId.Value, MatrixTaskStatusCodes.Assigned, ct);
             return true;
         }, cancellationToken);
     }
@@ -181,9 +186,10 @@ public sealed class MatrixApplicationService(
 
         return TransitionAsync(
             matrixId,
-            (matrix, actor) => matrix.Reject(actor, comment, DateTime.UtcNow),
+            (matrix, actor) => matrix.Reject(actor),
             MatrixTaskStatusCodes.NeedsRevision,
-            cancellationToken);
+            cancellationToken,
+            historyContent: comment?.Trim() ?? string.Empty);
     }
 
     public Task<MatrixResponse> ApproveAsync(
@@ -239,7 +245,8 @@ public sealed class MatrixApplicationService(
         ulong matrixId,
         Action<ExamMatrix, MatrixActor> transition,
         string? taskStatusAfter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? historyContent = null)
     {
         var actor = currentUser.Actor;
 
@@ -268,8 +275,20 @@ public sealed class MatrixApplicationService(
                 await uow.Matrices.SetTaskStatusAsync(
                     matrix.TaskId.Value,
                     taskStatusAfter,
-                    actor.UserId,
                     ct);
+            }
+
+            // A direct matrix has no task to keep the note on, so its reject comment is not stored.
+            if (historyContent is not null && matrix.TaskId is not null)
+            {
+                uow.Matrices.AddTaskHistory(new TaskHistory
+                {
+                    TaskId = matrix.TaskId.Value,
+                    Content = historyContent,
+                    CreateBy = actor.UserId,
+                    CreateAt = DateTime.UtcNow
+                });
+                await uow.CompleteAsync(ct);
             }
 
             var eventCode = matrix.Status switch
@@ -298,8 +317,7 @@ public sealed class MatrixApplicationService(
         }
 
         var info = await uow.MatrixReferences.GetExportInfoAsync(
-            matrix.AcademicContextId,
-            matrix.SemesterId,
+            ParseScope(matrix.AcademicContextId),
             matrix.Details.Select(detail => detail.LessonId).Distinct().ToArray(),
             cancellationToken);
 
@@ -308,14 +326,18 @@ public sealed class MatrixApplicationService(
             exporter.Create(matrix.ToWorkbookModel(info)));
     }
 
-    // Names the people a matrix response shows (author, approver) with one batched lookup.
+    // Names the people a matrix response shows (author, approver) with one batched lookup; a returned
+    // task draft also shows its last rejection from task_history.
     private async Task<MatrixResponse> ToResponseAsync(
         ExamMatrix matrix,
         MatrixActor actor,
         CancellationToken cancellationToken)
     {
         var people = await peopleResolver.ResolveAsync(matrix.PeopleIds(), cancellationToken);
-        return matrix.ToResponse(actor, people);
+        var lastHistory = matrix is { Status: MatrixStatusCodes.Draft, TaskId: { } taskId }
+            ? await uow.Matrices.GetLatestTaskHistoryAsync(taskId, cancellationToken)
+            : null;
+        return matrix.ToResponse(actor, people, lastHistory);
     }
 
     private static IReadOnlyCollection<ulong> LessonIds(IEnumerable<MatrixDetailRequest> details)
@@ -360,9 +382,9 @@ public sealed class MatrixApplicationService(
                     "Chỉ PHT mới được tạo ma trận trực tiếp.");
             }
 
+            var scope = ParseScope(request.AcademicContextId);
             await uow.MatrixReferences.EnsureValidAsync(
-                request.AcademicContextId,
-                request.SemesterId,
+                scope,
                 LessonIds(request.Details),
                 cancellationToken,
                 BranchScope(actor));
@@ -372,11 +394,11 @@ public sealed class MatrixApplicationService(
                 Name = request.Name.Trim(),
                 Status = MatrixStatusCodes.Draft,
                 TaskId = null,
-                SemesterId = request.SemesterId,
-                AcademicContextId = request.AcademicContextId,
+                BranchId = scope.BranchId,
+                SubjectId = scope.SubjectId,
+                GradeLevelId = scope.GradeLevelId,
                 TotalScore = request.TotalScore,
-                CreatedByUserId = actor.UserId,
-                CreatedAt = DateTime.UtcNow
+                CreatedByUserId = actor.UserId
             };
 
             ReplaceDetails(directMatrix, request.Details, actor);
@@ -401,34 +423,27 @@ public sealed class MatrixApplicationService(
                 "Nhiệm vụ được chọn không phải nhiệm vụ ma trận.");
         }
 
-        if (await uow.Matrices.ExistsForTaskAsync(task.Id, cancellationToken))
+        var taskMatrix = await uow.MatrixTasks.GetTaskMatrixAsync(task.Id, cancellationToken)
+            ?? throw new MatrixApplicationException(
+                "TaskScopeRequired",
+                "Nhiệm vụ ma trận không có phạm vi ma trận.");
+        if (taskMatrix.Started)
         {
             throw new MatrixApplicationException(
                 "TaskAlreadyHasMatrix",
                 "Nhiệm vụ này đã có ma trận.");
         }
 
-        var taskContextId = RequireTaskContext(task);
         await uow.MatrixReferences.EnsureValidAsync(
-            taskContextId,
-            task.SemesterId,
+            taskMatrix.Scope,
             LessonIds(request.Details),
             cancellationToken,
             BranchScope(actor));
 
-        var delegatedMatrix = new ExamMatrix
-        {
-            Name = request.Name.Trim(),
-            Status = MatrixStatusCodes.Draft,
-            TaskId = task.Id,
-            Task = task,
-            SemesterId = task.SemesterId,
-            AcademicContextId = taskContextId,
-            TotalScore = request.TotalScore,
-            CreatedByUserId = actor.UserId,
-            CreatedAt = DateTime.UtcNow
-        };
-
+        var delegatedMatrix = await uow.Matrices.GetAsync(taskMatrix.Id, cancellationToken)
+            ?? throw new MatrixApplicationException("TaskNotFound", "Không tìm thấy nhiệm vụ ma trận.");
+        delegatedMatrix.Name = request.Name.Trim();
+        delegatedMatrix.TotalScore = request.TotalScore;
         ReplaceDetails(delegatedMatrix, request.Details, actor);
         return delegatedMatrix;
     }
@@ -439,7 +454,10 @@ public sealed class MatrixApplicationService(
         CancellationToken cancellationToken)
     {
         var matrix = await uow.Matrices.GetAsync(matrixId, cancellationToken);
-        if (matrix is null)
+        // An empty draft of a still-ASSIGNED task is the row created with the task: clients see it only
+        // once POST /matrices fills it.
+        if (matrix is null or
+            { Status: MatrixStatusCodes.Draft, Details.Count: 0, Task.Status: MatrixTaskStatusCodes.Assigned })
         {
             throw new MatrixApplicationException(
                 "NotFound",
@@ -448,7 +466,7 @@ public sealed class MatrixApplicationService(
 
         var branchScope = BranchScope(actor);
         if (branchScope is not null &&
-            matrix.AcademicContext?.SchoolBranchId != branchScope)
+            matrix.BranchId != branchScope)
         {
             throw new MatrixApplicationException(
                 "Forbidden",
@@ -502,16 +520,14 @@ public sealed class MatrixApplicationService(
         }
     }
 
-    private static ulong RequireTaskContext(WorkTask task)
+    // academicContextId in requests is a MatrixScope.Key.
+    internal static MatrixScope ParseScope(ulong academicContextId)
     {
-        if (task.AcademicContextId is null)
-        {
-            throw new MatrixApplicationException(
-                "TaskScopeRequired",
-                "Nhiệm vụ ma trận phải có ngữ cảnh học thuật.");
-        }
-
-        return task.AcademicContextId.Value;
+        return MatrixScope.TryParse(academicContextId, out var scope)
+            ? scope
+            : throw new MatrixApplicationException(
+                "InvalidReference",
+                "Ngữ cảnh học thuật không hợp lệ.");
     }
 
     private static void EnsureTaskAccess(WorkTask task, MatrixActor actor)
@@ -541,11 +557,11 @@ public sealed class MatrixApplicationService(
                 "Chi tiết ma trận là bắt buộc.");
         }
 
-        if (request.TotalScore <= 0)
+        if (request.TotalScore is <= 0 or > MaxTotalScore)
         {
             throw new MatrixApplicationException(
                 "InvalidRequest",
-                "Tổng điểm ma trận phải là số nguyên dương.");
+                $"Tổng điểm ma trận phải là số nguyên dương, tối đa {MaxTotalScore}.");
         }
 
         if (request.Name.Trim().Length > 255 ||

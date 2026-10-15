@@ -5,13 +5,9 @@ namespace Infrastructure.UnitOfWork;
 public interface IUnitOfWork : IDisposable
 {
     IAcademicYearRepository AcademicYears { get; }
-    IProvinceRepository Provinces { get; }
     IMatrixRepository Matrices { get; }
     IMatrixTaskRepository MatrixTasks { get; }
     IMatrixReferenceRepository MatrixReferences { get; }
-    IExamRepository Exams { get; }
-    IExamSubjectRepository ExamSubjects { get; }
-    IExamRoomRepository ExamRooms { get; }
 
     // Writes every change tracked by the repositories in one SaveChanges call.
     Task<int> CompleteAsync(CancellationToken cancellationToken = default);

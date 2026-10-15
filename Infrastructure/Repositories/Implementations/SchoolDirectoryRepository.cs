@@ -9,13 +9,14 @@ namespace Infrastructure.Repositories.Implement;
 public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchoolDirectoryRepository
 {
     private const string ActiveYear = "ACTIVE";
+    private const string ClosedYear = "CLOSED";
 
-    // HomeroomClassIds set = a teacher limited to the classes they lead (empty when they lead none).
+    // HomeroomClassIds set = a teacher limited to the classes of their teacher_assignment rows
+    // (empty when they have none).
     private sealed record ResolvedScope(ulong SchoolId, string? ProvinceCode, ulong[]? HomeroomClassIds = null);
 
     private sealed record ClassProjection(
         ulong Id,
-        string Code,
         string Name,
         ulong GradeLevelId,
         string GradeLevelName,
@@ -68,22 +69,22 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
 
         if (filter.Status is not null)
         {
-            students = students.Where(s => s.Status == filter.Status);
+            students = students.Where(s => s.User.Status == filter.Status);
         }
 
         if (filter.Search is not null)
         {
             students = students.Where(s =>
-                s.Code.Contains(filter.Search) || s.FullName.Contains(filter.Search));
+                s.User.Username.Contains(filter.Search) || s.User.FullName.Contains(filter.Search));
         }
 
         var total = await students.CountAsync(cancellationToken);
         var page = await students
-            .OrderBy(s => s.FullName).ThenBy(s => s.Id)
+            .OrderBy(s => s.User.FullName).ThenBy(s => s.Id)
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
             .Select(s => new
             {
-                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.Status
+                s.Id, Code = s.User.Username, s.User.FullName, s.DateOfBirth, s.Gender, s.User.Status
             })
             .ToListAsync(cancellationToken);
 
@@ -93,7 +94,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .Select(e => new
             {
                 e.StudentId,
-                EnrollmentId = e.Id,
+                e.StartedOn,
                 ClassId = e.SchoolClassId,
                 ClassName = e.SchoolClass.Name,
                 e.SchoolClass.GradeLevelId,
@@ -104,7 +105,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .ToListAsync(cancellationToken);
         var currentByStudent = currentRows
             .GroupBy(e => e.StudentId)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.EnrollmentId).First());
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(e => e.StartedOn).First());
 
         var items = page.Select(s =>
         {
@@ -138,7 +139,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 (homeroomIds == null || s.Enrollments.Any(e => homeroomIds.Contains(e.SchoolClassId))))
             .Select(s => new
             {
-                s.Id, s.Code, s.FullName, s.DateOfBirth, s.Gender, s.Status
+                s.Id, Code = s.User.Username, s.User.FullName, s.DateOfBirth, s.Gender, s.User.Status
             })
             .SingleOrDefaultAsync(cancellationToken);
         if (student is null)
@@ -146,35 +147,27 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             return DirectoryReadResult<StudentDetailRow>.Fail(DirectoryReadStatus.NotFound);
         }
 
-        var history = await db.StudentEnrollments.AsNoTracking()
+        // Newest first; on a same-day transfer the open row comes before the closed one.
+        var rows = await db.StudentEnrollments.AsNoTracking()
             .Where(e => e.StudentId == studentId && e.SchoolClass.SchoolBranch.SchoolId == schoolId)
-            .OrderByDescending(e => e.AcademicYear.StartDate).ThenByDescending(e => e.Id)
-            .Select(e => new
-            {
-                e.AcademicYearId,
-                AcademicYearName = e.AcademicYear.Name,
-                AcademicYearStatus = e.AcademicYear.Status,
+            .OrderByDescending(e => e.SchoolClass.AcademicYearId)
+            .ThenByDescending(e => e.StartedOn).ThenBy(e => e.EndedOn != null)
+            .Select(e => new StudentEnrollmentRow(
+                e.SchoolClass.AcademicYearId,
+                e.SchoolClass.AcademicYear.Name,
+                e.SchoolClass.AcademicYear.Status,
                 e.SchoolClass.GradeLevelId,
-                GradeLevelName = e.SchoolClass.GradeLevel.Name,
-                ClassId = e.SchoolClassId,
-                ClassName = e.SchoolClass.Name,
+                e.SchoolClass.GradeLevel.Name,
+                e.SchoolClassId,
+                e.SchoolClass.Name,
                 e.SchoolClass.SchoolBranchId,
-                SchoolBranchName = e.SchoolClass.SchoolBranch.Name,
-                e.Status
-            })
+                e.SchoolClass.SchoolBranch.Name,
+                null,
+                null,
+                e.EndedOn == null ? StudentEnrollmentStatusCodes.Active
+                    : e.SchoolClass.AcademicYear.Status == ClosedYear ? StudentEnrollmentStatusCodes.Completed
+                    : StudentEnrollmentStatusCodes.TransferredOut))
             .ToListAsync(cancellationToken);
-
-        var teachers = await LoadTeachersAsync(
-            history.Select(h => h.ClassId).Distinct().ToArray(), cancellationToken);
-        var rows = history.Select(h =>
-        {
-            var hasTeacher = teachers.TryGetValue(h.ClassId, out var teacher);
-            return new StudentEnrollmentRow(
-                h.AcademicYearId, h.AcademicYearName, h.AcademicYearStatus,
-                h.GradeLevelId, h.GradeLevelName, h.ClassId, h.ClassName,
-                h.SchoolBranchId, h.SchoolBranchName,
-                hasTeacher ? teacher.Id : null, hasTeacher ? teacher.Name : null, h.Status);
-        }).ToList();
 
         return DirectoryReadResult<StudentDetailRow>.Ok(new StudentDetailRow(
             student.Id, student.Code, student.FullName, student.DateOfBirth, student.Gender,
@@ -210,7 +203,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 e.SchoolClass.SchoolBranch.SchoolId == schoolId)
             .Select(e => new
             {
-                e.AcademicYearId,
+                e.SchoolClass.AcademicYearId,
                 e.SchoolClass.GradeLevelId,
                 e.SchoolClass.SchoolBranchId
             })
@@ -221,40 +214,33 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 DirectoryReadStatus.NotFound);
         }
 
-        var scores = db.ExamAttempts.AsNoTracking()
-            .Select(a => new
-            {
-                AttemptId = a.Id,
-                a.TotalScore,
-                a.ExamRegistration.StudentId,
-                Subject = a.ExamRegistration.ExamSubjectGradeLevel.ExamSubject,
-                a.ExamRegistration.ExamSubjectGradeLevel.GradeLevelId
-            })
-            .Where(x =>
-                x.StudentId == studentId &&
-                x.TotalScore != null &&
-                x.Subject.ResultPublishedAt != null &&
-                x.GradeLevelId == enrolled.GradeLevelId &&
-                x.Subject.Exam.SchoolBranchId == enrolled.SchoolBranchId &&
-                x.Subject.Exam.Semester.AcademicYearId == enrolled.AcademicYearId);
+        // ERD v2: one test_result per student and exam; the exam carries branch, semester, subject and grade.
+        var scores = db.TestResults.AsNoTracking()
+            .Where(r =>
+                r.StudentId == studentId &&
+                r.TotalScore != null &&
+                r.Exam.ResultPublishedAt != null &&
+                r.Exam.GradeLevelId == enrolled.GradeLevelId &&
+                r.Exam.BranchId == enrolled.SchoolBranchId &&
+                r.Exam.Semester.AcademicYearId == enrolled.AcademicYearId);
 
         var total = await scores.CountAsync(cancellationToken);
         var items = await scores
-            .OrderByDescending(x => x.Subject.Exam.StartDate)
-            .ThenBy(x => x.Subject.Subject.Name)
-            .ThenBy(x => x.AttemptId)
+            .OrderByDescending(r => r.Exam.StartDate)
+            .ThenBy(r => r.Exam.Subject.Name)
+            .ThenBy(r => r.Id)
             .Skip((page - 1) * pageSize).Take(pageSize)
-            .Select(x => new StudentScoreRow(
-                x.AttemptId,
-                x.Subject.ExamId,
-                x.Subject.Exam.Name,
-                x.Subject.Exam.SemesterId,
-                x.Subject.Exam.Semester.Name,
-                x.Subject.SubjectId,
-                x.Subject.Subject.Name,
-                x.Subject.Exam.StartDate,
-                x.TotalScore!.Value,
-                x.Subject.ResultPublishedAt!.Value))
+            .Select(r => new StudentScoreRow(
+                r.Id,
+                r.ExamId,
+                r.Exam.Name,
+                r.Exam.SemesterId,
+                r.Exam.Semester.Name,
+                r.Exam.SubjectId,
+                r.Exam.Subject.Name,
+                r.Exam.StartDate,
+                r.TotalScore!.Value,
+                r.Exam.ResultPublishedAt!.Value))
             .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<DirectoryRowsPage<StudentScoreRow>>.Ok(
@@ -305,8 +291,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
 
         if (filter.Search is not null)
         {
-            classes = classes.Where(c =>
-                c.Code.Contains(filter.Search) || c.Name.Contains(filter.Search));
+            classes = classes.Where(c => c.Name.Contains(filter.Search));
         }
 
         var total = await classes.CountAsync(cancellationToken);
@@ -315,9 +300,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
                 .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize))
             .ToListAsync(cancellationToken);
 
-        var teachers = await LoadTeachersAsync(
-            page.Select(c => c.Id).ToArray(), cancellationToken);
-        var items = page.Select(c => ToRow(c, teachers)).ToList();
+        var items = page.Select(ToRow).ToList();
 
         return DirectoryReadResult<DirectoryRowsPage<ClassDirectoryRow>>.Ok(
             new DirectoryRowsPage<ClassDirectoryRow>(items, total));
@@ -350,19 +333,21 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             return DirectoryReadResult<ClassDetailRow>.Fail(DirectoryReadStatus.NotFound);
         }
 
-        var teachers = await LoadTeachersAsync(new[] { classId }, cancellationToken);
         var roster = db.StudentEnrollments.AsNoTracking().Where(e => e.SchoolClassId == classId);
         var total = await roster.CountAsync(cancellationToken);
         var students = await roster
-            .OrderBy(e => e.Student.FullName).ThenBy(e => e.StudentId)
+            .OrderBy(e => e.Student.User.FullName).ThenBy(e => e.StudentId)
             .Skip((rosterPage - 1) * rosterPageSize).Take(rosterPageSize)
             .Select(e => new ClassStudentRow(
-                e.StudentId, e.Student.Code, e.Student.FullName, e.Student.DateOfBirth,
-                e.Student.Gender, e.SchoolClass.Name, e.Student.Status, e.Status))
+                e.StudentId, e.Student.User.Username, e.Student.User.FullName, e.Student.DateOfBirth,
+                e.Student.Gender, e.SchoolClass.Name, e.Student.User.Status,
+                e.EndedOn == null ? StudentEnrollmentStatusCodes.Active
+                    : e.SchoolClass.AcademicYear.Status == ClosedYear ? StudentEnrollmentStatusCodes.Completed
+                    : StudentEnrollmentStatusCodes.TransferredOut))
             .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<ClassDetailRow>.Ok(new ClassDetailRow(
-            ToRow(projection, teachers),
+            ToRow(projection),
             new DirectoryRowsPage<ClassStudentRow>(students, total)));
     }
 
@@ -392,7 +377,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         var enrolled = db.StudentEnrollments.AsNoTracking().Where(e =>
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
             e.SchoolClass.AcademicYearId == yearId &&
-            e.Status == StudentEnrollmentStatusCodes.Active);
+            e.EndedOn == null);
         if (scope.HomeroomClassIds is { } leadIds)
         {
             enrolled = enrolled.Where(e => leadIds.Contains(e.SchoolClassId));
@@ -413,8 +398,8 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             .ToListAsync(cancellationToken);
         var years = await db.AcademicYears.AsNoTracking()
             .Where(y => forAdmin || schoolClasses.Any(c => c.AcademicYearId == y.Id))
-            .OrderByDescending(y => y.StartDate).ThenByDescending(y => y.Id)
-            .Select(y => new DirectoryOptionRow(y.Id, y.Code, y.Name))
+            .OrderByDescending(y => y.Id)
+            .Select(y => new DirectoryOptionRow(y.Id, y.Name, y.Name))
             .ToListAsync(cancellationToken);
 
         var classes = yearId is null
@@ -424,7 +409,7 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
             : await schoolClasses
                 .Where(c => c.AcademicYearId == yearId && c.Status == SchoolClassStatusCodes.Active)
                 .OrderBy(c => c.GradeLevel.Name).ThenBy(c => c.Name).ThenBy(c => c.Id)
-                .Select(c => new DirectoryOptionRow(c.Id, c.Code, c.Name))
+                .Select(c => new DirectoryOptionRow(c.Id, c.Name, c.Name))
                 .ToListAsync(cancellationToken);
 
         return DirectoryReadResult<DirectoryReferenceRows>.Ok(
@@ -474,9 +459,11 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         ulong[]? homeroomClassIds = null;
         if (requested.HomeroomOnly)
         {
-            homeroomClassIds = await db.Teachers.AsNoTracking()
-                .Where(t => t.UserId == actorUserId && t.ClassId != null)
-                .Select(t => t.ClassId!.Value)
+            // No homeroom column in DB v2: a plain teacher sees the classes they are assigned to (R5).
+            homeroomClassIds = await db.TeacherAssignments.AsNoTracking()
+                .Where(a => a.Teacher.UserId == actorUserId)
+                .Select(a => a.ClassId)
+                .Distinct()
                 .ToArrayAsync(cancellationToken);
         }
 
@@ -489,45 +476,28 @@ public sealed class SchoolDirectoryRepository(ApplicationDbContext db) : ISchool
         CancellationToken cancellationToken) =>
         db.AcademicYears.AsNoTracking()
             .Where(y => y.Status == ActiveYear)
-            .OrderByDescending(y => y.StartDate)
+            .OrderByDescending(y => y.Id)
             .Select(y => (ulong?)y.Id)
             .FirstOrDefaultAsync(cancellationToken);
 
     // A student can hold several rows in one year once a class transfer keeps the old period, so
-    // only the ACTIVE row counts as "current". Without this a transferred student appears twice.
+    // only the open row counts as "current". Without this a transferred student appears twice.
     private IQueryable<StudentEnrollment> CurrentEnrollments(ulong schoolId) =>
         db.StudentEnrollments.AsNoTracking().Where(e =>
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
-            e.AcademicYear.Status == ActiveYear &&
-            e.Status == StudentEnrollmentStatusCodes.Active);
-
-    private async Task<Dictionary<ulong, (ulong Id, string Name)>> LoadTeachersAsync(
-        ulong[] classIds,
-        CancellationToken cancellationToken)
-    {
-        var teachers = await db.Teachers.AsNoTracking()
-            .Where(t => t.ClassId != null && classIds.Contains(t.ClassId.Value))
-            .Select(t => new { ClassId = t.ClassId!.Value, t.Id, t.User.FullName })
-            .ToListAsync(cancellationToken);
-        return teachers.ToDictionary(t => t.ClassId, t => (t.Id, t.FullName));
-    }
+            e.SchoolClass.AcademicYear.Status == ActiveYear &&
+            e.EndedOn == null);
 
     private static IQueryable<ClassProjection> Project(IQueryable<SchoolClass> classes) =>
         classes.Select(c => new ClassProjection(
-            c.Id, c.Code, c.Name, c.GradeLevelId, c.GradeLevel.Name,
+            c.Id, c.Name, c.GradeLevelId, c.GradeLevel.Name,
             c.AcademicYearId, c.AcademicYear.Name, c.SchoolBranchId, c.SchoolBranch.Name,
-            c.Enrollments.Count(e => e.Status == StudentEnrollmentStatusCodes.Active),
+            c.Enrollments.Count(e => e.EndedOn == null),
             c.Status));
 
-    private static ClassDirectoryRow ToRow(
-        ClassProjection c,
-        IReadOnlyDictionary<ulong, (ulong Id, string Name)> teachers)
-    {
-        var hasTeacher = teachers.TryGetValue(c.Id, out var teacher);
-        return new ClassDirectoryRow(
-            c.Id, c.Code, c.Name, c.GradeLevelId, c.GradeLevelName,
-            c.AcademicYearId, c.AcademicYearName, c.SchoolBranchId, c.SchoolBranchName,
-            hasTeacher ? teacher.Id : null, hasTeacher ? teacher.Name : null,
-            c.StudentCount, c.Status);
-    }
+    // Class code = name and no homeroom teacher in DB v2; the API keeps both fields.
+    private static ClassDirectoryRow ToRow(ClassProjection c) => new(
+        c.Id, c.Name, c.Name, c.GradeLevelId, c.GradeLevelName,
+        c.AcademicYearId, c.AcademicYearName, c.SchoolBranchId, c.SchoolBranchName,
+        null, null, c.StudentCount, c.Status);
 }

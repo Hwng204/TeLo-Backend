@@ -13,7 +13,6 @@ public sealed class EmailEvent
     public string TriggerKind { get; set; } = "MANUAL";
     public string Status { get; set; } = "ACTIVE";
     public string VariablesJson { get; set; } = "[]";
-    public uint Version { get; set; } = 1;
     public DateTime? UsedAt { get; set; }
     public School? School { get; set; }
 }

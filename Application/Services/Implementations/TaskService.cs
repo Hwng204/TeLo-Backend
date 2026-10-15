@@ -62,7 +62,7 @@ public sealed class TaskService(
         {
             var pattern = $"%{query.Keyword.Trim()}%";
             tasks = tasks.Where(task =>
-                (task.Name != null && EF.Functions.Like(task.Name, pattern)) ||
+                EF.Functions.Like(task.Name, pattern) ||
                 (task.Description != null && EF.Functions.Like(task.Description, pattern)));
         }
 
@@ -73,21 +73,21 @@ public sealed class TaskService(
             .Take(query.PageSize)
             .ToListAsync(cancellationToken);
         var ids = rows.Select(task => task.Id).ToArray();
-        var notStarted = await db.WorkTasks.Where(task => ids.Contains(task.Id)).Where(NotStarted())
+        var notStarted = await db.WorkTasks.Where(task => ids.Contains(task.Id)).WhereNotStarted(db)
             .Select(task => task.Id).ToListAsync(cancellationToken);
         var people = await peopleResolver.ResolveAsync(
-            rows.SelectMany(task => new ulong?[] { task.AssignedToUserId, ReviewerOf(task) }), cancellationToken);
+            rows.SelectMany(task => new ulong?[] { task.AssignedToUserId, task.CreatedByUserId }), cancellationToken);
         var today = Today;
 
         var items = rows.Select(task => new TaskListItem(
             task.Id,
             task.TaskType,
-            NameOf(task),
+            task.Name,
             task.Status,
             TaskRules.IsOverdue(task.Status, task.DueAt, today),
             task.DueAt,
             Person(people, task.AssignedToUserId, task),
-            Person(people, ReviewerOf(task), task),
+            Person(people, task.CreatedByUserId, task),
             CanEdit(actor, task),
             CanDelete(actor, task) && notStarted.Contains(task.Id))).ToArray();
         return ServiceResult<DirectoryPage<TaskListItem>>.Success(
@@ -101,7 +101,7 @@ public sealed class TaskService(
 
         var task = await db.WorkTasks.AsNoTracking().SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken);
         if (task is null) return NotFound<TaskDetail>();
-        if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId && task.ReviewerUserId != actor.UserId)
+        if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId)
             return Forbidden<TaskDetail>("Bạn không phụ trách nhiệm vụ này nên không xem được.");
 
         return ServiceResult<TaskDetail>.Success(await DetailAsync(actor, task, cancellationToken));
@@ -116,10 +116,10 @@ public sealed class TaskService(
         var teamLeads = actor.IsPht ? await PersonOptionsAsync(branchId, roleCatalog.TeamLeadRoleCodes, cancellationToken) : [];
         var matrices = actor.IsPht
             ? await db.ExamMatrices.AsNoTracking()
-                .Where(matrix => matrix.Status == MatrixStatusCodes.Approved && matrix.AcademicContext.SchoolBranchId == branchId)
+                .Where(matrix => matrix.Status == MatrixStatusCodes.Approved && matrix.BranchId == branchId)
                 .OrderBy(matrix => matrix.Name)
-                .Select(matrix => new TaskMatrixOption(matrix.Id, matrix.Name, matrix.AcademicContext.Subject.Name,
-                    matrix.AcademicContext.GradeLevel.Name, matrix.AcademicContext.AcademicYear.Name))
+                .Select(matrix => new TaskMatrixOption(matrix.Id, matrix.Name, matrix.Subject.Name,
+                    matrix.GradeLevel.Name, ""))
                 .ToListAsync(cancellationToken)
             : [];
         return ServiceResult<TaskOptions>.Success(new TaskOptions(teachers, teamLeads, matrices));
@@ -132,13 +132,13 @@ public sealed class TaskService(
         CancellationToken cancellationToken) =>
         UpdateAsync(actor, taskId, TaskTypeCodes.Matrix, async (task, branchId) =>
         {
+            // The scope lives on the task's matrix, created with the task.
+            var matrix = await db.ExamMatrices.SingleOrDefaultAsync(item => item.TaskId == task.Id, cancellationToken);
             var errors = TaskRules.MatrixTask(request, task, Today);
-            await CheckMatrixAsync(branchId, request, task, errors, cancellationToken);
-            if (errors.Count > 0) return Invalid<TaskDetail>(errors);
+            var scope = await CheckMatrixAsync(branchId, request, task, matrix?.Scope, errors, cancellationToken);
+            if (errors.Count > 0 || scope is null) return Invalid<TaskDetail>(errors);
 
-            var locked = task.AssignedToUserId != request.AssignedToUserId ||
-                task.AcademicContextId != request.AcademicContextId ||
-                task.SemesterId != request.SemesterId;
+            var locked = task.AssignedToUserId != request.AssignedToUserId || matrix?.Scope != scope;
             if (locked && await IsStartedAsync(task.Id, cancellationToken)) return StartedFailure();
 
             var notify = task.AssignedToUserId != request.AssignedToUserId || task.DueAt != request.DueAt;
@@ -146,9 +146,15 @@ public sealed class TaskService(
             task.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
             task.DueAt = request.DueAt;
             task.AssignedToUserId = request.AssignedToUserId;
-            task.AcademicContextId = request.AcademicContextId;
-            task.SemesterId = request.SemesterId;
-            if (notify) await QueueMatrixReassignmentAsync(task, actor.UserId, cancellationToken);
+            if (matrix is not null && locked)
+            {
+                matrix.BranchId = scope.Value.BranchId;
+                matrix.SubjectId = scope.Value.SubjectId;
+                matrix.GradeLevelId = scope.Value.GradeLevelId;
+                matrix.CreatedByUserId = request.AssignedToUserId;
+            }
+
+            if (notify) await QueueMatrixReassignmentAsync(task, matrix?.BranchId ?? branchId, actor.UserId, cancellationToken);
             return null;
         }, cancellationToken);
 
@@ -162,8 +168,8 @@ public sealed class TaskService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         var errors = TaskRules.ExamTask(request, null, Today);
-        var scope = await CheckExamAsync(branchId, request, null, errors, cancellationToken);
-        if (errors.Count > 0 || scope is null) return Invalid<TaskDetail>(errors);
+        await CheckExamAsync(branchId, request, null, null, errors, cancellationToken);
+        if (errors.Count > 0) return Invalid<TaskDetail>(errors);
 
         var task = new WorkTask
         {
@@ -173,13 +179,10 @@ public sealed class TaskService(
             CreatedByUserId = actor.UserId,
             AssignedToUserId = request.AssignedToUserId,
             DueAt = request.DueAt,
-            ExamMatrixId = request.ExamMatrixId,
-            AcademicContextId = scope.Value.ContextId,
-            SemesterId = scope.Value.SemesterId,
             CreatedAt = DateTime.UtcNow
         };
         db.WorkTasks.Add(task);
-        AddPapers(task, request.PaperCount);
+        AddPapers(task, request);
         await db.SaveChangesAsync(cancellationToken);
         var detail = await DetailAsync(actor, task, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -193,28 +196,31 @@ public sealed class TaskService(
         CancellationToken cancellationToken) =>
         UpdateAsync(actor, taskId, TaskTypeCodes.Exam, async (task, branchId) =>
         {
+            // Mỗi đề cần tạo là một exam_set Nháp của nhiệm vụ; ma trận nguồn nằm trên các đề đó.
+            var current = await db.ExamSets.Where(set => set.TaskId == task.Id).ToListAsync(cancellationToken);
+            var matrixId = current.Select(set => set.ExamMatrixId).FirstOrDefault();
             var errors = TaskRules.ExamTask(request, task, Today);
-            var scope = await CheckExamAsync(branchId, request, task, errors, cancellationToken);
-            if (errors.Count > 0 || scope is null) return Invalid<TaskDetail>(errors);
+            await CheckExamAsync(branchId, request, task, matrixId, errors, cancellationToken);
+            if (errors.Count > 0) return Invalid<TaskDetail>(errors);
 
-            var current = await db.ExamTaskPapers.Where(paper => paper.TaskId == task.Id).ToListAsync(cancellationToken);
             var papersChanged = current.Count != request.PaperCount;
             var locked = papersChanged ||
                 task.AssignedToUserId != request.AssignedToUserId ||
-                task.ExamMatrixId != request.ExamMatrixId;
+                matrixId != request.ExamMatrixId;
             if (locked && await IsStartedAsync(task.Id, cancellationToken)) return StartedFailure();
 
             task.Name = request.Name!.Trim();
             task.DueAt = request.DueAt;
             task.AssignedToUserId = request.AssignedToUserId;
-            task.ExamMatrixId = request.ExamMatrixId;
-            task.AcademicContextId = scope.Value.ContextId;
-            task.SemesterId = scope.Value.SemesterId;
             if (papersChanged)
             {
                 // Chưa bắt đầu nên chưa đề nào được soạn: dựng lại Đề 1 … Đề N.
-                db.ExamTaskPapers.RemoveRange(current);
-                AddPapers(task, request.PaperCount);
+                db.ExamSets.RemoveRange(current);
+                AddPapers(task, request);
+            }
+            else if (locked)
+            {
+                foreach (var set in current) set.ExamMatrixId = request.ExamMatrixId;
             }
 
             return null;
@@ -271,13 +277,11 @@ public sealed class TaskService(
 
             task.Name = request.Name!.Trim();
             task.AssignedToUserId = request.AssignedToUserId;
-            // Người kiểm duyệt là Tổ trưởng giao việc: nhiệm vụ cũ còn giáo viên kiểm duyệt thì chuyển về Tổ trưởng.
-            task.ReviewerUserId = null;
             task.DueAt = request.DueAt;
             if (lessonsChanged)
             {
                 db.QuestionTasks.RemoveRange(current);
-                // Xoá trước rồi mới thêm: bài giữ lại sẽ trùng uq_question_tasks_task_lesson nếu chung một lần lưu.
+                // Xoá trước rồi mới thêm: bài giữ lại sẽ trùng uq_question_task_task_id_lesson_id nếu chung một lần lưu.
                 await db.SaveChangesAsync(cancellationToken);
                 AddLessons(task, request.Lessons!);
             }
@@ -293,11 +297,9 @@ public sealed class TaskService(
         if (task is null) return NotFound<string>();
         if (task.CreatedByUserId != actor.UserId) return Forbidden<string>("Chỉ người giao nhiệm vụ mới được xóa.");
 
-        // Kiểm tra "chưa bắt đầu" và xoá trong cùng một câu lệnh: người thực hiện vừa tạo sản phẩm thì không xoá gì.
-        // Bài học, số câu và đề cần tạo của nhiệm vụ bị xoá theo (ON DELETE CASCADE).
-        var deleted = await db.WorkTasks.Where(item => item.Id == taskId).Where(NotStarted())
-            .ExecuteDeleteAsync(cancellationToken);
-        if (deleted > 0) return ServiceResult<string>.Success(NameOf(task));
+        // Khoá nhiệm vụ, kiểm tra "chưa bắt đầu" rồi xoá: người thực hiện vừa tạo sản phẩm thì không xoá gì.
+        // Bài học, số câu (CASCADE), ma trận và các đề Nháp rỗng của nhiệm vụ bị xoá theo.
+        if (await db.DeleteTaskIfNotStartedAsync(taskId, cancellationToken)) return ServiceResult<string>.Success(task.Name);
 
         return await db.WorkTasks.AnyAsync(item => item.Id == taskId, cancellationToken)
             ? ServiceResult<string>.Failure(TaskErrorCodes.Started, "Nhiệm vụ đã được thực hiện, không thể xóa.")
@@ -316,8 +318,7 @@ public sealed class TaskService(
         if (await BranchOfAsync(actor.UserId, cancellationToken) is not { } branchId) return BranchRequired<TaskDetail>();
 
         await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.Database.SqlQuery<ulong>($"SELECT id AS Value FROM tasks WHERE id = {taskId} FOR UPDATE")
-            .ToListAsync(cancellationToken);
+        await db.LockTaskAsync(taskId, cancellationToken);
         var task = await db.WorkTasks.SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken);
         if (task is null || task.TaskType != taskType) return NotFound<TaskDetail>();
         if (task.CreatedByUserId != actor.UserId) return Forbidden<TaskDetail>("Chỉ người giao nhiệm vụ mới được chỉnh sửa.");
@@ -327,7 +328,6 @@ public sealed class TaskService(
         if (await apply(task, branchId) is { } failure) return failure;
 
         task.UpdatedAt = DateTime.UtcNow;
-        task.UpdatedByUserId = actor.UserId;
         await db.SaveChangesAsync(cancellationToken);
         var detail = await DetailAsync(actor, task, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -337,16 +337,14 @@ public sealed class TaskService(
     private async Task<TaskDetail> DetailAsync(TaskActor actor, WorkTask task, CancellationToken cancellationToken)
     {
         var people = await peopleResolver.ResolveAsync(
-            [task.CreatedByUserId, task.AssignedToUserId, ReviewerOf(task)], cancellationToken);
+            [task.CreatedByUserId, task.AssignedToUserId], cancellationToken);
         var started = await IsStartedAsync(task.Id, cancellationToken);
-        var scope = task.AcademicContextId is { } contextId
-            ? await ScopeAsync(contextId, task.SemesterId, cancellationToken)
-            : null;
+        var scope = await ScopeAsync(task.Id, cancellationToken);
 
         return new TaskDetail(
             task.Id,
             task.TaskType,
-            NameOf(task),
+            task.Name,
             task.Description,
             task.Status,
             TaskRules.IsOverdue(task.Status, task.DueAt, Today),
@@ -357,7 +355,7 @@ public sealed class TaskService(
             // Lưu theo giờ UTC: đánh dấu để client đổi đúng sang giờ địa phương.
             DateTime.SpecifyKind(task.CreatedAt, DateTimeKind.Utc),
             Person(people, task.AssignedToUserId, task),
-            Person(people, ReviewerOf(task), task),
+            Person(people, task.CreatedByUserId, task),
             task.DueAt,
             scope,
             task.TaskType == TaskTypeCodes.Matrix ? await MatrixOfAsync(actor, task, cancellationToken) : null,
@@ -365,21 +363,17 @@ public sealed class TaskService(
             task.TaskType == TaskTypeCodes.Question ? await LessonsOfAsync(task.Id, cancellationToken) : []);
     }
 
-    private async Task<TaskScope?> ScopeAsync(ulong contextId, ulong? semesterId, CancellationToken cancellationToken)
+    // Phạm vi của nhiệm vụ ma trận là ma trận của nó; của nhiệm vụ đề là ma trận nguồn của các đề. Không còn năm học, học kỳ.
+    private async Task<TaskScope?> ScopeAsync(ulong taskId, CancellationToken cancellationToken)
     {
-        var context = await db.AcademicContexts.AsNoTracking()
-            .Where(item => item.Id == contextId)
-            .Select(item => new { Subject = item.Subject.Name, Grade = item.GradeLevel.Name, Year = item.AcademicYear.Name,
-                item.AcademicYearId, item.SubjectId, item.GradeLevelId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (context is null) return null;
-
-        var semesterName = semesterId is null
+        var matrix = await db.ExamMatrices.AsNoTracking()
+            .Where(item => item.TaskId == taskId || db.ExamSets.Any(set => set.TaskId == taskId && set.ExamMatrixId == item.Id))
+            .Select(item => new { item.BranchId, item.SubjectId, item.GradeLevelId, Subject = item.Subject.Name, Grade = item.GradeLevel.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+        return matrix is null
             ? null
-            : await db.Semesters.AsNoTracking().Where(item => item.Id == semesterId).Select(item => item.Name)
-                .SingleOrDefaultAsync(cancellationToken);
-        return new TaskScope(contextId, context.Subject, context.Grade, context.Year, semesterId, semesterName,
-            context.AcademicYearId, context.SubjectId, context.GradeLevelId);
+            : new TaskScope(new MatrixScope(matrix.BranchId, matrix.SubjectId, matrix.GradeLevelId).Key, matrix.Subject,
+                matrix.Grade, "", null, null, null, matrix.SubjectId, matrix.GradeLevelId);
     }
 
     // GB-47: ma trận nháp chỉ Tổ trưởng được giao thấy; người khác chỉ biết là đang soạn.
@@ -387,42 +381,53 @@ public sealed class TaskService(
     {
         var matrix = await db.ExamMatrices.AsNoTracking()
             .Where(item => item.TaskId == task.Id)
-            .Select(item => new { item.Id, item.Name, item.Status, item.CreatedAt, item.RejectedAt, item.RejectComment, item.ApprovedAt })
+            .Select(item => new { item.Id, item.Name, item.Status, HasDetails = item.Details.Any() })
             .SingleOrDefaultAsync(cancellationToken);
-        if (matrix is null) return null;
+        // Ma trận tạo sẵn cùng nhiệm vụ: chưa có gì thì người xem vẫn thấy "chưa bắt đầu".
+        if (matrix is null ||
+            (task.Status == MatrixTaskStatusCodes.Assigned && matrix.Status == MatrixStatusCodes.Draft && !matrix.HasDetails))
+            return null;
 
-        // Ma trận không lưu ngày sửa: lấy mốc gần nhất đã biết (tạo, bị từ chối, được duyệt).
-        var updatedAt = new[] { matrix.CreatedAt, matrix.RejectedAt ?? DateTime.MinValue, matrix.ApprovedAt ?? DateTime.MinValue }.Max();
+        // Bị trả về: lần từ chối gần nhất nằm ở task_history (nội dung rỗng = không có nhận xét).
+        var rejection = matrix.Status == MatrixStatusCodes.Draft
+            ? await db.TaskHistories.AsNoTracking()
+                .Where(history => history.TaskId == task.Id)
+                .OrderByDescending(history => history.Id)
+                .Select(history => new { history.Content, history.CreateAt })
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+        // Ma trận không lưu ngày sửa: mỗi lần lưu đầu/nộp/từ chối/duyệt đều cập nhật trạng thái nhiệm vụ.
+        var updatedAt = task.UpdatedAt ?? task.CreatedAt;
         var hidden = matrix.Status == MatrixStatusCodes.Draft && task.AssignedToUserId != actor.UserId;
         return new TaskMatrixItem(
             hidden ? null : matrix.Id,
             hidden ? null : matrix.Name,
             matrix.Status,
             DateTime.SpecifyKind(updatedAt, DateTimeKind.Utc),
-            matrix.RejectComment,
-            matrix.RejectedAt is { } rejectedAt ? DateTime.SpecifyKind(rejectedAt, DateTimeKind.Utc) : null);
+            string.IsNullOrEmpty(rejection?.Content) ? null : rejection.Content,
+            rejection is null ? null : DateTime.SpecifyKind(rejection.CreateAt, DateTimeKind.Utc));
     }
 
     private async Task<TaskExamInfo?> ExamOfAsync(WorkTask task, CancellationToken cancellationToken)
     {
-        if (task.ExamMatrixId is not { } matrixId) return null;
+        var papers = await db.ExamSets.AsNoTracking()
+            .Where(set => set.TaskId == task.Id)
+            .OrderBy(set => set.Id)
+            .Select(set => new { set.Name, set.ExamMatrixId })
+            .ToListAsync(cancellationToken);
+        if (papers.FirstOrDefault()?.ExamMatrixId is not { } matrixId) return null;
 
         var matrix = await db.ExamMatrices.AsNoTracking()
             .Where(item => item.Id == matrixId)
             .Select(item => new
             {
                 item.Name,
-                Subject = item.AcademicContext.Subject.Name,
-                Grade = item.AcademicContext.GradeLevel.Name,
-                Year = item.AcademicContext.AcademicYear.Name
+                Subject = item.Subject.Name,
+                Grade = item.GradeLevel.Name
             })
             .SingleAsync(cancellationToken);
-        var papers = await db.ExamTaskPapers.AsNoTracking()
-            .Where(paper => paper.TaskId == task.Id)
-            .OrderBy(paper => paper.SortOrder)
-            .Select(paper => new TaskPaperItem(paper.Name))
-            .ToListAsync(cancellationToken);
-        return new TaskExamInfo(matrixId, matrix.Name, matrix.Subject, matrix.Grade, matrix.Year, papers);
+        return new TaskExamInfo(matrixId, matrix.Name, matrix.Subject, matrix.Grade, "",
+            papers.Select(paper => new TaskPaperItem(paper.Name)).ToList());
     }
 
     private Task<List<TaskLessonItem>> LessonsOfAsync(ulong taskId, CancellationToken cancellationToken) =>
@@ -434,9 +439,9 @@ public sealed class TaskService(
                 lesson.Lesson.ChapterId,
                 lesson.Lesson.Chapter.GradeLevelId,
                 lesson.Lesson.Chapter.GradeLevel.Name,
-                lesson.Lesson.Chapter.Code,
+                "",
                 lesson.Lesson.Chapter.Title,
-                lesson.Lesson.Code,
+                "",
                 lesson.Lesson.Title,
                 lesson.Details.Where(detail => detail.CognitiveLevel == MatrixCognitiveLevels.Knowledge)
                     .Select(detail => (uint?)detail.QuestionCount).FirstOrDefault() ?? 0,
@@ -446,60 +451,65 @@ public sealed class TaskService(
                     .Select(detail => (uint?)detail.QuestionCount).FirstOrDefault() ?? 0,
                 lesson.Details.SelectMany(detail => detail.Questions).Count(),
                 lesson.Details.SelectMany(detail => detail.Questions)
-                    .Count(question => question.SubmittedAt != null && question.ReviewedAt == null)))
+                    .Count(question => question.Status == "SUBMITTED")))
             .ToListAsync(cancellationToken);
 
-    // Chỉ kiểm tra lại phần đổi: người nhận đã nghỉ hay năm học đã đóng thì vẫn sửa được tên, hạn, yêu cầu.
-    private async Task CheckMatrixAsync(
+    // Chỉ kiểm tra lại phần đổi: người nhận đã nghỉ thì vẫn sửa được tên, hạn, yêu cầu. Trả phạm vi
+    // (academicContextId là MatrixScope.Key), null khi không hợp lệ.
+    private async Task<MatrixScope?> CheckMatrixAsync(
         ulong branchId,
         CreateMatrixTaskRequest request,
         WorkTask current,
+        MatrixScope? currentScope,
         Dictionary<string, string[]> errors,
         CancellationToken cancellationToken)
     {
         if (request.AssignedToUserId != 0 && request.AssignedToUserId != current.AssignedToUserId &&
             !await PeopleWithRoles(branchId, roleCatalog.TeamLeadRoleCodes).AnyAsync(user => user.Id == request.AssignedToUserId, cancellationToken))
             errors.TryAdd("assignedToUserId", ["Người nhận phải là Tổ trưởng đang hoạt động thuộc cùng phân hiệu."]);
-        if (request.AcademicContextId == 0 ||
-            (request.AcademicContextId == current.AcademicContextId && request.SemesterId == current.SemesterId)) return;
-
-        var academicYearId = await db.AcademicContexts.AsNoTracking()
-            .Where(context => context.Id == request.AcademicContextId && context.SchoolBranchId == branchId)
-            .Select(context => (ulong?)context.AcademicYearId)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (academicYearId is null)
+        if (request.AcademicContextId == 0) return null;
+        if (!MatrixScope.TryParse(request.AcademicContextId, out var scope))
+        {
             errors.TryAdd("academicContextId", ["Phạm vi ma trận không thuộc phân hiệu của bạn."]);
-        else if (request.SemesterId is { } semesterId &&
-                 !await db.Semesters.AnyAsync(semester => semester.Id == semesterId && semester.AcademicYearId == academicYearId, cancellationToken))
-            errors.TryAdd("semesterId", ["Học kỳ không thuộc năm học của phạm vi ma trận."]);
+            return null;
+        }
+
+        // A scope exists through its curriculum chapters (same rule as the matrix reference data).
+        if (scope != currentScope &&
+            (scope.BranchId != branchId ||
+             !await db.Chapters.AnyAsync(chapter => chapter.SchoolBranchId == scope.BranchId &&
+                 chapter.SubjectId == scope.SubjectId && chapter.GradeLevelId == scope.GradeLevelId, cancellationToken)))
+        {
+            errors.TryAdd("academicContextId", ["Phạm vi ma trận không thuộc phân hiệu của bạn."]);
+            return null;
+        }
+
+        return scope;
     }
 
-    // GB-57: ma trận nguồn đã duyệt và cùng phân hiệu với người giao. Trả phạm vi (của ma trận) lưu kèm nhiệm vụ.
+    // GB-57: ma trận nguồn đã duyệt và cùng phân hiệu với người giao.
     // Khi sửa, ma trận giữ nguyên thì không kiểm tra lại (ma trận đã lưu trữ vẫn sửa được hạn).
-    private async Task<(ulong ContextId, ulong? SemesterId)?> CheckExamAsync(
+    private async Task CheckExamAsync(
         ulong branchId,
         SaveExamTaskRequest request,
         WorkTask? current,
+        ulong? currentMatrixId,
         Dictionary<string, string[]> errors,
         CancellationToken cancellationToken)
     {
         if (request.AssignedToUserId != 0 && request.AssignedToUserId != current?.AssignedToUserId &&
             !await PeopleWithRoles(branchId, roleCatalog.TeamLeadRoleCodes).AnyAsync(user => user.Id == request.AssignedToUserId, cancellationToken))
             errors.TryAdd("assignedToUserId", ["Người thực hiện phải là Tổ trưởng đang hoạt động thuộc cùng phân hiệu."]);
-        if (current is { AcademicContextId: { } contextId } && current.ExamMatrixId == request.ExamMatrixId)
-            return (contextId, current.SemesterId);
+        if (current is not null && currentMatrixId == request.ExamMatrixId) return;
 
         // Locking read sees the current status even after another query started a repeatable-read snapshot.
         var matrix = request.ExamMatrixId == 0 ? null : (await db.ExamMatrices
-            .FromSqlInterpolated($"SELECT * FROM exam_matrices WHERE id = {request.ExamMatrixId} FOR UPDATE")
+            .FromSqlInterpolated($"SELECT * FROM matrix WHERE matrix_id = {request.ExamMatrixId} FOR UPDATE")
             .AsNoTracking().ToListAsync(cancellationToken)).SingleOrDefault();
-        if (matrix is not null && (matrix.Status != MatrixStatusCodes.Approved ||
-                !await db.AcademicContexts.AnyAsync(item => item.Id == matrix.AcademicContextId && item.SchoolBranchId == branchId, cancellationToken)))
+        if (matrix is not null && (matrix.Status != MatrixStatusCodes.Approved || matrix.BranchId != branchId))
             matrix = null;
         if (request.ExamMatrixId != 0 && matrix is null)
             errors.TryAdd("examMatrixId", ["Ma trận phải đã được duyệt và thuộc phân hiệu của bạn."]);
-
-        return matrix is null ? null : (matrix.AcademicContextId, matrix.SemesterId);
     }
 
     // Khi sửa, chỉ kiểm tra người và bài học mới đổi: giáo viên đã nghỉ vẫn để nguyên được để sửa hạn.
@@ -524,11 +534,21 @@ public sealed class TaskService(
             errors.TryAdd("lessons", ["Bài học đã chọn không còn trong chương trình của phân hiệu."]);
     }
 
-    private void AddPapers(WorkTask task, int count)
+    // Một exam_set Nháp rỗng cho mỗi đề cần tạo; thứ tự đề = thứ tự id.
+    private const uint DefaultPaperMinutes = 40;
+
+    private void AddPapers(WorkTask task, SaveExamTaskRequest request)
     {
-        var names = TaskRules.PaperNames(count);
-        for (var index = 0; index < names.Count; index++)
-            db.ExamTaskPapers.Add(new ExamTaskPaper { Task = task, Name = names[index], SortOrder = (uint)index });
+        foreach (var name in TaskRules.PaperNames(request.PaperCount))
+            db.ExamSets.Add(new ExamSet
+            {
+                Task = task,
+                Name = name,
+                Status = ExamSetStatusCodes.Draft,
+                ExamMatrixId = request.ExamMatrixId,
+                // shortcut: the exam task request has no duration yet; the exam owner sets the real one.
+                DurationMinutes = DefaultPaperMinutes
+            });
     }
 
     private void AddLessons(WorkTask task, IEnumerable<QuestionTaskLessonRequest> lessons)
@@ -555,11 +575,12 @@ public sealed class TaskService(
     }
 
     // GB-58: báo lại nhiệm vụ cho Tổ trưởng khi đổi người nhận hoặc hạn, cùng mẫu email "Giao nhiệm vụ lập ma trận".
-    private async Task QueueMatrixReassignmentAsync(WorkTask task, ulong actorId, CancellationToken cancellationToken)
+    // branchId: the branch of the task's matrix.
+    private async Task QueueMatrixReassignmentAsync(WorkTask task, ulong branchId, ulong actorId, CancellationToken cancellationToken)
     {
-        var place = await db.AcademicContexts.AsNoTracking()
-            .Where(context => context.Id == task.AcademicContextId)
-            .Select(context => new { context.SchoolId, context.SchoolBranchId, School = context.School.Name, Branch = context.SchoolBranch.Name })
+        var place = await db.SchoolBranches.AsNoTracking()
+            .Where(branch => branch.Id == branchId)
+            .Select(branch => new { branch.SchoolId, SchoolBranchId = branch.Id, School = branch.School.Name, Branch = branch.Name })
             .SingleAsync(cancellationToken);
         var origin = configuration["NotificationEmail:FrontendOrigin"];
         var path = $"/matrix-tasks/{task.Id}";
@@ -569,7 +590,7 @@ public sealed class TaskService(
             {
                 ["schoolName"] = place.School,
                 ["branchName"] = place.Branch,
-                ["taskName"] = task.Name ?? string.Empty,
+                ["taskName"] = task.Name,
                 ["dueAt"] = task.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "Chưa đặt hạn",
                 ["actionUrl"] = Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
                     ? origin!.TrimEnd('/') + path
@@ -584,10 +605,9 @@ public sealed class TaskService(
             .Select(user => user.SchoolBranchId)
             .SingleOrDefaultAsync(cancellationToken);
 
-    // GB-54: chỉ người giao, người thực hiện và người kiểm duyệt thấy nhiệm vụ.
+    // GB-54: chỉ người giao (cũng là người kiểm duyệt) và người thực hiện thấy nhiệm vụ.
     private IQueryable<WorkTask> Involving(ulong userId) =>
-        db.WorkTasks.AsNoTracking().Where(task =>
-            task.CreatedByUserId == userId || task.AssignedToUserId == userId || task.ReviewerUserId == userId);
+        db.WorkTasks.AsNoTracking().Where(task => task.CreatedByUserId == userId || task.AssignedToUserId == userId);
 
     private IQueryable<User> PeopleWithRoles(ulong branchId, IReadOnlyCollection<string> roleCodes) =>
         db.Users.AsNoTracking().Where(user =>
@@ -604,26 +624,15 @@ public sealed class TaskService(
             .Select(user => new TaskPersonOption(user.Id, user.FullName, user.Username))
             .ToListAsync(cancellationToken);
 
-    // "Chưa bắt đầu" (GB-55, GB-56): còn Đã giao và chưa có ma trận, bộ đề hay câu hỏi nào gắn với nhiệm vụ.
-    private Expression<Func<WorkTask, bool>> NotStarted() => task =>
-        task.Status == MatrixTaskStatusCodes.Assigned &&
-        !db.ExamMatrices.Any(matrix => matrix.TaskId == task.Id) &&
-        !db.ExamSets.Any(set => set.TaskId == task.Id) &&
-        !db.Questions.Any(question => question.QuestionTaskDetail.QuestionTask.TaskId == task.Id);
-
+    // "Chưa bắt đầu" (GB-55, GB-56): TaskProgressQuery.WhereNotStarted.
     private async Task<bool> IsStartedAsync(ulong taskId, CancellationToken cancellationToken) =>
-        !await db.WorkTasks.Where(task => task.Id == taskId).AnyAsync(NotStarted(), cancellationToken);
+        !await db.WorkTasks.Where(task => task.Id == taskId).WhereNotStarted(db).AnyAsync(cancellationToken);
 
     // Cùng quy tắc với TaskRules.IsOverdue, viết cho câu truy vấn.
     private static Expression<Func<WorkTask, bool>> OverdueBefore(DateTime today) => task =>
         (task.Status == MatrixTaskStatusCodes.Assigned || task.Status == MatrixTaskStatusCodes.InProgress ||
          task.Status == MatrixTaskStatusCodes.NeedsRevision) &&
         task.DueAt != null && task.DueAt < today;
-
-    // Người giao kiểm duyệt mọi loại nhiệm vụ; reviewer_user_id chỉ còn ở dữ liệu cũ và luồng ma trận.
-    private static ulong ReviewerOf(WorkTask task) => task.ReviewerUserId ?? task.CreatedByUserId;
-
-    private static string NameOf(WorkTask task) => task.Name ?? task.Description ?? "Nhiệm vụ chưa đặt tên";
 
     private static bool CanEdit(TaskActor actor, WorkTask task) =>
         task.CreatedByUserId == actor.UserId && task.Status != MatrixTaskStatusCodes.Completed;

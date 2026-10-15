@@ -55,8 +55,7 @@ public sealed class TeacherRepository(
 
     private static IQueryable<Teacher> IncludeProfile(IQueryable<Teacher> query) => query
         .Include(x => x.User).ThenInclude(x => x.SchoolBranch)
-        .Include(x => x.User).ThenInclude(x => x.UserRoles).ThenInclude(x => x.Role)
-        .Include(x => x.MainSubject).Include(x => x.SchoolClass);
+        .Include(x => x.User).ThenInclude(x => x.UserRoles).ThenInclude(x => x.Role);
 
     public async Task<(IReadOnlyList<TeacherListRow> Items, int Total)> ListAsync(
         TeacherResolvedScope scope, TeacherFilter filter, CancellationToken ct)
@@ -65,19 +64,16 @@ public sealed class TeacherRepository(
         var query = Scoped(scope).AsNoTracking();
         if (filter.BranchId is { } branchId) query = query.Where(x => x.User.SchoolBranchId == branchId);
         if (filter.Search is { } search) query = query.Where(x =>
-            x.User.FullName.Contains(search) || (x.StaffCode != null && x.StaffCode.Contains(search)));
-        if (filter.Department is { } department) query = query.Where(x => x.Department == department);
-        if (filter.MainSubjectId is { } subject) query = query.Where(x => x.MainSubjectId == subject);
-        if (filter.EmploymentStatus is { } employment) query = query.Where(x => x.EmploymentStatus == employment);
+            x.User.FullName.Contains(search) || (x.User.MoetIdentifier != null && x.User.MoetIdentifier.Contains(search)));
+        // Employment status is derived from the account status (see TeacherListRow below).
+        if (filter.EmploymentStatus is { } employment) query = query.Where(x => (x.User.Status == "ACTIVE" ? "WORKING" : "INACTIVE") == employment);
         if (filter.AccountStatus is { } status) query = query.Where(x => x.User.Status == status);
         if (filter.Gender is { } gender) query = query.Where(x => x.Gender == gender);
         var total = await query.CountAsync(ct);
         var sorted = (filter.SortBy, filter.Descending) switch
         {
-            ("staffCode", false) => query.OrderBy(x => x.StaffCode),
-            ("staffCode", true) => query.OrderByDescending(x => x.StaffCode),
-            ("joinedOn", false) => query.OrderBy(x => x.JoinedOn),
-            ("joinedOn", true) => query.OrderByDescending(x => x.JoinedOn),
+            ("staffCode", false) => query.OrderBy(x => x.User.MoetIdentifier),
+            ("staffCode", true) => query.OrderByDescending(x => x.User.MoetIdentifier),
             ("createdAt", false) => query.OrderBy(x => x.User.CreatedAt),
             ("createdAt", true) => query.OrderByDescending(x => x.User.CreatedAt),
             (_, true) => query.OrderByDescending(x => x.User.FullName),
@@ -87,11 +83,10 @@ public sealed class TeacherRepository(
         var items = await sorted.ThenBy(x => x.Id)
             .Skip((filter.Page - 1) * filter.PageSize).Take(filter.PageSize)
             .Select(x => new TeacherListRow(
-                x.Id, x.StaffCode, x.User.FullName, x.Department,
-                x.MainSubjectId, x.MainSubject == null ? null : x.MainSubject.Name,
-                x.Gender, x.JoinedOn, x.EmploymentStatus, x.User.Status,
+                x.Id, x.User.MoetIdentifier, x.User.FullName, x.Gender,
+                x.User.Status == "ACTIVE" ? "WORKING" : "INACTIVE", x.User.Status,
                 x.User.SchoolBranch!.SchoolId, x.User.SchoolBranchId!.Value,
-                x.User.SchoolBranch.Name, x.Version)).ToArrayAsync(ct);
+                x.User.SchoolBranch.Name)).ToArrayAsync(ct);
         return (items, total);
     }
 
@@ -108,13 +103,11 @@ public sealed class TeacherRepository(
         var subjects = await db.Subjects.AsNoTracking().Where(x => x.Status == "ACTIVE")
             .OrderBy(x => x.Name).ThenBy(x => x.Id)
             .Select(x => new TeacherOptionRow(x.Id, "", x.Name, x.Status)).ToArrayAsync(ct);
-        var departments = await Scoped(scope).AsNoTracking().Where(x => x.Department != null)
-            .Select(x => x.Department!).Distinct().OrderBy(x => x).ToArrayAsync(ct);
         var branches = await db.SchoolBranches.AsNoTracking().Where(x => x.SchoolId == scope.SchoolId &&
                 (!scope.BranchId.HasValue || x.Id == scope.BranchId))
             .OrderBy(x => x.Name).ThenBy(x => x.Id)
             .Select(x => new TeacherOptionRow(x.Id, x.Code, x.Name, x.Status)).ToArrayAsync(ct);
-        return new(subjects, departments, branches);
+        return new(subjects, branches);
     }
 
     public async Task<(IReadOnlyList<TeacherOptionRow> Items, int Total)> SchoolsAsync(
@@ -142,21 +135,13 @@ public sealed class TeacherRepository(
             .Select(x => new TeacherOptionRow(x.Id, x.Code, x.Name, x.Status)).ToArrayAsync(ct), total);
     }
 
-    public async Task ValidateReferencesAsync(TeacherProfileValues profile, ulong? existingSubjectId, CancellationToken ct)
+    // Staff code is stored in the unique user.moet_identifier; teacher.email is not unique (no duplicate check).
+    public async Task ValidateUniqueAsync(ulong? userId, string? staffCode, string username, CancellationToken ct)
     {
-        if (profile.MainSubjectId is { } subject && !await db.Subjects.AnyAsync(
-                x => x.Id == subject && (x.Status == "ACTIVE" || x.Id == existingSubjectId), ct))
-            throw Error("VALIDATION_ERROR", "Môn dạy chính không tồn tại hoặc không hoạt động.");
-    }
-
-    public async Task ValidateUniqueAsync(ulong? teacherId, ulong? userId, string? staffCode, string username, string email, CancellationToken ct)
-    {
-        if (staffCode != null && await db.Teachers.AnyAsync(x => x.Id != teacherId && x.StaffCode == staffCode, ct))
+        if (staffCode != null && await db.Users.AnyAsync(x => x.Id != userId && x.MoetIdentifier == staffCode, ct))
             throw Error("STAFF_CODE_DUPLICATE", "Mã cán bộ đã tồn tại.");
         if (await db.Users.AnyAsync(x => x.Id != userId && x.Username == username, ct))
             throw Error("USERNAME_DUPLICATE", "Tên đăng nhập đã tồn tại.");
-        if (await db.Users.AnyAsync(x => x.Id != userId && x.Email == email, ct))
-            throw Error("EMAIL_DUPLICATE", "Email đăng nhập đã tồn tại.");
     }
 
     public async Task<Role> GetTeacherRoleAsync(CancellationToken ct)
@@ -191,9 +176,8 @@ public sealed class TeacherRepository(
         catch (DbUpdateException ex) when (ex.GetBaseException() is MySqlException { Number: 1062 })
         {
             var message = ex.GetBaseException().Message;
-            var code = message.Contains("uq_teachers_staff_code") ? "STAFF_CODE_DUPLICATE" :
-                message.Contains("uq_users_username") ? "USERNAME_DUPLICATE" :
-                message.Contains("uq_users_email") ? "EMAIL_DUPLICATE" : "DATA_CONFLICT";
+            var code = message.Contains("uq_user_moet_identifier") ? "STAFF_CODE_DUPLICATE" :
+                message.Contains("uq_user_username") ? "USERNAME_DUPLICATE" : "DATA_CONFLICT";
             throw Error(code, "Dữ liệu bị trùng với một bản ghi khác.");
         }
         catch (DbUpdateException ex) when (ex.GetBaseException() is MySqlException { Number: 1452 })

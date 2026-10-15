@@ -8,17 +8,16 @@ public sealed class NotificationConfigConfiguration : IEntityTypeConfiguration<N
 {
     public void Configure(EntityTypeBuilder<NotificationConfig> builder)
     {
-        builder.ToTable("notification_configs", table =>
+        builder.ToTable("notification_config", table =>
         {
             table.HasCheckConstraint("ck_notification_configs_timing", "timing IN ('IMMEDIATE', 'BEFORE_DEADLINE')");
             table.HasCheckConstraint("ck_notification_configs_recipient_scope", "recipient_scope IN ('NONE', 'ALL_SCHOOL', 'SOURCE_ACTOR', 'SOURCE_ASSIGNEE', 'SOURCE_PARTICIPANTS')");
         });
 
         builder.HasKey(entity => entity.Id);
-        builder.Property(entity => entity.Version).HasColumnName("version").HasDefaultValue(1u).IsConcurrencyToken();
         builder.Property(entity => entity.EmailTemplateVersionId).HasColumnName("email_template_version_id");
         builder.HasOne(entity => entity.EmailTemplateVersion).WithMany().HasForeignKey(entity => entity.EmailTemplateVersionId).OnDelete(DeleteBehavior.Restrict);
-        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.Id).HasColumnName("notification_config_id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(entity => entity.SchoolId).HasColumnName("school_id").HasColumnType("bigint unsigned");
         builder.Property(entity => entity.SchoolBranchId).HasColumnName("school_branch_id").HasColumnType("bigint unsigned");
         builder.Property(entity => entity.BaseConfigId).HasColumnName("base_config_id").HasColumnType("bigint unsigned");
@@ -62,9 +61,8 @@ public sealed class NotificationConfigConfiguration : IEntityTypeConfiguration<N
 
         builder.HasOne(entity => entity.SchoolBranch)
             .WithMany()
-            .HasForeignKey(entity => new { entity.SchoolBranchId, entity.SchoolId })
-            .HasPrincipalKey(branch => new { branch.Id, branch.SchoolId })
-            .HasConstraintName("fk_notification_configs_branch_school")
+            .HasForeignKey(entity => entity.SchoolBranchId)
+            .HasConstraintName("fk_notification_configs_branch")
             .OnDelete(DeleteBehavior.Restrict);
 
         // EF Core alternate keys cannot contain nullable properties. The domain column

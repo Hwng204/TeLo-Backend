@@ -28,12 +28,11 @@ public sealed class AcademicYearActivationIntegrationTests
             var previous = Year(2025);
             previous.Activate();
             var target = Year(2026);
-            var staleTarget = Year(2027);
             var invalid = Year(2028);
             invalid.Semesters.Clear();
             var raceA = Year(2029);
             var raceB = Year(2030);
-            db.AcademicYears.AddRange(previous, target, staleTarget, invalid, raceA, raceB);
+            db.AcademicYears.AddRange(previous, target, invalid, raceA, raceB);
             await db.SaveChangesAsync();
 
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -51,25 +50,9 @@ public sealed class AcademicYearActivationIntegrationTests
                 Assert.Equal("INCOMPLETE_TERMS", failure.Error?.Code);
             }
             db.ChangeTracker.Clear();
-            var ended = await db.AcademicYears.Include(year => year.Semesters).SingleAsync(year => year.Id == previous.Id);
-            Assert.Equal("CLOSED", ended.Status);
-            Assert.All(ended.Semesters, term => Assert.Equal("CLOSED", term.Status));
+            // Semesters have no status and years no version any more (D2): only the year status switches.
+            Assert.Equal("CLOSED", (await db.AcademicYears.SingleAsync(year => year.Id == previous.Id)).Status);
             Assert.Equal(target.Id, (await db.AcademicYears.SingleAsync(year => year.Status == "ACTIVE")).Id);
-
-            // Force a stale target after loading it: the second save must fail and
-            // roll back the first save that temporarily closed the active year.
-            await using (var staleContext = new ApplicationDbContext(options))
-            {
-                var repository = new AcademicYearRepository(staleContext);
-                var stale = (await repository.GetByIdWithSemestersAsync(staleTarget.Id, CancellationToken.None))!;
-                await staleContext.Database.ExecuteSqlInterpolatedAsync($"UPDATE academic_years SET version = version + 1 WHERE id = {staleTarget.Id}");
-                Assert.False(await repository.TryActivateAsync(stale, CancellationToken.None));
-            }
-            db.ChangeTracker.Clear();
-            Assert.Equal("DRAFT", (await db.AcademicYears.SingleAsync(year => year.Id == staleTarget.Id)).Status);
-            var stillActive = await db.AcademicYears.Include(year => year.Semesters).SingleAsync(year => year.Id == target.Id);
-            Assert.Equal("ACTIVE", stillActive.Status);
-            Assert.Equal("ACTIVE", stillActive.Semesters.Single(term => term.Order == 1).Status);
 
             await using var contextA = new ApplicationDbContext(options);
             await using var contextB = new ApplicationDbContext(options);
@@ -93,15 +76,10 @@ public sealed class AcademicYearActivationIntegrationTests
 
     private static AcademicYear Year(int first)
     {
-        var year = new AcademicYear
+        return new AcademicYear
         {
-            Name = $"{first}-{first + 1}", StartDate = new(first, 8, 15), EndDate = new(first + 1, 5, 31),
-            Semesters = [
-                new() { Order = 1, Name = "Học kỳ I", StartDate = new(first, 8, 15), EndDate = new(first + 1, 1, 15) },
-                new() { Order = 2, Name = "Học kỳ II", StartDate = new(first + 1, 1, 16), EndDate = new(first + 1, 5, 31) }
-            ]
+            Name = $"{first}-{first + 1}",
+            Semesters = [new() { Order = 1, Name = "Học kỳ I" }, new() { Order = 2, Name = "Học kỳ II" }]
         };
-        year.AssignCode($"AY_{first}");
-        return year;
     }
 }

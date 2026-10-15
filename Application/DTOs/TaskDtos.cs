@@ -55,6 +55,8 @@ public sealed record TaskDetail(
     public string StatusLabel => MatrixTaskStatusCodes.Label(Status);
 }
 
+// Scope of the task's matrix (exam task: the matrix of its exam sets). Tasks have no year or semester:
+// AcademicYearName is "", SemesterId, SemesterName and AcademicYearId are null.
 public sealed record TaskScope(
     ulong AcademicContextId,
     string SubjectName,

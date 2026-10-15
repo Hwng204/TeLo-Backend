@@ -3,7 +3,8 @@ namespace Infrastructure.Repositories.Interface;
 public sealed record ImportClassRow(ulong Id, string Code, string Name);
 
 // Everything the validator needs from the database, fetched in bulk: the school's live classes for
-// the target academic year and which of the file's codes already belong to a live student.
+// the target academic year (Code = class name in DB v2) and which of the file's codes are already
+// a username (a student code is its account username).
 public sealed record ImportLookup(
     ulong SchoolId,
     ulong AcademicYearId,
@@ -148,7 +149,7 @@ public interface IStudentImportRepository
         CancellationToken cancellationToken);
 
     // One transaction: claim the batch (DRAFT/SUBMITTED -> APPLIED), re-check codes and classes,
-    // insert the students with their first enrollment and stamp each row with its student.
+    // insert each student with its user and first enrollment and stamp each row with its student.
     Task<ImportApplyResult> ApplyAsync(
         ulong batchId,
         ulong reviewerUserId,

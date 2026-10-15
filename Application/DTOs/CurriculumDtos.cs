@@ -11,9 +11,10 @@ public sealed record CurriculumDto(
     IReadOnlyList<CurriculumFieldRow> Fields,
     IReadOnlyList<CurriculumChapterRow> Chapters);
 
-public sealed record SaveChapterRequest(ulong GradeLevelId, ulong FieldId, string? Code, string? Title);
+// FieldId is a subject id. A "code" sent by older clients is ignored (no storage).
+public sealed record SaveChapterRequest(ulong GradeLevelId, ulong FieldId, string? Title);
 
-public sealed record SaveLessonRequest(string? Code, string? Title);
+public sealed record SaveLessonRequest(string? Title);
 
 public sealed record CurriculumImportErrorDto(int RowNumber, string Message);
 

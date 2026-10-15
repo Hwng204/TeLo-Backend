@@ -4,9 +4,11 @@ namespace Infrastructure.Repositories.Interface;
 
 public sealed record CurriculumGradeRow(ulong Id, string Name);
 
+// A "field" is a subject (the API keeps its old name): Id = SubjectId, Name = SubjectName.
 public sealed record CurriculumFieldRow(ulong Id, string Name, ulong SubjectId, string SubjectName);
 
 // InUse: a matrix or a question task references the lesson (or, for a chapter, any of its lessons).
+// Code is always "" (no storage); SortOrder is the 1-based position by id within the parent.
 public sealed record CurriculumLessonRow(
     ulong Id,
     ulong ChapterId,
@@ -32,7 +34,7 @@ public sealed record CurriculumChapterRow(
 public enum CurriculumSaveStatus
 {
     Saved,
-    // A unique index rejected the row: another request created the same code or title meanwhile.
+    // A unique index rejected the row: another request created the same title meanwhile.
     Duplicate,
     // A foreign key blocked a delete: a matrix or task started using the row meanwhile.
     InUse
@@ -57,18 +59,16 @@ public interface ICurriculumRepository
     // Tracked. Null when missing or in another branch.
     Task<Lesson?> GetLessonAsync(ulong branchId, ulong lessonId, CancellationToken cancellationToken);
 
-    Task<(bool CodeTaken, bool TitleTaken)> FindChapterConflictAsync(
+    Task<bool> IsChapterTitleTakenAsync(
         ulong branchId,
         ulong gradeLevelId,
-        ulong fieldId,
-        string code,
+        ulong subjectId,
         string title,
         ulong? exceptChapterId,
         CancellationToken cancellationToken);
 
-    Task<(bool CodeTaken, bool TitleTaken)> FindLessonConflictAsync(
+    Task<bool> IsLessonTitleTakenAsync(
         ulong chapterId,
-        string code,
         string title,
         ulong? exceptLessonId,
         CancellationToken cancellationToken);
@@ -76,10 +76,6 @@ public interface ICurriculumRepository
     Task<bool> IsChapterInUseAsync(ulong chapterId, CancellationToken cancellationToken);
 
     Task<bool> IsLessonInUseAsync(ulong lessonId, CancellationToken cancellationToken);
-
-    Task<uint> NextChapterSortOrderAsync(ulong branchId, ulong gradeLevelId, CancellationToken cancellationToken);
-
-    Task<uint> NextLessonSortOrderAsync(ulong chapterId, CancellationToken cancellationToken);
 
     void Add(Chapter chapter);
 

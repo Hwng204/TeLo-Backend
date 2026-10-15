@@ -10,14 +10,14 @@ public enum DirectoryWriteStatus
     AcademicYearInvalid,
     GradeLevelNotFound,
     DuplicateStudentCode,
-    DuplicateClassCode,
     DuplicateClassName,
-    TeacherNotInSchool,
-    TeacherAlreadyHomeroom,
     ClassHasActiveStudents,
     StudentNotEnrolledInYear,
     UseClassTransfer,
-    InvalidEffectiveDate
+    InvalidEffectiveDate,
+
+    // The student was in that class before: (class_id, student_id) is the enrollment key.
+    AlreadyEnrolledInClass
 }
 
 public sealed record DirectoryWriteResult<T>(DirectoryWriteStatus Status, T? Value)
@@ -55,23 +55,19 @@ public sealed record TransferStudentClassCommand(
 public sealed record CreateClassCommand(
     ulong SchoolId,
     ulong SchoolBranchId,
-    string Code,
     string Name,
     ulong AcademicYearId,
     ulong GradeLevelId,
-    string Status,
-    ulong? HomeroomTeacherId);
+    string Status);
 
 public sealed record UpdateClassCommand(
     ulong SchoolId,
     ulong ClassId,
     ulong SchoolBranchId,
-    string Code,
     string Name,
     ulong AcademicYearId,
     ulong GradeLevelId,
-    string Status,
-    ulong? HomeroomTeacherId);
+    string Status);
 
 // Write side of the directory, only reachable from admin routes that name the school explicitly.
 // Every command re-validates that each referenced row belongs to that school.
@@ -86,7 +82,7 @@ public interface ISchoolDirectoryAdminRepository
         CancellationToken cancellationToken);
 
     // Closes the student's live enrollment of the target class's year and opens a new one, so the
-    // earlier class stays in the history instead of being overwritten.
+    // earlier class stays in the history instead of being overwritten. Moves the account's branch too.
     Task<DirectoryWriteResult<ulong>> TransferStudentClassAsync(
         TransferStudentClassCommand command,
         CancellationToken cancellationToken);

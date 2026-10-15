@@ -12,11 +12,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddMemoryCache();
 builder.Services.AddControllers();
-// Student import is the only upload endpoint and its actions cap the request at
-// StudentImportControllerBase.UploadRequestLimit (an oversize body is rejected before the service
-// runs; MVC reports it as 400 "Request body too large" because the form is read while binding).
-// This global ceiling sits above that cap but far below the 128 MB framework default, in case an
-// upload is ever added elsewhere without its own cap.
+// Global upload ceiling, far below the 128 MB framework default; upload endpoints set their own smaller cap.
 builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 8 * 1024 * 1024);
 builder.Services.Configure<ApiBehaviorOptions>(options =>
@@ -61,7 +57,6 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddApplication();
-builder.Services.AddHostedService<WebAPI.EmailDeliveryWorker>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();

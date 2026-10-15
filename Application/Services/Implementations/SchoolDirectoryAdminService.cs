@@ -88,7 +88,7 @@ public sealed class SchoolDirectoryAdminService(
         CreateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = SchoolDirectoryValidator.ValidateCreateClass(request, out var name, out var code, out var status);
+        var errors = SchoolDirectoryValidator.ValidateCreateClass(request, out var name, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -96,8 +96,8 @@ public sealed class SchoolDirectoryAdminService(
 
         var created = await repository.CreateClassAsync(
             new CreateClassCommand(
-                schoolId, request.SchoolBranchId, code, name, request.AcademicYearId,
-                request.GradeLevelId, status, NullableId(request.HomeroomTeacherId)),
+                schoolId, request.SchoolBranchId, name, request.AcademicYearId,
+                request.GradeLevelId, status),
             cancellationToken);
         return await ClassResultAsync(schoolId, created, cancellationToken);
     }
@@ -108,7 +108,7 @@ public sealed class SchoolDirectoryAdminService(
         UpdateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = SchoolDirectoryValidator.ValidateUpdateClass(request, out var name, out var code, out var status);
+        var errors = SchoolDirectoryValidator.ValidateUpdateClass(request, out var name, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -116,8 +116,8 @@ public sealed class SchoolDirectoryAdminService(
 
         var updated = await repository.UpdateClassAsync(
             new UpdateClassCommand(
-                schoolId, classId, request.SchoolBranchId, code, name, request.AcademicYearId,
-                request.GradeLevelId, status, NullableId(request.HomeroomTeacherId)),
+                schoolId, classId, request.SchoolBranchId, name, request.AcademicYearId,
+                request.GradeLevelId, status),
             cancellationToken);
         return await ClassResultAsync(schoolId, updated, cancellationToken);
     }
@@ -157,10 +157,6 @@ public sealed class SchoolDirectoryAdminService(
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-
-
-    private static ulong? NullableId(ulong? value) => value is 0 or null ? null : value;
-
     private static ServiceResult<T> Invalid<T>(Dictionary<string, string[]> errors) =>
         ServiceResult<T>.Failure(
             SchoolDirectoryErrorCodes.Validation, "Dữ liệu gửi lên không hợp lệ.", errors);
@@ -175,16 +171,8 @@ public sealed class SchoolDirectoryAdminService(
             SchoolDirectoryErrorCodes.ClassNotFound, "Không tìm thấy lớp học."),
         DirectoryWriteStatus.DuplicateStudentCode => ServiceResult<T>.Failure(
             SchoolDirectoryErrorCodes.StudentCodeDuplicate, "Mã học sinh đã tồn tại."),
-        DirectoryWriteStatus.DuplicateClassCode => ServiceResult<T>.Failure(
-            SchoolDirectoryErrorCodes.ClassCodeDuplicate,
-            "Mã lớp đã tồn tại trong cơ sở và năm học này."),
         DirectoryWriteStatus.DuplicateClassName => Field<T>(
             "name", "Tên lớp đã tồn tại trong cơ sở và năm học này."),
-        DirectoryWriteStatus.TeacherNotInSchool => Field<T>(
-            "homeroomTeacherId", "Giáo viên không thuộc trường này."),
-        DirectoryWriteStatus.TeacherAlreadyHomeroom => ServiceResult<T>.Failure(
-            SchoolDirectoryErrorCodes.TeacherAlreadyHomeroom,
-            "Giáo viên đang chủ nhiệm một lớp khác."),
         DirectoryWriteStatus.ClassHasActiveStudents => ServiceResult<T>.Failure(
             SchoolDirectoryErrorCodes.ClassHasActiveStudents,
             "Lớp còn học sinh đang theo học. Vui lòng chuyển lớp cho học sinh trước."),
@@ -201,6 +189,9 @@ public sealed class SchoolDirectoryAdminService(
         DirectoryWriteStatus.InvalidEffectiveDate => Field<T>(
             "effectiveOn", "Ngày chuyển không được trước ngày bắt đầu học lớp hiện tại."),
         DirectoryWriteStatus.GradeLevelNotFound => Field<T>("gradeLevelId", "Khối lớp không tồn tại."),
+        DirectoryWriteStatus.AlreadyEnrolledInClass => ServiceResult<T>.Failure(
+            SchoolDirectoryErrorCodes.StudentAlreadyEnrolledInClass,
+            "Học sinh đã từng học lớp này nên không thể xếp lại vào lớp này."),
         // An unmapped status must not fall into some other field's message again.
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
     };

@@ -1,19 +1,16 @@
 namespace Application.DTOs;
 
+// Legacy request fields (startDate, endDate, version, terms[].startDate/endDate) are no longer stored;
+// System.Text.Json ignores them when clients still send them.
 public sealed record CreateAcademicYearRequest(
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate,
     IReadOnlyList<ConfigureTermItem>? Terms = null);
 
 public sealed record AcademicYearListItem(
     ulong Id,
     string Code,
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate,
     string Status,
-    uint Version,
     int SemesterCount);
 
 public sealed record AcademicYearPage(
@@ -34,35 +31,22 @@ public sealed record AcademicYearListQuery(
 public sealed record SemesterDto(
     ulong Id,
     byte Order,
-    string Name,
-    DateOnly? StartDate,
-    DateOnly? EndDate,
-    string Status,
-    uint Version);
+    string Name);
 
 public sealed record AcademicYearDetailDto(
     ulong Id,
     string Code,
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate,
     string Status,
-    uint Version,
     IReadOnlyList<SemesterDto> Semesters);
 
 public sealed record UpdateAcademicYearRequest(
     string Name,
-    DateOnly StartDate,
-    DateOnly EndDate,
-    uint? Version = null,
     IReadOnlyList<ConfigureTermItem>? Terms = null);
 
 public sealed record ConfigureTermItem(
     byte Order,
-    string Name,
-    DateOnly? StartDate,
-    DateOnly? EndDate);
+    string Name);
 
 public sealed record ConfigureTermsRequest(
-    IReadOnlyList<ConfigureTermItem> Terms,
-    uint? Version = null);
+    IReadOnlyList<ConfigureTermItem> Terms);

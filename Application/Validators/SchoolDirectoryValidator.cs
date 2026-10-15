@@ -38,11 +38,11 @@ public static class SchoolDirectoryValidator
         return errors;
     }
 
-    public static Dictionary<string, string[]> ValidateCreateClass(CreateClassRequest request, out string name, out string code, out string status)
+    // Class code and homeroom teacher are accepted and ignored (DB v2 has neither), so not validated.
+    public static Dictionary<string, string[]> ValidateCreateClass(CreateClassRequest request, out string name, out string status)
     {
         var errors = new Dictionary<string, string[]>();
         name = Required(request.Name, "name", 100, errors);
-        code = OptionalCode(request.Code, name, errors);
         status = Status(request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
         RequireId(request.AcademicYearId, "academicYearId", errors);
@@ -50,27 +50,15 @@ public static class SchoolDirectoryValidator
         return errors;
     }
 
-    public static Dictionary<string, string[]> ValidateUpdateClass(UpdateClassRequest request, out string name, out string code, out string status)
+    public static Dictionary<string, string[]> ValidateUpdateClass(UpdateClassRequest request, out string name, out string status)
     {
         var errors = new Dictionary<string, string[]>();
         name = Required(request.Name, "name", 100, errors);
-        code = OptionalCode(request.Code, string.Empty, errors);
         status = Status(request.Status, SchoolClassStatusCodes.All, SchoolClassStatusCodes.Active, errors);
         RequireId(request.SchoolBranchId, "schoolBranchId", errors);
         RequireId(request.AcademicYearId, "academicYearId", errors);
         RequireId(request.GradeLevelId, "gradeLevelId", errors);
         return errors;
-    }
-
-    public static string OptionalCode(string? value, string fallback, Dictionary<string, string[]> errors)
-    {
-        var trimmed = value?.Trim() ?? string.Empty;
-        if (trimmed.Length > 64)
-        {
-            errors["code"] = ["Giá trị tối đa 64 ký tự."];
-        }
-
-        return trimmed.Length == 0 ? fallback : trimmed;
     }
 
     public static string Required(

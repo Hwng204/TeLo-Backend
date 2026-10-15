@@ -51,11 +51,11 @@ public sealed class MatrixTaskApplicationService(
                 "Chỉ PHT mới được giao nhiệm vụ ma trận.");
         }
 
+        var scope = MatrixApplicationService.ParseScope(request.AcademicContextId);
         await uow.MatrixReferences.EnsureAssignmentValidAsync(
             actor,
             request.AssignedToUserId,
-            request.AcademicContextId,
-            request.SemesterId,
+            scope,
             cancellationToken);
 
         return await uow.ExecuteInTransactionAsync(async ct =>
@@ -71,15 +71,25 @@ public sealed class MatrixTaskApplicationService(
                     ? null
                     : request.Description.Trim(),
                 TaskType = "MATRIX",
-                AcademicContextId = request.AcademicContextId,
-                SemesterId = request.SemesterId,
                 CreatedAt = DateTime.UtcNow
             };
 
+            // The task's scope lives on its matrix: an empty DRAFT the team lead fills (POST /matrices).
             await uow.MatrixTasks.AddAsync(task, ct);
+            await uow.Matrices.AddAsync(new ExamMatrix
+            {
+                Task = task,
+                Name = task.Name,
+                Status = MatrixStatusCodes.Draft,
+                BranchId = scope.BranchId,
+                SubjectId = scope.SubjectId,
+                GradeLevelId = scope.GradeLevelId,
+                CreatedByUserId = task.AssignedToUserId,
+                TotalScore = 10
+            }, ct);
             await uow.CompleteAsync(ct);
             await emailNotifications.QueueMatrixAssignmentAsync(task.Id, actor.UserId, ct);
-            return task.ToResponse(null, await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, ct));
+            return task.ToResponse(scope.Key, null, await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, ct));
         }, cancellationToken);
     }
 
@@ -142,23 +152,23 @@ public sealed class MatrixTaskApplicationService(
             throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
         }
 
-        if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId && task.ReviewerUserId != actor.UserId)
+        if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId)
         {
             throw new MatrixApplicationException(
                 "Forbidden",
                 "Bạn không phụ trách nhiệm vụ này nên không xem được.");
         }
 
-        await EnsureSameBranchAsync(actor, task, cancellationToken);
+        var matrix = await uow.MatrixTasks.GetTaskMatrixAsync(taskId, cancellationToken);
+        EnsureSameBranch(actor, matrix);
 
-        var matrixId = await uow.MatrixTasks.GetLinkedMatrixIdAsync(taskId, cancellationToken);
         var people = await peopleResolver.ResolveAsync(new ulong?[] { task.CreatedByUserId }, cancellationToken);
-        return task.ToResponse(matrixId, people);
+        return task.ToResponse(matrix?.Scope.Key ?? 0, matrix is { Started: true } ? matrix.Id : null, people);
     }
 
     /// <summary>
-    /// PHT xoá nhiệm vụ đã giao khi Tổ trưởng chưa bắt đầu. "Đã bắt đầu" = đã có ma trận
-    /// (Tổ trưởng đã Lưu nháp hoặc đã nộp); lúc đó nhiệm vụ không xoá được nữa.
+    /// PHT xoá nhiệm vụ đã giao khi Tổ trưởng chưa bắt đầu. "Đã bắt đầu" = Tổ trưởng đã Lưu nháp
+    /// ma trận (có dòng chi tiết) hoặc đã nộp; lúc đó nhiệm vụ không xoá được nữa.
     /// </summary>
     public async Task DeleteAsync(
         ulong taskId,
@@ -176,7 +186,7 @@ public sealed class MatrixTaskApplicationService(
             ?? throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
         if (task.CreatedByUserId != actor.UserId)
             throw new MatrixApplicationException("Forbidden", "Chỉ người giao nhiệm vụ mới được xóa.");
-        await EnsureSameBranchAsync(actor, task, cancellationToken);
+        EnsureSameBranch(actor, await uow.MatrixTasks.GetTaskMatrixAsync(taskId, cancellationToken));
 
         if (!await uow.MatrixTasks.DeleteIfNotStartedAsync(taskId, cancellationToken))
         {
@@ -188,15 +198,11 @@ public sealed class MatrixTaskApplicationService(
         }
     }
 
-    private async Task EnsureSameBranchAsync(
-        MatrixActor actor,
-        WorkTask task,
-        CancellationToken cancellationToken)
+    // The task's branch is its matrix's branch.
+    private static void EnsureSameBranch(MatrixActor actor, Infrastructure.Models.TaskMatrixRow? matrix)
     {
         var branchScope = MatrixApplicationService.BranchScope(actor);
-        if (branchScope is not null &&
-            (task.AcademicContextId is null ||
-             await uow.MatrixTasks.GetContextBranchIdAsync(task.AcademicContextId.Value, cancellationToken) != branchScope))
+        if (branchScope is not null && matrix?.Scope.BranchId != branchScope)
         {
             throw new MatrixApplicationException(
                 "Forbidden",

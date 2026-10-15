@@ -89,6 +89,10 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         try
         {
+            var originalName = context.Entry(academicYear).Property(year => year.Name).OriginalValue;
+            var originalStatus = context.Entry(academicYear).Property(year => year.Status).OriginalValue;
+            var current = await context.Database.SqlQuery<YearState>($"SELECT name AS Name, status AS Status FROM academic_year WHERE academic_year_id = {academicYear.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+            if (current is null || current.Name != originalName || current.Status != originalStatus) return false;
             context.ChangeTracker.DetectChanges();
             if (context.Entry(academicYear).Property(year => year.Name).IsModified && await HasConflictExceptCurrentAsync(
                 academicYear.Id, academicYear.Name, cancellationToken))
@@ -107,6 +111,8 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         }
     }
 
+    private sealed class YearState { public string Name { get; set; } = ""; public string Status { get; set; } = ""; }
+
     private static bool IsWriteConflict(Exception exception) =>
         exception.GetBaseException() is MySqlException { Number: 1062 or 1213 or 1205 };
 
@@ -121,6 +127,8 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
             await context.Database.SqlQueryRaw<ulong>(
                 "SELECT academic_year_id AS Value FROM academic_year ORDER BY academic_year_id LIMIT 1 FOR UPDATE")
                 .ToListAsync(cancellationToken);
+            await context.Entry(academicYear).ReloadAsync(cancellationToken);
+            if (academicYear.Status != "DRAFT") return false;
             var currentYears = await context.AcademicYears.FromSqlInterpolated(
                 $"SELECT * FROM academic_year WHERE status = {"ACTIVE"} AND academic_year_id <> {academicYear.Id} FOR UPDATE")
                 .ToArrayAsync(cancellationToken);

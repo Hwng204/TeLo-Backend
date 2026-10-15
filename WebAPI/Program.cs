@@ -57,6 +57,10 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 builder.Services.AddApplication();
+// Explicit opt-in: the reconciler writes bank_type and task history.
+// Keep disabled while shared DB writes have not been authorized.
+if (builder.Configuration.GetValue<bool>("QuestionPractice:Enabled"))
+    builder.Services.AddHostedService<WebAPI.QuestionPracticeWorker>();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddMatrixIdentity();

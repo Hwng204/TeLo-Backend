@@ -12,26 +12,34 @@ public sealed class IdentityListQuery
     public int PageSize { get; set; } = 20;
 }
 
-// Roles are global: description, schoolId, schoolBranchId and version in the JSON body are ignored.
+// Roles are global: description, schoolId, schoolBranchId in the JSON body are ignored. Version is an optional response fingerprint.
 public sealed class SaveRoleRequest
 {
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
+    public uint? Version { get; set; }
 }
 public sealed class SaveModuleRequest
 {
     public string Code { get; set; } = "";
     public string Name { get; set; } = "";
     public string? Description { get; set; }
+    public uint? Version { get; set; }
 }
-// Version is the user's security_version (users only); role and module status ignore it.
+// Users use security_version; roles/modules use response fingerprints.
 public sealed record IdentityStatusRequest(string Status, uint Version);
-public sealed record AssignRoleUsersRequest(ulong[] UserIds);
+public sealed record AssignRoleUsersRequest(ulong[] UserIds, uint? Version = null);
 public sealed record AssignUserRolesRequest(ulong[] RoleIds, uint Version);
 public sealed record RoleItem(ulong Id, string Code, string Name, string Status,
-    bool IsSystem, int UserCount, bool CanDelete, string? DeleteBlockedReason = null);
+    bool IsSystem, int UserCount, bool CanDelete, string? DeleteBlockedReason = null)
+{
+    public uint Version => Application.Common.RevisionToken.For(Id, Code, Name, Status, UserCount);
+}
 public sealed record ModuleItem(ulong Id, string Code, string Name, string? Description,
-    string Status, int NavbarCount, bool CanDelete);
+    string Status, int NavbarCount, bool CanDelete)
+{
+    public uint Version => Application.Common.RevisionToken.For(Id, Name, Description, Status, NavbarCount);
+}
 public sealed record IdentityUserItem(ulong Id, string Username, string FullName, string Email, string Status,
     ulong? SchoolId, string? SchoolName, ulong? SchoolBranchId, string? SchoolBranchName, uint Version);
 public sealed record UserRolesDetail(IdentityUserItem User, IReadOnlyList<RoleItem> Roles);

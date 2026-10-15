@@ -40,16 +40,8 @@ public sealed class AcademicYear
                 "Năm học đã đóng không thể kích hoạt lại.");
         }
 
-        var first = Semesters.FirstOrDefault(term => term.Order == 1);
-        var second = Semesters.FirstOrDefault(term => term.Order == 2);
-        if (Semesters.Count != 2 || first is null || second is null ||
-            Semesters.Any(term => string.IsNullOrWhiteSpace(term.Name)) ||
-            string.Equals(first.Name.Trim(), second.Name.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
-            throw new AcademicCalendarDomainException(
-                "INCOMPLETE_TERMS",
-                "Cần đủ 2 học kỳ có tên riêng trước khi kích hoạt.");
-        }
+        // The academic-year workflow no longer depends on semesters. Existing
+        // semester rows remain available to other modules without being changed.
     }
 
     public void Activate()

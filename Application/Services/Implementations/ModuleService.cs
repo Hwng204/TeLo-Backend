@@ -10,7 +10,7 @@ using static Application.Common.IdentityManagementRules;
 
 namespace Application.Services.Implement;
 
-// Modules have no version or code column (ERD v2); `version` and `code` arguments are ignored.
+// Native modules use response revision tokens; there is no persisted custom code.
 public sealed class ModuleService(ApplicationDbContext db) : IModuleService
 {
     private static readonly Expression<Func<Module, ModuleItem>> Projection = m => new ModuleItem(
@@ -41,8 +41,10 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
         if (errors.Count > 0) return Invalid<ModuleItem>(errors);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<ModuleItem>();
-        var module = id.HasValue ? await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct) : new Module();
+        var module = id.HasValue ? (await db.Modules.FromSqlInterpolated($"SELECT * FROM module WHERE module_id = {id.Value} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault() : new Module();
         if (module == null) return Missing<ModuleItem>();
+        if (id.HasValue && request.Version is { } expected && expected != (await db.Modules.Where(m => m.Id == id).Select(Projection).SingleAsync(ct)).Version)
+            return Conflict<ModuleItem>();
         var name = request.Name.Trim();
         if (await db.Modules.AnyAsync(m => m.Name == name && (!id.HasValue || m.Id != id.Value), ct))
             return Conflict<ModuleItem>("Tên module đã tồn tại.");
@@ -59,8 +61,9 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
         if (request.Status is not ("ACTIVE" or "INACTIVE")) return Invalid<ModuleItem>(new Dictionary<string, string[]> { ["status"] = ["Trạng thái không hợp lệ."] });
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<ModuleItem>();
-        var module = await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct);
+        var module = (await db.Modules.FromSqlInterpolated($"SELECT * FROM module WHERE module_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (module == null) return Missing<ModuleItem>();
+        if (request.Version != 0 && request.Version != (await db.Modules.Where(m => m.Id == id).Select(Projection).SingleAsync(ct)).Version) return Conflict<ModuleItem>();
         if (module.Status != request.Status)
         {
             module.Status = request.Status;
@@ -74,8 +77,9 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<bool>();
-        var module = await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct);
+        var module = (await db.Modules.FromSqlInterpolated($"SELECT * FROM module WHERE module_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (module == null) return Missing<bool>();
+        if (version != 0 && version != (await db.Modules.Where(m => m.Id == id).Select(Projection).SingleAsync(ct)).Version) return Conflict<bool>();
         if (await db.Navbars.AnyAsync(n => n.ModuleId == id, ct)) return Conflict<bool>("Module đang có mục điều hướng. Hãy ngừng áp dụng để giữ dữ liệu liên quan.");
         db.Modules.Remove(module);
         await db.SaveChangesAsync(ct);

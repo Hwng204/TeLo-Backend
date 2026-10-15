@@ -9,7 +9,8 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace WebAPI.Controllers;
 
-// Màn Nhiệm vụ chung: PHT giao ma trận và đề thi, Tổ trưởng giao câu hỏi, giáo viên làm và kiểm duyệt.
+// PHT giao ma trận; nhiệm vụ review đề được tạo sau khi PHT sinh đề tự động.
+// Tổ trưởng giao câu hỏi; giáo viên/tổ trưởng được giao review đề đã có câu.
 // Vai trò cụ thể (ai được giao, sửa, xoá) do TaskService kiểm tra; phân hiệu lấy từ tài khoản.
 [ApiController]
 [Route("api/tasks")]
@@ -46,7 +47,7 @@ public sealed class TasksController(ITaskService service, IMatrixRoleCatalog rol
 
     [HttpPost("exam")]
     public async Task<IActionResult> CreateExam([FromBody] SaveExamTaskRequest request, CancellationToken cancellationToken) =>
-        ToActionResult(await service.CreateExamAsync(Actor(), request, cancellationToken), "Đã giao nhiệm vụ tạo đề thi.");
+        ToActionResult(await service.CreateExamAsync(Actor(), request, cancellationToken));
 
     [HttpPut("exam/{taskId:min(1)}")]
     public async Task<IActionResult> UpdateExam(
@@ -86,7 +87,7 @@ public sealed class TasksController(ITaskService service, IMatrixRoleCatalog rol
             TaskErrorCodes.Validation => UnprocessableEntity(response),
             TaskErrorCodes.BranchRequired or TaskErrorCodes.Forbidden => StatusCode(StatusCodes.Status403Forbidden, response),
             TaskErrorCodes.NotFound => NotFound(response),
-            TaskErrorCodes.Started or TaskErrorCodes.Completed => Conflict(response),
+            TaskErrorCodes.Started or TaskErrorCodes.Completed or TaskErrorCodes.ExamFlowChanged => Conflict(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)
         };
     }

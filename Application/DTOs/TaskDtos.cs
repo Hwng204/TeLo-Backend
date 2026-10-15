@@ -83,14 +83,14 @@ public sealed record TaskExamInfo(
     string SubjectName,
     string GradeLevelName,
     string AcademicYearName,
-    IReadOnlyList<TaskPaperItem> Papers);
+    IReadOnlyList<TaskPaperItem> Papers, ulong? ReviewPackageId = null);
 
 // shortcut: chưa có chức năng soạn từng đề nên đề nào cũng "Chưa tạo"; tính từ đề đã soạn khi chức năng đó có.
-public sealed record TaskPaperItem(string Name, ulong? Id = null, ulong? ExamSetId = null, int QuestionCount = 0)
+public sealed record TaskPaperItem(string Name, ulong? Id = null, ulong? ExamSetId = null, int QuestionCount = 0, string? LifecycleStatus = null, DateTime? ChangedAt = null)
 {
-    public string Status => ExamSetId is null ? "NOT_CREATED" : "DRAFT";
-    public string StatusLabel => ExamSetId is null ? "Chưa tạo" : $"Đã chọn {QuestionCount} câu";
-    public DateTime? UpdatedAt => null;
+    public string Status => LifecycleStatus ?? (ExamSetId is null ? "NOT_CREATED" : "DRAFT");
+    public string StatusLabel => Status switch { "NOT_CREATED" => "Chưa tạo", "IN_REVIEW" => "Đang review", "REVIEWED" => "Chờ PHT chốt", "APPROVED" => "Đã chốt", _ => $"Đã chọn {QuestionCount} câu" };
+    public DateTime? UpdatedAt => ChangedAt;
 }
 
 public sealed record TaskLessonItem(

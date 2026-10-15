@@ -30,6 +30,7 @@ public sealed class AcademicYearActivationIntegrationTests
             var target = Year(2026);
             var invalid = Year(2028);
             invalid.Semesters.Clear();
+            invalid.Status = "CLOSED";
             var raceA = Year(2029);
             var raceB = Year(2030);
             db.AcademicYears.AddRange(previous, target, invalid, raceA, raceB);
@@ -47,7 +48,7 @@ public sealed class AcademicYearActivationIntegrationTests
                 var result = await service.ActivateAsync(target.Id, CancellationToken.None);
                 Assert.True(result.IsSuccess);
                 var failure = await service.ActivateAsync(invalid.Id, CancellationToken.None);
-                Assert.Equal("INCOMPLETE_TERMS", failure.Error?.Code);
+                Assert.Equal("ACADEMIC_YEAR_CLOSED", failure.Error?.Code);
             }
             db.ChangeTracker.Clear();
             // Semesters have no status and years no version any more (D2): only the year status switches.

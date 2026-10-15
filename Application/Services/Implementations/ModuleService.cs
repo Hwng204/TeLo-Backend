@@ -39,7 +39,7 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
     {
         var errors = IdentityManagementValidator.Module(request);
         if (errors.Count > 0) return Invalid<ModuleItem>(errors);
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<ModuleItem>();
         var module = id.HasValue ? await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct) : new Module();
         if (module == null) return Missing<ModuleItem>();
@@ -57,7 +57,7 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
     public async Task<ServiceResult<ModuleItem>> StatusAsync(ulong id, IdentityStatusRequest request, ulong actor, CancellationToken ct)
     {
         if (request.Status is not ("ACTIVE" or "INACTIVE")) return Invalid<ModuleItem>(new Dictionary<string, string[]> { ["status"] = ["Trạng thái không hợp lệ."] });
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<ModuleItem>();
         var module = await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct);
         if (module == null) return Missing<ModuleItem>();
@@ -72,7 +72,7 @@ public sealed class ModuleService(ApplicationDbContext db) : IModuleService
 
     public async Task<ServiceResult<bool>> DeleteAsync(ulong id, uint version, ulong actor, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<bool>();
         var module = await db.Modules.SingleOrDefaultAsync(m => m.Id == id, ct);
         if (module == null) return Missing<bool>();

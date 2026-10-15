@@ -33,7 +33,7 @@ public static class CurriculumImportRules
             .Normalize(NormalizationForm.FormC)
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
-    // Same rule as the column collation (utf8mb4_0900_as_ci): case-insensitive, accent-sensitive.
+    // Case-insensitive, accent-sensitive; the column (utf8mb4_0900_ai_ci) is also accent-insensitive.
     public static string Fold(string? value) => Clean(value).ToUpperInvariant();
 
     public static CurriculumImportPlan Evaluate(

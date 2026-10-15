@@ -16,7 +16,7 @@ namespace Application.Services.Implement;
 
 /// <summary>
 /// Admin CRUD cho tài khoản người dùng. Dùng chung quy tắc với RoleService:
-/// mọi thao tác ghi chạy trong transaction Serializable, kiểm tra lại quyền admin của actor,
+/// mọi thao tác ghi chạy trong transaction ReadCommitted, kiểm tra lại quyền admin của actor,
 /// kiểm tra security version để chống ghi đè và ghi identity_audits.
 /// </summary>
 public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> passwordHasher, IMatrixRoleCatalog roleCatalog) : IUserService
@@ -75,7 +75,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var moet = NullIfEmpty(request.MoetIdentifier);
         var roleIds = request.RoleIds ?? [];
 
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
         var (branchOk, branch) = await ActiveBranchAsync(request.SchoolBranchId, ct);
         if (!branchOk) return Invalid<UserDetailItem>(InactiveBranchError());
@@ -116,7 +116,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var moet = NullIfEmpty(request.MoetIdentifier);
         var newPassword = string.IsNullOrWhiteSpace(request.NewPassword) ? null : request.NewPassword;
 
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
         var user = await db.Users
             .Include(u => u.UserRoles)
@@ -159,7 +159,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
         var errors = IdentityManagementValidator.UserStatus(request);
         if (errors.Count > 0) return Invalid<UserDetailItem>(errors);
         var status = IdentityManagementValidator.NormalizeStatus(request.Status);
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == id, ct);
         if (user == null) return Missing<UserDetailItem>();
@@ -180,7 +180,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
     {
         var errors = IdentityManagementValidator.ResetPassword(request);
         if (errors.Count > 0) return Invalid<UserDetailItem>(errors);
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserDetailItem>();
         var user = await db.Users.SingleOrDefaultAsync(u => u.Id == id, ct);
         if (user == null) return Missing<UserDetailItem>();
@@ -195,7 +195,7 @@ public sealed class UserService(ApplicationDbContext db, IPasswordHasher<User> p
 
     public async Task<ServiceResult<bool>> DeleteAsync(ulong id, uint version, ulong actor, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<bool>();
         var user = await db.Users
             .Include(u => u.UserRoles)

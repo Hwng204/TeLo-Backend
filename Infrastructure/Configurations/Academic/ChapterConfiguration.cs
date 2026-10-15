@@ -6,8 +6,9 @@ namespace Infrastructure.Configurations.Academic;
 
 public sealed class ChapterConfiguration : IEntityTypeConfiguration<Chapter>
 {
-    // Không phân biệt hoa thường nhưng phân biệt dấu, để "Hình" và "Hinh" không bị coi là trùng.
-    public const string TitleCollation = "utf8mb4_0900_as_ci";
+    // TiDB không có utf8mb4_0900_as_ci nên dùng ai_ci: không phân biệt hoa thường lẫn dấu ("Hình" trùng "Hinh").
+    // shortcut: import (Fold) vẫn phân biệt dấu, tên chỉ khác dấu sẽ bị khoá unique chặn; sửa Fold nếu nhóm cần.
+    public const string TitleCollation = "utf8mb4_0900_ai_ci";
 
     public void Configure(EntityTypeBuilder<Chapter> builder)
     {

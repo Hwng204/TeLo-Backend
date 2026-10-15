@@ -442,7 +442,7 @@ namespace Infrastructure.Migrations
                     branch_id = table.Column<ulong>(type: "bigint unsigned", nullable: false),
                     grade_level_id = table.Column<ulong>(type: "bigint unsigned", nullable: false),
                     subject_id = table.Column<ulong>(type: "bigint unsigned", nullable: false),
-                    title = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_0900_as_ci")
+                    title = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_0900_ai_ci")
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     status = table.Column<string>(type: "varchar(32)", maxLength: 32, nullable: false, collation: "utf8mb4_0900_ai_ci")
                         .Annotation("MySql:CharSet", "utf8mb4")
@@ -553,7 +553,7 @@ namespace Infrastructure.Migrations
                     lesson_id = table.Column<ulong>(type: "bigint unsigned", nullable: false)
                         .Annotation("MySql:ValueGenerationStrategy", MySqlValueGenerationStrategy.IdentityColumn),
                     chapter_id = table.Column<ulong>(type: "bigint unsigned", nullable: false),
-                    title = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_0900_as_ci")
+                    title = table.Column<string>(type: "varchar(255)", maxLength: 255, nullable: false, collation: "utf8mb4_0900_ai_ci")
                         .Annotation("MySql:CharSet", "utf8mb4"),
                     content = table.Column<string>(type: "text", nullable: false, collation: "utf8mb4_0900_ai_ci")
                         .Annotation("MySql:CharSet", "utf8mb4"),

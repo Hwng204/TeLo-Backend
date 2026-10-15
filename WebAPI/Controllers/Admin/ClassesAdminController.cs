@@ -8,16 +8,14 @@ namespace WebAPI.Controllers.Admin;
 
 [Route("api/admin/schools/{schoolId:min(1)}/classes")]
 [Authorize(Policy = AdminPolicy)]
-public sealed class ClassesAdminController(
-    ISchoolDirectoryService readService,
-    ISchoolDirectoryAdminService adminService) : SchoolDirectoryControllerBase
+public sealed class ClassesAdminController(IClassService classService) : SchoolDirectoryControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(
         ulong schoolId,
         [FromQuery] ClassListQuery query,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.ListClassesAsync(
+        ToActionResult(await classService.ListClassesAsync(
             DirectoryScope.ForSchool(schoolId), query, cancellationToken));
 
     [HttpGet("reference-data")]
@@ -25,7 +23,7 @@ public sealed class ClassesAdminController(
         ulong schoolId,
         [FromQuery] ulong? academicYearId,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.GetReferenceDataAsync(
+        ToActionResult(await classService.GetReferenceDataAsync(
             DirectoryScope.ForSchool(schoolId), academicYearId, cancellationToken));
 
     [HttpGet("{classId:min(1)}")]
@@ -34,7 +32,7 @@ public sealed class ClassesAdminController(
         ulong classId,
         [FromQuery] PageQuery rosterPage,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.GetClassAsync(
+        ToActionResult(await classService.GetClassAsync(
             DirectoryScope.ForSchool(schoolId), classId, rosterPage, cancellationToken));
 
     [HttpPost]
@@ -42,7 +40,7 @@ public sealed class ClassesAdminController(
         ulong schoolId,
         [FromBody] CreateClassRequest request,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.CreateClassAsync(schoolId, request, cancellationToken));
+        ToActionResult(await classService.CreateClassAsync(schoolId, request, cancellationToken));
 
     [HttpPut("{classId:min(1)}")]
     public async Task<IActionResult> Update(
@@ -50,7 +48,7 @@ public sealed class ClassesAdminController(
         ulong classId,
         [FromBody] UpdateClassRequest request,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.UpdateClassAsync(
+        ToActionResult(await classService.UpdateClassAsync(
             schoolId, classId, request, cancellationToken));
 
     // Logical delete: the class turns INACTIVE so history and scores survive.
@@ -59,5 +57,5 @@ public sealed class ClassesAdminController(
         ulong schoolId,
         ulong classId,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.DeleteClassAsync(schoolId, classId, cancellationToken));
+        ToActionResult(await classService.DeleteClassAsync(schoolId, classId, cancellationToken));
 }

@@ -43,11 +43,7 @@ internal static class StudentImportRules
         DateOnly today,
         List<StudentImportRowErrorDto> errors)
     {
-        if (code.Length == 0)
-        {
-            errors.Add(new("code", "Mã học sinh là bắt buộc."));
-        }
-        else if (code.Length > MaxCodeLength)
+        if (code.Length > MaxCodeLength)
         {
             errors.Add(new("code", $"Mã học sinh tối đa {MaxCodeLength} ký tự."));
         }

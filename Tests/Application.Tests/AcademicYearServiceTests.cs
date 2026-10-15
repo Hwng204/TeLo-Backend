@@ -637,6 +637,12 @@ public sealed class AcademicYearServiceTests
             return Task.FromResult(true);
         }
 
+        public Task<AcademicYear?> GetActiveYearAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(AddedYears.FirstOrDefault(y => y.Status == "ACTIVE"));
+
+        public Task<ulong?> GetActiveYearIdAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(AddedYears.Where(y => y.Status == "ACTIVE").Select(y => (ulong?)y.Id).FirstOrDefault());
+
         public Task<int> CompleteAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(1);
 

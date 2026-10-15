@@ -146,4 +146,17 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
             return false;
         }
     }
+
+    public Task<AcademicYear?> GetActiveYearAsync(CancellationToken cancellationToken) =>
+        context.AcademicYears.AsNoTracking()
+            .Where(y => y.Status == "ACTIVE")
+            .OrderByDescending(y => y.StartDate)
+            .FirstOrDefaultAsync(cancellationToken);
+
+    public Task<ulong?> GetActiveYearIdAsync(CancellationToken cancellationToken) =>
+        context.AcademicYears.AsNoTracking()
+            .Where(y => y.Status == "ACTIVE")
+            .OrderByDescending(y => y.StartDate)
+            .Select(y => (ulong?)y.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 }

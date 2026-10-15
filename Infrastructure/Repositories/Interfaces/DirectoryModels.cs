@@ -11,27 +11,6 @@ public sealed record DirectoryScope(ulong? ActorUserId, ulong? SchoolId, bool Ho
     public static DirectoryScope ForSchool(ulong schoolId) => new(null, schoolId);
 }
 
-public sealed record StudentDirectoryFilter(
-    DirectoryScope Scope,
-    string? Search,
-    ulong? GradeLevelId,
-    ulong? ClassId,
-    ulong? SchoolBranchId,
-    string? Status,
-    int Page,
-    int PageSize,
-    ulong? AcademicYearId = null);
-
-public sealed record ClassDirectoryFilter(
-    DirectoryScope Scope,
-    string? Search,
-    ulong? GradeLevelId,
-    ulong? AcademicYearId,
-    ulong? SchoolBranchId,
-    string? Status,
-    int Page,
-    int PageSize);
-
 public enum DirectoryReadStatus
 {
     Success,
@@ -45,11 +24,49 @@ public enum DirectoryReadStatus
 public sealed record DirectoryReadResult<T>(DirectoryReadStatus Status, T? Value)
 {
     public static DirectoryReadResult<T> Ok(T value) => new(DirectoryReadStatus.Success, value);
-
     public static DirectoryReadResult<T> Fail(DirectoryReadStatus status) => new(status, default);
 }
 
 public sealed record DirectoryRowsPage<T>(IReadOnlyList<T> Items, int TotalCount);
+
+public enum DirectoryWriteStatus
+{
+    Success,
+    SchoolNotFound,
+    StudentNotFound,
+    ClassNotFound,
+    BranchNotInSchool,
+    AcademicYearInvalid,
+    GradeLevelNotFound,
+    DuplicateStudentCode,
+    DuplicateClassCode,
+    DuplicateClassName,
+    TeacherNotInSchool,
+    TeacherAlreadyHomeroom,
+    ClassHasActiveStudents,
+    StudentNotEnrolledInYear,
+    UseClassTransfer,
+    InvalidEffectiveDate
+}
+
+public sealed record DirectoryWriteResult<T>(DirectoryWriteStatus Status, T? Value)
+{
+    public static DirectoryWriteResult<T> Ok(T value) => new(DirectoryWriteStatus.Success, value);
+    public static DirectoryWriteResult<T> Fail(DirectoryWriteStatus status) => new(status, default);
+}
+
+// ─── STUDENT MODELS ──────────────────────────────────────────────────────────
+
+public sealed record StudentDirectoryFilter(
+    DirectoryScope Scope,
+    string? Search,
+    ulong? GradeLevelId,
+    ulong? ClassId,
+    ulong? SchoolBranchId,
+    string? Status,
+    int Page,
+    int PageSize,
+    ulong? AcademicYearId = null);
 
 public sealed record StudentDirectoryRow(
     ulong Id,
@@ -86,7 +103,6 @@ public sealed record StudentDetailRow(
     DateOnly? DateOfBirth,
     string? Gender,
     string Status,
-    // Ordered by academic year start date DESC, then enrollment id DESC.
     IReadOnlyList<StudentEnrollmentRow> History);
 
 public sealed record StudentScoreRow(
@@ -100,6 +116,43 @@ public sealed record StudentScoreRow(
     DateOnly ExamDate,
     decimal TotalScore,
     DateTime ResultPublishedAt);
+
+public sealed record CreateStudentCommand(
+    ulong SchoolId,
+    string Code,
+    string FullName,
+    DateOnly? DateOfBirth,
+    string? Gender,
+    string Status,
+    ulong SchoolClassId);
+
+public sealed record UpdateStudentCommand(
+    ulong SchoolId,
+    ulong StudentId,
+    string Code,
+    string FullName,
+    DateOnly? DateOfBirth,
+    string? Gender,
+    string Status,
+    ulong? SchoolClassId);
+
+public sealed record TransferStudentClassCommand(
+    ulong SchoolId,
+    ulong StudentId,
+    ulong SchoolClassId,
+    DateOnly? EffectiveOn);
+
+// ─── CLASS MODELS ────────────────────────────────────────────────────────────
+
+public sealed record ClassDirectoryFilter(
+    DirectoryScope Scope,
+    string? Search,
+    ulong? GradeLevelId,
+    ulong? AcademicYearId,
+    ulong? SchoolBranchId,
+    string? Status,
+    int Page,
+    int PageSize);
 
 public sealed record ClassDirectoryRow(
     ulong Id,
@@ -124,18 +177,37 @@ public sealed record ClassStudentRow(
     string? Gender,
     string ClassName,
     string StudentStatus,
-    // The student's enrollment in this class: a transferred-out student is no longer studying here
-    // even though the profile itself is still ACTIVE.
     string EnrollmentStatus);
 
 public sealed record ClassDetailRow(
     ClassDirectoryRow Class,
     DirectoryRowsPage<ClassStudentRow> Students);
 
+public sealed record CreateClassCommand(
+    ulong SchoolId,
+    ulong SchoolBranchId,
+    string Code,
+    string Name,
+    ulong AcademicYearId,
+    ulong GradeLevelId,
+    string Status,
+    ulong? HomeroomTeacherId);
+
+public sealed record UpdateClassCommand(
+    ulong SchoolId,
+    ulong ClassId,
+    ulong SchoolBranchId,
+    string Code,
+    string Name,
+    ulong AcademicYearId,
+    ulong GradeLevelId,
+    string Status,
+    ulong? HomeroomTeacherId);
+
+// ─── REFERENCE / SCHOOL MODELS ───────────────────────────────────────────────
+
 public sealed record DirectoryOptionRow(ulong Id, string? Code, string Name);
 
-// Branch option for the filter dropdown: inactive branches are listed too (their old classes still
-// exist), with the number of classes and enrolled students in the resolved academic year.
 public sealed record DirectoryBranchRow(
     ulong Id, string? Code, string Name, string Status, int ClassCount, int StudentCount);
 
@@ -144,41 +216,3 @@ public sealed record DirectoryReferenceRows(
     IReadOnlyList<DirectoryOptionRow> GradeLevels,
     IReadOnlyList<DirectoryOptionRow> AcademicYears,
     IReadOnlyList<DirectoryOptionRow> Classes);
-
-// Read-only class/student directory. Every query is scoped to one school: either the actor's own
-// school (users.school_branch_id -> school) or the school an admin named in the route.
-public interface ISchoolDirectoryRepository
-{
-    Task<DirectoryReadResult<DirectoryRowsPage<StudentDirectoryRow>>> ListStudentsAsync(
-        StudentDirectoryFilter filter,
-        CancellationToken cancellationToken);
-
-    Task<DirectoryReadResult<StudentDetailRow>> GetStudentAsync(
-        DirectoryScope scope,
-        ulong studentId,
-        CancellationToken cancellationToken);
-
-    Task<DirectoryReadResult<DirectoryRowsPage<StudentScoreRow>>> ListStudentScoresAsync(
-        DirectoryScope scope,
-        ulong studentId,
-        ulong classId,
-        int page,
-        int pageSize,
-        CancellationToken cancellationToken);
-
-    Task<DirectoryReadResult<DirectoryRowsPage<ClassDirectoryRow>>> ListClassesAsync(
-        ClassDirectoryFilter filter,
-        CancellationToken cancellationToken);
-
-    Task<DirectoryReadResult<ClassDetailRow>> GetClassAsync(
-        DirectoryScope scope,
-        ulong classId,
-        int rosterPage,
-        int rosterPageSize,
-        CancellationToken cancellationToken);
-
-    Task<DirectoryReadResult<DirectoryReferenceRows>> GetReferenceDataAsync(
-        DirectoryScope scope,
-        ulong? academicYearId,
-        CancellationToken cancellationToken);
-}

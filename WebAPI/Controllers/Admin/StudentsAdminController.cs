@@ -8,16 +8,14 @@ namespace WebAPI.Controllers.Admin;
 
 [Route("api/admin/schools/{schoolId:min(1)}/students")]
 [Authorize(Policy = AdminPolicy)]
-public sealed class StudentsAdminController(
-    ISchoolDirectoryService readService,
-    ISchoolDirectoryAdminService adminService) : SchoolDirectoryControllerBase
+public sealed class StudentsAdminController(IStudentService studentService) : SchoolDirectoryControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(
         ulong schoolId,
         [FromQuery] StudentListQuery query,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.ListStudentsAsync(
+        ToActionResult(await studentService.ListStudentsAsync(
             DirectoryScope.ForSchool(schoolId), query, cancellationToken));
 
     [HttpGet("{studentId:min(1)}")]
@@ -25,7 +23,7 @@ public sealed class StudentsAdminController(
         ulong schoolId,
         ulong studentId,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.GetStudentAsync(
+        ToActionResult(await studentService.GetStudentAsync(
             DirectoryScope.ForSchool(schoolId), studentId, cancellationToken));
 
     [HttpGet("{studentId:min(1)}/scores")]
@@ -35,15 +33,23 @@ public sealed class StudentsAdminController(
         [FromQuery] ulong classId,
         [FromQuery] PageQuery page,
         CancellationToken cancellationToken) =>
-        ToActionResult(await readService.GetStudentScoresAsync(
+        ToActionResult(await studentService.GetStudentScoresAsync(
             DirectoryScope.ForSchool(schoolId), studentId, classId, page, cancellationToken));
+
+    [HttpGet("suggest-code")]
+    public async Task<IActionResult> SuggestCode(
+        ulong schoolId,
+        [FromQuery] ulong classId,
+        CancellationToken cancellationToken) =>
+        ToActionResult(await studentService.SuggestStudentCodeAsync(
+            schoolId, classId, cancellationToken));
 
     [HttpPost]
     public async Task<IActionResult> Create(
         ulong schoolId,
         [FromBody] CreateStudentRequest request,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.CreateStudentAsync(
+        ToActionResult(await studentService.CreateStudentAsync(
             schoolId, request, cancellationToken));
 
     [HttpPut("{studentId:min(1)}")]
@@ -52,7 +58,7 @@ public sealed class StudentsAdminController(
         ulong studentId,
         [FromBody] UpdateStudentRequest request,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.UpdateStudentAsync(
+        ToActionResult(await studentService.UpdateStudentAsync(
             schoolId, studentId, request, cancellationToken));
 
     // Mid-year class change. The old class stays in the student's history (TRANSFERRED_OUT) and
@@ -63,7 +69,7 @@ public sealed class StudentsAdminController(
         ulong studentId,
         [FromBody] TransferStudentClassRequest request,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.TransferStudentClassAsync(
+        ToActionResult(await studentService.TransferStudentClassAsync(
             schoolId, studentId, request, cancellationToken));
 
     // Logical delete: the profile turns INACTIVE and keeps its history and exam results.
@@ -72,6 +78,6 @@ public sealed class StudentsAdminController(
         ulong schoolId,
         ulong studentId,
         CancellationToken cancellationToken) =>
-        ToActionResult(await adminService.DeleteStudentAsync(
+        ToActionResult(await studentService.DeleteStudentAsync(
             schoolId, studentId, cancellationToken));
 }

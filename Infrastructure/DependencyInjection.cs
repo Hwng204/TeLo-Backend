@@ -37,8 +37,9 @@ public static class DependencyInjection
         services.AddScoped<IMatrixRepository, ExamMatrixRepository>();
         services.AddScoped<IMatrixTaskRepository, MatrixTaskRepository>();
         services.AddScoped<IMatrixReferenceRepository, MatrixReferenceRepository>();
-        services.AddScoped<ISchoolDirectoryRepository, SchoolDirectoryRepository>();
-        services.AddScoped<ISchoolDirectoryAdminRepository, SchoolDirectoryAdminRepository>();
+        services.AddScoped<IStudentRepository, StudentRepository>();
+        services.AddScoped<IClassRepository, ClassRepository>();
+        services.AddScoped<ISchoolRepository, SchoolRepository>();
         services.AddScoped<IStudentImportRepository, StudentImportRepository>();
         services.AddScoped<ICurriculumRepository, CurriculumRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork.UnitOfWork>();

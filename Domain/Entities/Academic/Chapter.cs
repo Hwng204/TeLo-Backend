@@ -9,6 +9,7 @@ public sealed class Chapter
     public ulong SchoolBranchId { get; set; }
     public ulong GradeLevelId { get; set; }
     public ulong SubjectId { get; set; }
+    public uint Number { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Status { get; set; } = "ACTIVE";
 

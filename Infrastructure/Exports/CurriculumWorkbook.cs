@@ -2,17 +2,18 @@ using ClosedXML.Excel;
 
 namespace Infrastructure.Exports;
 
-// One data row exactly as typed (trimmed). A row with empty lesson cells is a chapter without lessons.
+// One table row exactly as typed (trimmed), after fill-down. A row with empty lesson cells is a chapter without lessons.
 public sealed record CurriculumImportRawRow(
     int RowNumber,
-    string Grade,
-    string Field,
-    string ChapterCode,
+    string ChapterNumber,
     string ChapterTitle,
-    string LessonCode,
+    string LessonNumber,
     string LessonTitle);
 
-// The file cannot be read as a chapter/lesson list (not an .xlsx, wrong columns, empty, too many rows).
+// A filled-in template: the grade (B4) and subject (B5) chosen once apply to every row.
+public sealed record CurriculumImportSheet(string Grade, string Field, IReadOnlyList<CurriculumImportRawRow> Rows);
+
+// The file cannot be read as a chapter/lesson list (not an .xlsx, wrong layout, empty, too many rows).
 public sealed class CurriculumImportFormatException(string message) : Exception(message);
 
 // Builds the download template and reads a filled-in copy back.
@@ -21,108 +22,126 @@ public static class CurriculumWorkbook
     public const int MaxRows = 1000;
     public const string DataSheet = "ChuongBai";
     public const string GuideSheet = "HuongDan";
+    public const string ListSheet = "DanhMuc";
 
-    // Column order is the contract with Read: A..F. "Lĩnh vực" holds a subject name; the two code columns stay so
-    // files made from older templates still read, but their values are ignored (codes are no longer stored).
-    public static readonly string[] Headers =
-    [
-        "Khối lớp (*)", "Lĩnh vực (*)", "Mã chương (*)", "Tên chương (*)", "Mã bài", "Tên bài"
-    ];
+    // Cell positions are the contract with Read: labels in A4/A5 with the choices in B4/B5, table header in row 7.
+    public const int GradeRow = 4;
+    public const int FieldRow = 5;
+    public const int HeaderRow = 7;
+    public const string GradeLabel = "Khối lớp (*)";
+    public const string FieldLabel = "Môn học (*)";
+    public static readonly string[] Headers = ["Số chương (*)", "Tên chương (*)", "Số bài", "Tên bài"];
+
+    private const int FirstDataRow = HeaderRow + 1;
+    private static readonly XLColor Accent = XLColor.FromHtml("#668ee1");
 
     public static byte[] CreateTemplate(IReadOnlyList<string> grades, IReadOnlyList<string> fields)
     {
         using var workbook = new XLWorkbook();
-
         var data = workbook.Worksheets.Add(DataSheet);
+        var guide = workbook.Worksheets.Add(GuideSheet);
+        var lists = workbook.Worksheets.Add(ListSheet);
+        lists.Hide();
+
+        data.Cell(1, 1).Value = "NHẬP CHƯƠNG VÀ BÀI HỌC";
+        data.Cell(1, 1).Style.Font.SetBold().Font.SetFontSize(14).Font.SetFontColor(XLColor.FromHtml("#26364a"));
+        data.Range(1, 1, 1, Headers.Length).Merge();
+        data.Cell(2, 1).Value =
+            $"Chọn Khối lớp và Môn học, rồi nhập chương và bài ở bảng bên dưới. Xem hướng dẫn ở sheet {GuideSheet}.";
+        data.Cell(2, 1).Style.Font.SetItalic().Font.SetFontColor(XLColor.FromHtml("#5b6b7f"));
+        data.Range(2, 1, 2, Headers.Length).Merge();
+
+        AddChoice(data, GradeRow, GradeLabel, lists, 1, grades,
+            "Khối lớp phải chọn trong danh sách.");
+        AddChoice(data, FieldRow, FieldLabel, lists, 2, fields,
+            "Môn học phải chọn trong danh sách.");
+
         for (var column = 0; column < Headers.Length; column++)
         {
-            data.Cell(1, column + 1).Value = Headers[column];
+            data.Cell(HeaderRow, column + 1).Value = Headers[column];
         }
 
-        data.Row(1).Style.Font.SetBold();
-        // Text format keeps codes such as "01" and stops Excel turning "1.2" into a number.
-        data.Columns(1, Headers.Length).Style.NumberFormat.Format = "@";
-        data.SheetView.FreezeRows(1);
+        data.Range(HeaderRow, 1, HeaderRow, Headers.Length).Style
+            .Font.SetBold().Font.SetFontColor(XLColor.White)
+            .Fill.SetBackgroundColor(Accent)
+            .Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center)
+            .Border.SetOutsideBorder(XLBorderStyleValues.Thin)
+            .Border.SetInsideBorder(XLBorderStyleValues.Thin);
 
-        var guide = workbook.Worksheets.Add(GuideSheet);
+        var lastDataRow = FirstDataRow + MaxRows - 1;
+        var line = XLColor.FromHtml("#d5dde8");
+        data.Range(FirstDataRow, 1, lastDataRow, Headers.Length).Style
+            .Border.SetOutsideBorder(XLBorderStyleValues.Thin).Border.SetOutsideBorderColor(line)
+            .Border.SetInsideBorder(XLBorderStyleValues.Thin).Border.SetInsideBorderColor(line);
+
+        // Number columns keep the General format: a whole-number rule rejects entries stored as text.
+        foreach (var column in new[] { 1, 3 })
+        {
+            var numbers = data.Range(FirstDataRow, column, lastDataRow, column);
+            numbers.Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
+            var validation = numbers.CreateDataValidation();
+            validation.WholeNumber.Between(1, 999);
+            validation.ErrorStyle = XLErrorStyle.Stop;
+            validation.ErrorMessage = "Nhập số nguyên từ 1 đến 999.";
+        }
+
+        // Text format stops Excel turning a title such as "1.2" into a number.
+        data.Column(2).Style.NumberFormat.Format = "@";
+        data.Column(4).Style.NumberFormat.Format = "@";
+
+        double[] widths = [16, 44, 10, 52];
+        for (var column = 0; column < widths.Length; column++)
+        {
+            data.Column(column + 1).Width = widths[column];
+            guide.Column(column + 1).Width = widths[column];
+        }
+
+        data.SheetView.FreezeRows(HeaderRow);
+
         var row = 1;
         guide.Cell(row, 1).Value = "HƯỚNG DẪN NHẬP CHƯƠNG VÀ BÀI HỌC";
         guide.Cell(row, 1).Style.Font.SetBold();
         row += 2;
-        foreach (var line in GuideLines)
+        foreach (var text in GuideLines)
         {
-            guide.Cell(row++, 1).Value = line;
+            guide.Cell(row++, 1).Value = text;
         }
 
         row++;
         guide.Cell(row, 1).Value = "Ví dụ";
         guide.Cell(row, 1).Style.Font.SetBold();
         row++;
-        for (var column = 0; column < Headers.Length; column++)
-        {
-            guide.Cell(row, column + 1).Value = Headers[column];
-        }
-
-        guide.Range(row, 1, row, Headers.Length).Style.Font.SetBold();
-        row++;
-        var sampleGrade = grades.Count > 0 ? grades[0] : "Lớp 5";
-        var sampleField = fields.Count > 0 ? fields[0] : "Toán";
-        string[][] samples =
+        var exampleTop = row;
+        string[][] example =
         [
-            [sampleGrade, sampleField, "", "Ôn tập và bổ sung", "", "Ôn tập số tự nhiên"],
-            [sampleGrade, sampleField, "", "Ôn tập và bổ sung", "", "Ôn tập các phép tính với số tự nhiên"],
-            [sampleGrade, sampleField, "", "Số thập phân", "", ""]
+            [GradeLabel, grades.Count > 0 ? grades[0] : "Lớp 5"],
+            [FieldLabel, fields.Count > 0 ? fields[0] : "Toán"],
+            [],
+            Headers,
+            ["1", "Ôn tập và bổ sung", "1", "Ôn tập số tự nhiên"],
+            ["", "", "2", "Ôn tập các phép tính với số tự nhiên"],
+            ["2", "Số thập phân", "1", "Khái niệm số thập phân"],
+            ["3", "Hình học", "", ""]
         ];
-        foreach (var sample in samples)
+        foreach (var cells in example)
         {
-            for (var column = 0; column < sample.Length; column++)
+            for (var column = 0; column < cells.Length; column++)
             {
-                guide.Cell(row, column + 1).Value = WorkbookText.Safe(sample[column]);
+                guide.Cell(row, column + 1).Value = WorkbookText.Safe(cells[column]);
             }
 
             row++;
         }
 
-        // Valid values live in their own columns so the data sheet can offer them as dropdowns.
-        row += 2;
-        guide.Cell(row, 1).Value = "Khối lớp hợp lệ";
-        guide.Cell(row, 2).Value = "Lĩnh vực hợp lệ";
-        guide.Range(row, 1, row, 2).Style.Font.SetBold();
-        var firstValueRow = row + 1;
-        for (var index = 0; index < grades.Count; index++)
-        {
-            guide.Cell(firstValueRow + index, 1).Value = WorkbookText.Safe(grades[index]);
-        }
-
-        for (var index = 0; index < fields.Count; index++)
-        {
-            guide.Cell(firstValueRow + index, 2).Value = WorkbookText.Safe(fields[index]);
-        }
-
-        if (grades.Count > 0)
-        {
-            data.Range(2, 1, MaxRows + 1, 1).CreateDataValidation().List(
-                guide.Range(firstValueRow, 1, firstValueRow + grades.Count - 1, 1), true);
-        }
-
-        if (fields.Count > 0)
-        {
-            data.Range(2, 2, MaxRows + 1, 2).CreateDataValidation().List(
-                guide.Range(firstValueRow, 2, firstValueRow + fields.Count - 1, 2), true);
-        }
-
-        data.Columns(1, Headers.Length).Width = 22;
-        data.Column(4).Width = 36;
-        data.Column(6).Width = 44;
-        guide.Column(1).Width = 24;
-        guide.Columns(2, Headers.Length).Width = 22;
+        guide.Range(exampleTop, 1, exampleTop + 1, 1).Style.Font.SetBold();
+        guide.Range(exampleTop + 3, 1, exampleTop + 3, Headers.Length).Style.Font.SetBold();
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
 
-    public static IReadOnlyList<CurriculumImportRawRow> Read(Stream stream)
+    public static CurriculumImportSheet Read(Stream stream)
     {
         try
         {
@@ -133,24 +152,26 @@ public static class CurriculumWorkbook
                     $"Tệp không đúng mẫu: không có sheet {DataSheet}. Vui lòng tải mẫu mới và điền lại.");
             }
 
-            for (var column = 0; column < Headers.Length; column++)
+            // The old flat template had one "Khối lớp" column per row, starting at A1.
+            if (IsLabel(sheet.Cell(1, 1), GradeLabel))
             {
-                if (!string.Equals(
-                        sheet.Cell(1, column + 1).GetString().Trim(),
-                        Headers[column],
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new CurriculumImportFormatException(
-                        "Tệp không đúng mẫu: tiêu đề cột đã bị đổi. Vui lòng tải mẫu mới và điền lại.");
-                }
+                throw new CurriculumImportFormatException("Tệp theo mẫu cũ. Vui lòng tải file mẫu mới và điền lại.");
+            }
+
+            if (!IsLabel(sheet.Cell(GradeRow, 1), GradeLabel) ||
+                !IsLabel(sheet.Cell(FieldRow, 1), FieldLabel) ||
+                Headers.Where((header, index) => !IsLabel(sheet.Cell(HeaderRow, index + 1), header)).Any())
+            {
+                throw new CurriculumImportFormatException(
+                    "Tệp không đúng mẫu: đã đổi nhãn hoặc vị trí ô. Vui lòng tải mẫu mới và điền lại.");
             }
 
             var rows = new List<CurriculumImportRawRow>();
-            var lastRow = sheet.LastRowUsed()?.RowNumber() ?? 1;
-            for (var rowNumber = 2; rowNumber <= lastRow; rowNumber++)
+            var lastRow = sheet.LastRowUsed()?.RowNumber() ?? HeaderRow;
+            for (var rowNumber = FirstDataRow; rowNumber <= lastRow; rowNumber++)
             {
                 var cells = Enumerable.Range(1, Headers.Length)
-                    .Select(column => sheet.Cell(rowNumber, column).GetFormattedString().Trim())
+                    .Select(column => Text(sheet.Cell(rowNumber, column)))
                     .ToArray();
 
                 // Leftover formatting leaves blank rows behind; they are not data.
@@ -165,8 +186,15 @@ public static class CurriculumWorkbook
                         $"Tệp có nhiều hơn {MaxRows} dòng dữ liệu. Vui lòng chia nhỏ tệp.");
                 }
 
-                rows.Add(new CurriculumImportRawRow(
-                    rowNumber, cells[0], cells[1], cells[2], cells[3], cells[4], cells[5]));
+                // A lesson row with both chapter cells empty (or merged into the row above) belongs to the chapter
+                // above. With only one of them empty nothing is filled, so the missing cell is reported.
+                if (cells[0].Length == 0 && cells[1].Length == 0 && rows.Count > 0)
+                {
+                    cells[0] = rows[^1].ChapterNumber;
+                    cells[1] = rows[^1].ChapterTitle;
+                }
+
+                rows.Add(new CurriculumImportRawRow(rowNumber, cells[0], cells[1], cells[2], cells[3]));
             }
 
             if (rows.Count == 0)
@@ -174,7 +202,7 @@ public static class CurriculumWorkbook
                 throw new CurriculumImportFormatException("Tệp không có dòng dữ liệu nào.");
             }
 
-            return rows;
+            return new CurriculumImportSheet(Text(sheet.Cell(GradeRow, 2)), Text(sheet.Cell(FieldRow, 2)), rows);
         }
         catch (CurriculumImportFormatException)
         {
@@ -188,16 +216,57 @@ public static class CurriculumWorkbook
         }
     }
 
+    // A bold label in column A and an input cell in column B whose dropdown lists one column of the hidden sheet.
+    private static void AddChoice(
+        IXLWorksheet data,
+        int row,
+        string label,
+        IXLWorksheet lists,
+        int listColumn,
+        IReadOnlyList<string> values,
+        string error)
+    {
+        data.Cell(row, 1).Value = label;
+        data.Cell(row, 1).Style.Font.SetBold();
+        var input = data.Cell(row, 2);
+        input.Style.Fill.SetBackgroundColor(XLColor.FromHtml("#eaf0fb"))
+            .Border.SetOutsideBorder(XLBorderStyleValues.Thin)
+            .Border.SetOutsideBorderColor(Accent);
+
+        for (var index = 0; index < values.Count; index++)
+        {
+            lists.Cell(index + 1, listColumn).Value = WorkbookText.Safe(values[index]);
+        }
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var validation = input.CreateDataValidation();
+        validation.List(lists.Range(1, listColumn, values.Count, listColumn), true);
+        validation.ErrorStyle = XLErrorStyle.Stop;
+        validation.ErrorMessage = error;
+    }
+
+    private static bool IsLabel(IXLCell cell, string label) =>
+        string.Equals(cell.GetString().Trim(), label, StringComparison.OrdinalIgnoreCase);
+
+    private static string Text(IXLCell cell) => cell.GetFormattedString().Trim();
+
     private static readonly string[] GuideLines =
     [
-        $"Nhập dữ liệu ở sheet {DataSheet}, bắt đầu từ dòng 2. Không đổi tên sheet, tên và thứ tự cột.",
-        "Mỗi dòng là một bài học. Thông tin chương lặp lại ở mọi dòng thuộc chương đó.",
-        "Chương chưa có bài: để trống Tên bài.",
-        "Bắt buộc: Khối lớp, Lĩnh vực, Tên chương. Cột Mã chương và Mã bài không còn dùng: có thể bỏ trống, hệ thống bỏ qua.",
-        "Khối lớp và Lĩnh vực (môn học) chọn trong danh sách ở cuối trang này.",
-        "Tên chương không được trùng trong cùng khối lớp và môn học; tên bài không được trùng trong cùng chương.",
-        "Chương đã có trong hệ thống (cùng khối, môn học và tên chương) thì bài mới được thêm vào chương đó.",
-        "Nếu có bất kỳ dòng lỗi nào, hệ thống không lưu gì. Sửa tệp rồi tải lên lại.",
-        $"Tối đa {MaxRows} dòng mỗi tệp. Chỉ nhận tệp .xlsx."
+        $"Nhập dữ liệu ở sheet {DataSheet}. Không đổi tên sheet, không đổi nhãn và vị trí các ô.",
+        $"Chọn Khối lớp ở ô B{GradeRow} và Môn học ở ô B{FieldRow} trong danh sách. Mọi dòng trong tệp dùng khối lớp và môn học này.",
+        "Mỗi tệp chỉ nhập cho một khối lớp và một môn học. Môn học khác thì dùng tệp khác.",
+        $"Nhập bảng từ dòng {FirstDataRow}. Mỗi dòng của bảng là một bài học.",
+        "Dòng tiếp theo của cùng chương có thể để trống Số chương và Tên chương (hoặc gộp ô): dòng đó thuộc chương ở dòng trên.",
+        "Chương chưa có bài: để trống Số bài và Tên bài.",
+        "Bắt buộc: Số chương, Tên chương. Số bài và Tên bài nhập cùng nhau hoặc cùng để trống.",
+        "Số chương, Số bài là số nguyên từ 1 đến 999.",
+        "Số và tên chương không được trùng trong cùng khối lớp và môn học; số và tên bài không được trùng trong cùng chương.",
+        "Chương đã có trong hệ thống (cùng khối, môn học, số chương và tên chương) thì bài mới được thêm vào chương đó.",
+        "Nếu có bất kỳ lỗi nào, hệ thống không lưu gì. Sửa tệp rồi tải lên lại.",
+        $"Tối đa {MaxRows} dòng dữ liệu mỗi tệp. Chỉ nhận tệp .xlsx."
     ];
 }

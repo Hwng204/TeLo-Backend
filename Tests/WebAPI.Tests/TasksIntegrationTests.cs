@@ -770,8 +770,8 @@ public sealed class TasksIntegrationTests
             var chapterA = new Chapter { SchoolBranch = branchA, GradeLevel = grade, Subject = subject, Title = "Số và phép tính" };
             var chapterA2 = new Chapter { SchoolBranch = branchA, GradeLevel = otherGrade, Subject = subject, Title = "Hình học" };
             var chapterB = new Chapter { SchoolBranch = branchB, GradeLevel = grade, Subject = subject, Title = "Số và phép tính" };
-            LessonA1 = new Lesson { Chapter = chapterA, Title = "Phân số" };
-            LessonA2 = new Lesson { Chapter = chapterA, Title = "Số thập phân" };
+            LessonA1 = new Lesson { Chapter = chapterA, Number = 1, Title = "Phân số" };
+            LessonA2 = new Lesson { Chapter = chapterA, Number = 2, Title = "Số thập phân" };
             LessonB = new Lesson { Chapter = chapterB, Title = "Phân số" };
             Db.AddRange(LessonA1, LessonA2, LessonB, chapterA2);
             Db.Users.AddRange(users.Values);

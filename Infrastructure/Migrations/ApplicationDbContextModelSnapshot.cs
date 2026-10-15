@@ -68,9 +68,19 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
+                    b.Property<byte?>("ActiveFlag")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("tinyint unsigned")
+                        .HasColumnName("active_flag")
+                        .HasComputedColumnSql("(case when `status` = 'ACTIVE' then 1 end)", false);
+
                     b.Property<ulong>("GradeLevelId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("grade_level_id");
+
+                    b.Property<uint>("Number")
+                        .HasColumnType("int unsigned")
+                        .HasColumnName("number");
 
                     b.Property<ulong>("SchoolBranchId")
                         .HasColumnType("bigint unsigned")
@@ -100,9 +110,13 @@ namespace Infrastructure.Migrations
 
                     b.HasIndex("SubjectId");
 
-                    b.HasIndex("SchoolBranchId", "SubjectId", "GradeLevelId", "Title")
+                    b.HasIndex("SchoolBranchId", "SubjectId", "GradeLevelId", "Number", "ActiveFlag")
                         .IsUnique()
-                        .HasDatabaseName("uq_chapter_branch_id_subject_id_grade_level_id_title");
+                        .HasDatabaseName("uq_chapter_active_number");
+
+                    b.HasIndex("SchoolBranchId", "SubjectId", "GradeLevelId", "Title", "ActiveFlag")
+                        .IsUnique()
+                        .HasDatabaseName("uq_chapter_active_title");
 
                     b.ToTable("chapter", (string)null);
                 });
@@ -148,6 +162,12 @@ namespace Infrastructure.Migrations
 
                     MySqlPropertyBuilderExtensions.UseMySqlIdentityColumn(b.Property<ulong>("Id"));
 
+                    b.Property<byte?>("ActiveFlag")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("tinyint unsigned")
+                        .HasColumnName("active_flag")
+                        .HasComputedColumnSql("(case when `status` = 'ACTIVE' then 1 end)", false);
+
                     b.Property<ulong>("ChapterId")
                         .HasColumnType("bigint unsigned")
                         .HasColumnName("chapter_id");
@@ -156,6 +176,10 @@ namespace Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("content");
+
+                    b.Property<uint>("Number")
+                        .HasColumnType("int unsigned")
+                        .HasColumnName("number");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -172,9 +196,13 @@ namespace Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ChapterId", "Title")
+                    b.HasIndex("ChapterId", "Number", "ActiveFlag")
                         .IsUnique()
-                        .HasDatabaseName("uq_lesson_chapter_id_title");
+                        .HasDatabaseName("uq_lesson_active_number");
+
+                    b.HasIndex("ChapterId", "Title", "ActiveFlag")
+                        .IsUnique()
+                        .HasDatabaseName("uq_lesson_active_title");
 
                     b.ToTable("lesson", (string)null);
                 });

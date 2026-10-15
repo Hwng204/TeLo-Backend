@@ -11,10 +11,14 @@ public sealed record CurriculumDto(
     IReadOnlyList<CurriculumFieldRow> Fields,
     IReadOnlyList<CurriculumChapterRow> Chapters);
 
-// FieldId is a subject id. A "code" sent by older clients is ignored (no storage).
-public sealed record SaveChapterRequest(ulong GradeLevelId, ulong FieldId, string? Title);
+// FieldId is a subject id. A "code" sent by older clients is ignored (no storage). Number is an int so that
+// 0 or -1 reach validation (422) instead of failing JSON binding.
+public sealed record SaveChapterRequest(ulong GradeLevelId, ulong FieldId, int? Number, string? Title);
 
-public sealed record SaveLessonRequest(string? Title);
+public sealed record SaveLessonRequest(int? Number, string? Title);
+
+// Archived: the row was in use, so it was set INACTIVE instead of deleted.
+public sealed record CurriculumDeleteResultDto(bool Archived);
 
 public sealed record CurriculumImportErrorDto(int RowNumber, string Message);
 

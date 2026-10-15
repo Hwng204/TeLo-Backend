@@ -90,12 +90,15 @@ public sealed class MatrixReferenceRepository(
     private static string ScopeLabel(string? subject, string? grade, string school, string branch) =>
         $"{subject} - {grade} - {school} / {branch}";
 
-    // Bài dùng được cho một ngữ cảnh: chương cùng phân hiệu, cùng khối và cùng môn của ngữ cảnh.
+    // Bài dùng được cho một ngữ cảnh: bài ACTIVE của chương ACTIVE cùng phân hiệu, cùng khối và cùng môn của ngữ cảnh.
+    // Bài đã lưu trữ chỉ còn hiện trong ma trận cũ (xuất file), không chọn mới được.
     private IQueryable<Domain.Entities.Academic.Lesson> LessonsOf(ulong branchId, ulong gradeLevelId, ulong subjectId)
     {
         return db.Lessons
             .AsNoTracking()
             .Where(lesson =>
+                lesson.Status == "ACTIVE" &&
+                lesson.Chapter.Status == "ACTIVE" &&
                 lesson.Chapter.SchoolBranchId == branchId &&
                 lesson.Chapter.GradeLevelId == gradeLevelId &&
                 lesson.Chapter.SubjectId == subjectId);
@@ -191,11 +194,12 @@ public sealed class MatrixReferenceRepository(
                 "Ngữ cảnh học thuật thuộc chi nhánh khác.");
         }
 
-        // Scopes are the (branch, subject, grade) that have curriculum chapters; ids MatrixScope.Key cannot
+        // Scopes are the (branch, subject, grade) that have ACTIVE curriculum chapters; ids MatrixScope.Key cannot
         // encode are left out rather than failing the whole list.
         var chapters = db.Chapters
             .AsNoTracking()
             .Where(chapter =>
+                chapter.Status == "ACTIVE" &&
                 chapter.SchoolBranch.Status == "ACTIVE" &&
                 chapter.SchoolBranch.School.Status == "ACTIVE" &&
                 chapter.SubjectId < 1000 &&
@@ -271,17 +275,18 @@ public sealed class MatrixReferenceRepository(
         var lessons = selected is null
             ? []
             : await LessonsOf(selected.SchoolBranchId, selected.GradeLevelId, selected.SubjectId)
-                .OrderBy(lesson => lesson.ChapterId)
+                .OrderBy(lesson => lesson.Chapter.Number)
+                .ThenBy(lesson => lesson.ChapterId)
+                .ThenBy(lesson => lesson.Number)
                 .ThenBy(lesson => lesson.Id)
                 .Select(lesson => new MatrixLessonOption(
                     lesson.Id,
                     selected.Id,
                     lesson.ChapterId,
                     lesson.Title,
-                    // No stored order: position by id within the chapter, like the curriculum screen.
-                    (uint)db.Lessons.Count(other => other.ChapterId == lesson.ChapterId && other.Id <= lesson.Id),
-                    "",
-                    "",
+                    lesson.Number,
+                    lesson.Number.ToString(),
+                    lesson.Chapter.Number.ToString(),
                     lesson.Chapter.Title))
                 .ToListAsync(cancellationToken);
 

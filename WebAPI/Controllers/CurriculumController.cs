@@ -48,10 +48,15 @@ public sealed class CurriculumController(
 
     [HttpDelete("chapters/{chapterId:min(1)}")]
     [Authorize(Policy = ManagePolicy)]
-    public async Task<IActionResult> DeleteChapter(ulong chapterId, CancellationToken cancellationToken) =>
-        ToActionResult(
-            await service.DeleteChapterAsync(await ActorAsync(), chapterId, cancellationToken),
-            "Xoá chương học thành công.");
+    public async Task<IActionResult> DeleteChapter(ulong chapterId, CancellationToken cancellationToken)
+    {
+        var result = await service.DeleteChapterAsync(await ActorAsync(), chapterId, cancellationToken);
+        return ToActionResult(
+            result,
+            result.Value?.Archived == true
+                ? "Chương học đang được sử dụng nên đã được lưu trữ."
+                : "Xoá chương học thành công.");
+    }
 
     [HttpPost("chapters/{chapterId:min(1)}/lessons")]
     [Authorize(Policy = ManagePolicy)]
@@ -75,10 +80,15 @@ public sealed class CurriculumController(
 
     [HttpDelete("lessons/{lessonId:min(1)}")]
     [Authorize(Policy = ManagePolicy)]
-    public async Task<IActionResult> DeleteLesson(ulong lessonId, CancellationToken cancellationToken) =>
-        ToActionResult(
-            await service.DeleteLessonAsync(await ActorAsync(), lessonId, cancellationToken),
-            "Xoá bài học thành công.");
+    public async Task<IActionResult> DeleteLesson(ulong lessonId, CancellationToken cancellationToken)
+    {
+        var result = await service.DeleteLessonAsync(await ActorAsync(), lessonId, cancellationToken);
+        return ToActionResult(
+            result,
+            result.Value?.Archived == true
+                ? "Bài học đang được sử dụng nên đã được lưu trữ."
+                : "Xoá bài học thành công.");
+    }
 
     [HttpGet("import/template.xlsx")]
     [Authorize(Policy = ManagePolicy)]
@@ -174,8 +184,6 @@ public sealed class CurriculumController(
             CurriculumErrorCodes.LessonNotFound => NotFound(response),
             CurriculumErrorCodes.ChapterDuplicate or
             CurriculumErrorCodes.LessonDuplicate or
-            CurriculumErrorCodes.ChapterInUse or
-            CurriculumErrorCodes.LessonInUse or
             CurriculumErrorCodes.ChapterScopeLocked or
             CurriculumErrorCodes.ImportConflict => Conflict(response),
             _ => StatusCode(StatusCodes.Status500InternalServerError, response)

@@ -2,7 +2,8 @@ namespace Infrastructure.Repositories.Interface;
 
 // School scope of a directory request. SchoolId set means an admin picked the school explicitly in
 // the route; null means the school is derived from the signed-in actor's branch.
-// HomeroomOnly narrows a school-side actor (a plain teacher) to the class they lead and its students.
+// HomeroomOnly narrows a school-side actor (a plain teacher) to the classes assigned to them in
+// teacher_assignment and their students.
 public sealed record DirectoryScope(ulong? ActorUserId, ulong? SchoolId, bool HomeroomOnly = false)
 {
     public static DirectoryScope FromActor(ulong actorUserId, bool homeroomOnly = false) =>
@@ -46,7 +47,8 @@ public enum DirectoryWriteStatus
     ClassHasActiveStudents,
     StudentNotEnrolledInYear,
     UseClassTransfer,
-    InvalidEffectiveDate
+    InvalidEffectiveDate,
+    AlreadyEnrolledInClass
 }
 
 public sealed record DirectoryWriteResult<T>(DirectoryWriteStatus Status, T? Value)
@@ -103,6 +105,7 @@ public sealed record StudentDetailRow(
     DateOnly? DateOfBirth,
     string? Gender,
     string Status,
+    // Ordered by academic year id DESC, then enrollment start DESC.
     IReadOnlyList<StudentEnrollmentRow> History);
 
 public sealed record StudentScoreRow(

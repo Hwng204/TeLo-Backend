@@ -19,14 +19,14 @@ public sealed class MatrixReviewerTests
         Assert.False(matrix.CanEdit(unrelated));
         var error = Assert.Throws<MatrixDomainException>(() =>
         {
-            if (reject) matrix.Reject(unrelated, "Cần sửa", DateTime.UtcNow);
+            if (reject) matrix.Reject(unrelated);
             else matrix.Approve(unrelated);
         });
         Assert.Equal("Forbidden", error.Code);
         Assert.Equal(MatrixStatusCodes.Submitted, matrix.Status);
         var reviewer = new MatrixActor(1, MatrixActorRole.Pht);
         Assert.True(matrix.CanEdit(reviewer));
-        if (reject) matrix.Reject(reviewer, "Cần sửa", DateTime.UtcNow);
+        if (reject) matrix.Reject(reviewer);
         else matrix.Approve(reviewer);
         Assert.Equal(reject ? MatrixStatusCodes.Draft : MatrixStatusCodes.Approved, matrix.Status);
     }

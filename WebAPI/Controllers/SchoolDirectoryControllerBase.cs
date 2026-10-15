@@ -55,9 +55,8 @@ public abstract class SchoolDirectoryControllerBase : ControllerBase
             SchoolDirectoryErrorCodes.SchoolNotFound =>
                 NotFound(response),
             SchoolDirectoryErrorCodes.StudentCodeDuplicate or
-            SchoolDirectoryErrorCodes.ClassCodeDuplicate or
-            SchoolDirectoryErrorCodes.TeacherAlreadyHomeroom or
             SchoolDirectoryErrorCodes.ClassHasActiveStudents or
+            SchoolDirectoryErrorCodes.StudentAlreadyEnrolledInClass or
             SchoolDirectoryErrorCodes.ImportBatchStateInvalid or
             SchoolDirectoryErrorCodes.ImportHasInvalidRows =>
                 Conflict(response),

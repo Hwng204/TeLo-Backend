@@ -22,7 +22,8 @@ public static class CurriculumWorkbook
     public const string DataSheet = "ChuongBai";
     public const string GuideSheet = "HuongDan";
 
-    // Column order is the contract with Read: A..F.
+    // Column order is the contract with Read: A..F. "Lĩnh vực" holds a subject name; the two code columns stay so
+    // files made from older templates still read, but their values are ignored (codes are no longer stored).
     public static readonly string[] Headers =
     [
         "Khối lớp (*)", "Lĩnh vực (*)", "Mã chương (*)", "Tên chương (*)", "Mã bài", "Tên bài"
@@ -65,12 +66,12 @@ public static class CurriculumWorkbook
         guide.Range(row, 1, row, Headers.Length).Style.Font.SetBold();
         row++;
         var sampleGrade = grades.Count > 0 ? grades[0] : "Lớp 5";
-        var sampleField = fields.Count > 0 ? fields[0] : "Số và phép tính";
+        var sampleField = fields.Count > 0 ? fields[0] : "Toán";
         string[][] samples =
         [
-            [sampleGrade, sampleField, "1", "Ôn tập và bổ sung", "1", "Ôn tập số tự nhiên"],
-            [sampleGrade, sampleField, "1", "Ôn tập và bổ sung", "2", "Ôn tập các phép tính với số tự nhiên"],
-            [sampleGrade, sampleField, "2", "Số thập phân", "", ""]
+            [sampleGrade, sampleField, "", "Ôn tập và bổ sung", "", "Ôn tập số tự nhiên"],
+            [sampleGrade, sampleField, "", "Ôn tập và bổ sung", "", "Ôn tập các phép tính với số tự nhiên"],
+            [sampleGrade, sampleField, "", "Số thập phân", "", ""]
         ];
         foreach (var sample in samples)
         {
@@ -191,13 +192,11 @@ public static class CurriculumWorkbook
     [
         $"Nhập dữ liệu ở sheet {DataSheet}, bắt đầu từ dòng 2. Không đổi tên sheet, tên và thứ tự cột.",
         "Mỗi dòng là một bài học. Thông tin chương lặp lại ở mọi dòng thuộc chương đó.",
-        "Chương chưa có bài: để trống Mã bài và Tên bài.",
-        "Các cột có dấu (*) là bắt buộc. Mã bài và Tên bài phải điền cả hai hoặc bỏ trống cả hai.",
-        "Khối lớp và Lĩnh vực chọn trong danh sách ở cuối trang này.",
-        "Lĩnh vực trùng tên giữa các môn học sẽ kèm tên môn. Chọn đúng giá trị trong danh sách.",
-        "Mã và tên chương không được trùng trong cùng khối lớp và lĩnh vực; mã và tên bài không được trùng trong cùng chương.",
-        "Chương đã có trong hệ thống (cùng khối, lĩnh vực, mã và tên) thì bài mới được thêm vào chương đó.",
-        "Chương có bài thuộc hai lĩnh vực: nhập chương hai lần, mỗi lĩnh vực một lần, cùng mã chương.",
+        "Chương chưa có bài: để trống Tên bài.",
+        "Bắt buộc: Khối lớp, Lĩnh vực, Tên chương. Cột Mã chương và Mã bài không còn dùng: có thể bỏ trống, hệ thống bỏ qua.",
+        "Khối lớp và Lĩnh vực (môn học) chọn trong danh sách ở cuối trang này.",
+        "Tên chương không được trùng trong cùng khối lớp và môn học; tên bài không được trùng trong cùng chương.",
+        "Chương đã có trong hệ thống (cùng khối, môn học và tên chương) thì bài mới được thêm vào chương đó.",
         "Nếu có bất kỳ dòng lỗi nào, hệ thống không lưu gì. Sửa tệp rồi tải lên lại.",
         $"Tối đa {MaxRows} dòng mỗi tệp. Chỉ nhận tệp .xlsx."
     ];

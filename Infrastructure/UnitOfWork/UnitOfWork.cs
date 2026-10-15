@@ -10,22 +10,14 @@ namespace Infrastructure.UnitOfWork;
 public class UnitOfWork(
     ApplicationDbContext db,
     IAcademicYearRepository academicYears,
-    IProvinceRepository provinces,
     IMatrixRepository matrices,
     IMatrixTaskRepository matrixTasks,
-    IMatrixReferenceRepository matrixReferences,
-    IExamRepository exams,
-    IExamSubjectRepository examSubjects,
-    IExamRoomRepository examRooms) : IUnitOfWork
+    IMatrixReferenceRepository matrixReferences) : IUnitOfWork
 {
     public IAcademicYearRepository AcademicYears { get; } = academicYears;
-    public IProvinceRepository Provinces { get; } = provinces;
     public IMatrixRepository Matrices { get; } = matrices;
     public IMatrixTaskRepository MatrixTasks { get; } = matrixTasks;
     public IMatrixReferenceRepository MatrixReferences { get; } = matrixReferences;
-    public IExamRepository Exams { get; } = exams;
-    public IExamSubjectRepository ExamSubjects { get; } = examSubjects;
-    public IExamRoomRepository ExamRooms { get; } = examRooms;
 
     public async Task<int> CompleteAsync(CancellationToken cancellationToken = default)
     {
@@ -83,16 +75,16 @@ public class UnitOfWork(
             return false;
         }
 
-        return mysqlException.Message.Contains("uq_exam_matrices_task", StringComparison.OrdinalIgnoreCase) ||
-            mysqlException.Message.Contains("uq_matrix_details_cell", StringComparison.OrdinalIgnoreCase);
+        return mysqlException.Message.Contains("uq_matrix_task_id", StringComparison.OrdinalIgnoreCase) ||
+            mysqlException.Message.Contains("uq_matrix_detail_matrix_id_lesson_id_cog_level_question_type", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetDuplicateCode(DbUpdateException exception)
     {
         var message = exception.GetBaseException().Message;
-        return message.Contains("uq_exam_matrices_task", StringComparison.OrdinalIgnoreCase)
+        return message.Contains("uq_matrix_task_id", StringComparison.OrdinalIgnoreCase)
             ? "TaskAlreadyHasMatrix"
-            : message.Contains("uq_matrix_details_cell", StringComparison.OrdinalIgnoreCase)
+            : message.Contains("uq_matrix_detail_matrix_id_lesson_id_cog_level_question_type", StringComparison.OrdinalIgnoreCase)
                 ? "DuplicateDetail"
                 : throw new InvalidOperationException("Unexpected non-matrix duplicate key.");
     }

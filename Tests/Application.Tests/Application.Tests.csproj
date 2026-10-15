@@ -26,4 +26,13 @@
     <ProjectReference Include="..\..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Khoá tạm DB v2: test của module chưa chuyển sang ERD (xem DB_V2.md mục 4). -->
+  <ItemGroup>
+    <Compile Remove="EmailTemplateRulesTests.cs;ExamRoomServiceTests.cs;ExamServiceTests.cs;ExamSubjectServiceTests.cs;ExamValidatorTests.cs;ProvinceCatalogServiceTests.cs;ProvinceSyncServiceTests.cs" />
+  </ItemGroup>
+
+  <!-- DB v2: preserve Question module source until its persistence is adapted. -->
+  <ItemGroup>
+    <Compile Remove="QuestionImportTests.cs" />
+  </ItemGroup>
 </Project>

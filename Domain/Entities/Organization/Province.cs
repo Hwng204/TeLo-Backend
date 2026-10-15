@@ -8,6 +8,4 @@ public sealed class Province
     public string Source { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public DateTimeOffset LastSyncedAt { get; set; }
-
-    public ICollection<School> Schools { get; set; } = new List<School>();
 }

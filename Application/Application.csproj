@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
@@ -11,4 +11,18 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Khoá tạm DB v2: module kỳ thi, email, import học sinh, danh mục tỉnh chưa chuyển sang ERD.
+       Route của chúng trả 501 (WebAPI LockedFeaturesController). Xem DB_V2.md mục 4. -->
+  <ItemGroup>
+    <Compile Remove="Common\ExamRoomValidator.cs;Common\ExamSubjectValidator.cs;Common\ExamValidator.cs;Common\EmailRecipientResolver.cs;Common\EmailTemplateRules.cs" />
+    <Compile Remove="DTOs\ExamDtos.cs;DTOs\ExamRoomDtos.cs;DTOs\ExamSubjectDtos.cs;DTOs\EmailManagementDtos.cs;DTOs\StudentImportDtos.cs;DTOs\ProvinceDto.cs" />
+    <Compile Remove="Mappings\ExamMappingExtensions.cs;Mappings\ExamRoomMappingExtensions.cs;Mappings\ExamSubjectMappingExtensions.cs" />
+    <Compile Remove="Services\Implementations\ExamRoomService.cs;Services\Implementations\ExamService.cs;Services\Implementations\ExamSubjectService.cs;Services\Implementations\EmailManagementService.cs;Services\Implementations\EmailNotificationService.cs;Services\Implementations\StudentImportRules.cs;Services\Implementations\StudentImportService.cs;Services\Implementations\ProvinceCatalogService.cs;Services\Implementations\ProvinceSyncService.cs" />
+    <Compile Remove="Services\Interfaces\IExamRoomService.cs;Services\Interfaces\IExamService.cs;Services\Interfaces\IExamSubjectService.cs;Services\Interfaces\IEmailManagementService.cs;Services\Interfaces\IStudentImportService.cs;Services\Interfaces\IProvinceCatalogService.cs;Services\Interfaces\IProvinceSyncService.cs" />
+  </ItemGroup>
+
+  <!-- DB v2: preserve Question module source until its persistence is adapted. -->
+  <ItemGroup>
+    <Compile Remove="Services\Implementations\QuestionService.cs;Services\Implementations\QuestionBankService.cs;Services\Implementations\QuestionImportService.cs;Services\Implementations\QuestionPaperService.cs" />
+  </ItemGroup>
 </Project>

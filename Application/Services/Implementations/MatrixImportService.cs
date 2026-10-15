@@ -14,11 +14,10 @@ public sealed class MatrixImportService(IMatrixReferenceRepository references, I
     {
         var data = await ReferenceAsync(context, cancellationToken);
         var option = data.AcademicContexts.Single(c => c.Id == context.AcademicContextId);
-        var semester = data.Semesters.FirstOrDefault(s => s.Id == context.SemesterId);
         try
         {
             return new MatrixExportFile($"mau-ma-tran-{context.AcademicContextId}.xlsx",
-                MatrixImportWorkbook.CreateTemplate(context.Name, context.TotalScore, option.Label, semester?.Name, data.Lessons));
+                MatrixImportWorkbook.CreateTemplate(context.Name, context.TotalScore, option.Label, null, data.Lessons));
         }
         catch (MatrixImportFormatException error) { throw InvalidFile(error.Message); }
     }
@@ -49,13 +48,13 @@ public sealed class MatrixImportService(IMatrixReferenceRepository references, I
 
     private async Task<MatrixReferenceModel> ReferenceAsync(MatrixImportContext context, CancellationToken cancellationToken)
     {
-        if (context.AcademicContextId == 0 || context.TotalScore <= 0 || context.Name?.Length > 255)
-            throw new MatrixApplicationException("InvalidRequest", "Chọn phạm vi ma trận, tổng điểm nguyên dương và tên tối đa 255 ký tự.");
+        if (context.AcademicContextId == 0 || context.TotalScore is <= 0 or > MatrixApplicationService.MaxTotalScore ||
+            context.Name?.Length > 255)
+            throw new MatrixApplicationException("InvalidRequest",
+                $"Chọn phạm vi ma trận, tổng điểm nguyên dương tối đa {MatrixApplicationService.MaxTotalScore} và tên tối đa 255 ký tự.");
         var data = await references.GetReferenceDataAsync(currentUser.Actor, context.AcademicContextId, cancellationToken);
-        var option = data.AcademicContexts.SingleOrDefault(c => c.Id == context.AcademicContextId);
-        if (option is null || (context.SemesterId is not null &&
-            !data.Semesters.Any(s => s.Id == context.SemesterId && s.AcademicYearId == option.AcademicYearId)))
-            throw new MatrixApplicationException("InvalidReference", "Phạm vi hoặc học kỳ không hợp lệ hoặc không còn hoạt động.");
+        if (!data.AcademicContexts.Any(c => c.Id == context.AcademicContextId))
+            throw new MatrixApplicationException("InvalidReference", "Phạm vi ma trận không hợp lệ hoặc không còn hoạt động.");
         return data;
     }
 

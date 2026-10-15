@@ -69,9 +69,9 @@ public sealed class MatrixImportRulesTests
     }
 
     [Theory]
-    [InlineData("Bài 1. Phân số — Chương I. Số và phép tính", 1)]
+    [InlineData("Bài Phân số — Chương Số và phép tính", 1)]
     [InlineData("Số và phép tính / Phân số", 1)]
-    [InlineData("Bài 1. Phân số — Chương II. Ôn tập", 2)]
+    [InlineData("Bài Phân số — Chương Ôn tập", 2)]
     public void QualifiedLesson_ResolvesCorrectChapter(string label, int id)
     {
         var result = Read([label, "Nhận biết", "Trắc nghiệm", "1", "100"]);

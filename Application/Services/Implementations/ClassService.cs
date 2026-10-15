@@ -85,7 +85,7 @@ public sealed class ClassService(
         CreateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = SchoolDirectoryValidator.ValidateCreateClass(request, out var name, out var code, out var status);
+        var errors = SchoolDirectoryValidator.ValidateCreateClass(request, out var name, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -93,7 +93,7 @@ public sealed class ClassService(
 
         var created = await classRepository.CreateClassAsync(
             new CreateClassCommand(
-                schoolId, request.SchoolBranchId, code, name, request.AcademicYearId,
+                schoolId, request.SchoolBranchId, name, name, request.AcademicYearId,
                 request.GradeLevelId, status, NullableId(request.HomeroomTeacherId)),
             cancellationToken);
         return await ClassResultAsync(schoolId, created, cancellationToken);
@@ -105,7 +105,7 @@ public sealed class ClassService(
         UpdateClassRequest request,
         CancellationToken cancellationToken)
     {
-        var errors = SchoolDirectoryValidator.ValidateUpdateClass(request, out var name, out var code, out var status);
+        var errors = SchoolDirectoryValidator.ValidateUpdateClass(request, out var name, out var status);
         if (errors.Count > 0)
         {
             return Invalid<ClassDetailDto>(errors);
@@ -113,7 +113,7 @@ public sealed class ClassService(
 
         var updated = await classRepository.UpdateClassAsync(
             new UpdateClassCommand(
-                schoolId, classId, request.SchoolBranchId, code, name, request.AcademicYearId,
+                schoolId, classId, request.SchoolBranchId, name, name, request.AcademicYearId,
                 request.GradeLevelId, status, NullableId(request.HomeroomTeacherId)),
             cancellationToken);
         return await ClassResultAsync(schoolId, updated, cancellationToken);
@@ -199,7 +199,8 @@ public sealed class ClassService(
         DirectoryWriteStatus.DuplicateClassCode =>
             ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.ClassCodeDuplicate, "Mã lớp đã tồn tại trong năm học của cơ sở."),
         DirectoryWriteStatus.DuplicateClassName =>
-            ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.ClassCodeDuplicate, "Tên lớp đã tồn tại trong năm học của cơ sở."),
+            ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Dữ liệu không hợp lệ.",
+                new Dictionary<string, string[]> { ["name"] = ["Tên lớp đã tồn tại trong năm học của cơ sở."] }),
         DirectoryWriteStatus.ClassHasActiveStudents =>
             ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.ClassHasActiveStudents, "Không thể ngừng hoạt động lớp đang có học sinh theo học."),
         _ => ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Thao tác không thành công.")

@@ -12,64 +12,21 @@ public sealed class MatrixReferenceRepository(
     IMatrixRoleCatalog roleCatalog) : IMatrixReferenceRepository
 {
     public async Task EnsureValidAsync(
-        ulong academicContextId,
-        ulong? semesterId,
+        MatrixScope scope,
         IReadOnlyCollection<ulong> lessonIds,
         CancellationToken cancellationToken,
         ulong? requiredBranchId = null)
     {
-        if (academicContextId == 0)
-        {
-            throw InvalidReference("Ngữ cảnh học thuật là bắt buộc.");
-        }
-
-        var context = await db.AcademicContexts
-            .AsNoTracking()
-            .Where(item => item.Id == academicContextId)
-            .Select(item => new
-            {
-                item.AcademicYearId,
-                item.SchoolBranchId,
-                item.GradeLevelId,
-                item.SubjectId
-            })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (context is null)
-        {
-            throw InvalidReference("Không tìm thấy ngữ cảnh học thuật.");
-        }
-
-        if (requiredBranchId is not null && context.SchoolBranchId != requiredBranchId)
+        if (requiredBranchId is not null && scope.BranchId != requiredBranchId)
         {
             throw new MatrixDomainException(
                 "Forbidden",
                 "Ngữ cảnh học thuật thuộc chi nhánh khác.");
         }
 
-        if (semesterId is not null)
+        if (!await ScopeExistsAsync(scope, cancellationToken))
         {
-            if (semesterId == 0)
-            {
-                throw InvalidReference("Học kỳ không hợp lệ.");
-            }
-
-            var semesterYearId = await db.Semesters
-                .AsNoTracking()
-                .Where(item => item.Id == semesterId.Value)
-                .Select(item => (ulong?)item.AcademicYearId)
-                .SingleOrDefaultAsync(cancellationToken);
-
-            if (semesterYearId is null)
-            {
-                throw InvalidReference("Không tìm thấy học kỳ.");
-            }
-
-            if (semesterYearId != context.AcademicYearId)
-            {
-                throw InvalidReference(
-                    "Học kỳ không thuộc năm học của ngữ cảnh học thuật.");
-            }
+            throw InvalidReference("Không tìm thấy ngữ cảnh học thuật.");
         }
 
         var distinctLessonIds = lessonIds.Distinct().ToArray();
@@ -79,7 +36,7 @@ public sealed class MatrixReferenceRepository(
             return;
         }
 
-        var validLessonCount = await LessonsOf(context.SchoolBranchId, context.GradeLevelId, context.SubjectId)
+        var validLessonCount = await LessonsOf(scope.BranchId, scope.GradeLevelId, scope.SubjectId)
             .Where(lesson => distinctLessonIds.Contains(lesson.Id))
             .CountAsync(cancellationToken);
 
@@ -91,49 +48,49 @@ public sealed class MatrixReferenceRepository(
     }
 
     public async Task<MatrixExportInfo> GetExportInfoAsync(
-        ulong academicContextId,
-        ulong? semesterId,
+        MatrixScope scope,
         IReadOnlyCollection<ulong> lessonIds,
         CancellationToken cancellationToken)
     {
-        var context = await db.AcademicContexts
+        var names = await db.SchoolBranches
             .AsNoTracking()
-            .Where(item => item.Id == academicContextId)
-            .Select(item => new
+            .Where(branch => branch.Id == scope.BranchId)
+            .Select(branch => new
             {
-                Subject = item.Subject.Name,
-                Grade = item.GradeLevel.Name,
-                Year = item.AcademicYear.Name,
-                School = item.School.Name,
-                Branch = item.SchoolBranch.Name
+                School = branch.School.Name,
+                Branch = branch.Name,
+                Subject = db.Subjects.Where(subject => subject.Id == scope.SubjectId).Select(subject => subject.Name).FirstOrDefault(),
+                Grade = db.GradeLevels.Where(grade => grade.Id == scope.GradeLevelId).Select(grade => grade.Name).FirstOrDefault()
             })
             .SingleOrDefaultAsync(cancellationToken);
-
-        var semesterName = semesterId is null
-            ? null
-            : await db.Semesters
-                .AsNoTracking()
-                .Where(item => item.Id == semesterId.Value)
-                .Select(item => item.Name)
-                .SingleOrDefaultAsync(cancellationToken);
 
         var lessons = await db.Lessons
             .AsNoTracking()
             .Where(lesson => lessonIds.Contains(lesson.Id))
-            .Select(lesson => new { lesson.Id, lesson.Title, lesson.Code, Chapter = lesson.Chapter.Title, ChapterCode = lesson.Chapter.Code })
+            .Select(lesson => new { lesson.Id, lesson.Title, Chapter = lesson.Chapter.Title })
             .ToListAsync(cancellationToken);
 
-        var label = context is null
-            ? academicContextId.ToString()
-            : $"{context.Subject} - {context.Grade} - {context.Year} - {context.School} / {context.Branch}";
+        var label = names is null
+            ? scope.Key.ToString()
+            : ScopeLabel(names.Subject, names.Grade, names.School, names.Branch);
 
         return new MatrixExportInfo(
             label,
-            semesterName,
-            lessons.ToDictionary(lesson => lesson.Id, lesson => $"Bài {lesson.Code}. {lesson.Title} — Chương {lesson.ChapterCode}. {lesson.Chapter}"));
+            lessons.ToDictionary(lesson => lesson.Id, lesson => $"Bài {lesson.Title} — Chương {lesson.Chapter}"));
     }
 
-    // Bài dùng được cho một ngữ cảnh: chương cùng phân hiệu, cùng khối, và lĩnh vực thuộc môn của ngữ cảnh.
+    // A scope exists through its chapters, the same rows the reference data lists.
+    private Task<bool> ScopeExistsAsync(MatrixScope scope, CancellationToken cancellationToken) =>
+        db.Chapters.AnyAsync(chapter =>
+                chapter.SchoolBranchId == scope.BranchId &&
+                chapter.SubjectId == scope.SubjectId &&
+                chapter.GradeLevelId == scope.GradeLevelId,
+            cancellationToken);
+
+    private static string ScopeLabel(string? subject, string? grade, string school, string branch) =>
+        $"{subject} - {grade} - {school} / {branch}";
+
+    // Bài dùng được cho một ngữ cảnh: chương cùng phân hiệu, cùng khối và cùng môn của ngữ cảnh.
     private IQueryable<Domain.Entities.Academic.Lesson> LessonsOf(ulong branchId, ulong gradeLevelId, ulong subjectId)
     {
         return db.Lessons
@@ -141,7 +98,7 @@ public sealed class MatrixReferenceRepository(
             .Where(lesson =>
                 lesson.Chapter.SchoolBranchId == branchId &&
                 lesson.Chapter.GradeLevelId == gradeLevelId &&
-                lesson.Chapter.Field.SubjectId == subjectId);
+                lesson.Chapter.SubjectId == subjectId);
     }
 
     private static MatrixDomainException InvalidReference(string message)
@@ -152,8 +109,7 @@ public sealed class MatrixReferenceRepository(
     public async Task EnsureAssignmentValidAsync(
         MatrixActor actor,
         ulong assignedToUserId,
-        ulong academicContextId,
-        ulong? semesterId,
+        MatrixScope scope,
         CancellationToken cancellationToken)
     {
         var actorBranchId = await db.Users
@@ -162,31 +118,18 @@ public sealed class MatrixReferenceRepository(
             .Select(user => user.SchoolBranchId)
             .SingleOrDefaultAsync(cancellationToken);
 
-        var context = await db.AcademicContexts
-            .AsNoTracking()
-            .Where(item => item.Id == academicContextId)
-            .Select(item => new { item.AcademicYearId, item.SchoolBranchId })
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (context is null)
+        if (!await ScopeExistsAsync(scope, cancellationToken))
         {
-            throw new MatrixDomainException(
-                "InvalidReference",
-                "Không tìm thấy ngữ cảnh học thuật.");
+            throw InvalidReference("Không tìm thấy ngữ cảnh học thuật.");
         }
 
         if (!actor.IsPrincipal &&
-            (actorBranchId is null || actorBranchId.Value != context.SchoolBranchId))
+            (actorBranchId is null || actorBranchId.Value != scope.BranchId))
         {
             throw new MatrixDomainException(
                 "Forbidden",
                 "Ngữ cảnh học thuật nằm ngoài chi nhánh của bạn.");
         }
-
-        await EnsureSemesterAsync(
-            context.AcademicYearId,
-            semesterId,
-            cancellationToken);
 
         var assignee = await db.Users
             .AsNoTracking()
@@ -195,7 +138,7 @@ public sealed class MatrixReferenceRepository(
                 cancellationToken);
 
         if (assignee is null ||
-            assignee.SchoolBranchId != context.SchoolBranchId ||
+            assignee.SchoolBranchId != scope.BranchId ||
             !await db.UserRoles.WhereEffective().AnyAsync(userRole =>
                 userRole.UserId == assignedToUserId && roleCatalog.TeamLeadRoleCodes.Contains(userRole.Role.Code), cancellationToken))
         {
@@ -234,103 +177,111 @@ public sealed class MatrixReferenceRepository(
                 "Tài khoản PHT chưa được gán chi nhánh.");
         }
 
-        if (academicContextId is not null && actorBranchId is not null)
-        {
-            var requestedBranchId = await db.AcademicContexts
-                .AsNoTracking()
-                .Where(context => context.Id == academicContextId.Value)
-                .Select(context => (ulong?)context.SchoolBranchId)
-                .SingleOrDefaultAsync(cancellationToken);
+        // A key that is not a scope selects nothing (default scope has zero ids).
+        MatrixScope? requested = academicContextId is null
+            ? null
+            : MatrixScope.TryParse(academicContextId.Value, out var parsed) ? parsed : default(MatrixScope);
 
-            if (requestedBranchId is not null && requestedBranchId != actorBranchId)
-            {
-                throw new MatrixDomainException(
-                    "Forbidden",
-                    "Ngữ cảnh học thuật thuộc chi nhánh khác.");
-            }
+        if (requested is { BranchId: > 0 } requestedScope &&
+            actorBranchId is not null &&
+            requestedScope.BranchId != actorBranchId)
+        {
+            throw new MatrixDomainException(
+                "Forbidden",
+                "Ngữ cảnh học thuật thuộc chi nhánh khác.");
         }
 
-        var contexts = db.AcademicContexts
+        // Scopes are the (branch, subject, grade) that have curriculum chapters; ids MatrixScope.Key cannot
+        // encode are left out rather than failing the whole list.
+        var chapters = db.Chapters
             .AsNoTracking()
-            .Where(context =>
-                (academicContextId != null || context.AcademicYear.Status == "ACTIVE") &&
-                context.School.Status == "ACTIVE" &&
-                context.SchoolBranch.Status == "ACTIVE");
+            .Where(chapter =>
+                chapter.SchoolBranch.Status == "ACTIVE" &&
+                chapter.SchoolBranch.School.Status == "ACTIVE" &&
+                chapter.SubjectId < 1000 &&
+                chapter.GradeLevelId < 1000);
 
         if (actorBranchId is not null)
         {
-            contexts = contexts.Where(context => context.SchoolBranchId == actorBranchId.Value);
+            chapters = chapters.Where(chapter => chapter.SchoolBranchId == actorBranchId.Value);
         }
 
-        if (academicContextId is not null)
+        if (requested is { } scope)
         {
-            contexts = contexts.Where(context => context.Id == academicContextId.Value);
+            chapters = chapters.Where(chapter =>
+                chapter.SchoolBranchId == scope.BranchId &&
+                chapter.SubjectId == scope.SubjectId &&
+                chapter.GradeLevelId == scope.GradeLevelId);
         }
 
-        var contextRows = await contexts
-            .Select(context => new
+        var scopeRows = await chapters
+            .Select(chapter => new
             {
-                context.Id,
-                context.AcademicYearId,
-                context.SchoolBranchId,
-                context.SubjectId,
-                context.GradeLevelId,
-                AcademicYearName = context.AcademicYear.Name,
-                SchoolName = context.School.Name,
-                BranchName = context.SchoolBranch.Name,
-                SubjectName = context.Subject.Name,
-                GradeLevelName = context.GradeLevel.Name
+                chapter.SchoolBranchId,
+                chapter.SubjectId,
+                chapter.GradeLevelId,
+                SchoolName = chapter.SchoolBranch.School.Name,
+                BranchName = chapter.SchoolBranch.Name,
+                SubjectName = chapter.Subject.Name,
+                GradeLevelName = chapter.GradeLevel.Name
             })
-            .OrderBy(context => context.Id)
-            .ToListAsync(cancellationToken);
-
-        var contextOptions = contextRows
-            .Select(context => new MatrixAcademicContextOption(
-                context.Id,
-                $"{context.SubjectName} - {context.GradeLevelName} - {context.AcademicYearName} - {context.SchoolName} / {context.BranchName}",
-                context.AcademicYearId,
-                context.SchoolBranchId,
-                context.SubjectId,
-                context.GradeLevelId,
-                context.SubjectName,
-                context.GradeLevelName,
-                context.AcademicYearName))
-            .ToArray();
-
-        var academicYearIds = contextRows
-            .Select(context => context.AcademicYearId)
             .Distinct()
-            .ToArray();
-        var semesters = await db.Semesters
-            .AsNoTracking()
-            .Where(semester =>
-                academicYearIds.Contains(semester.AcademicYearId) &&
-                (academicContextId != null || semester.AcademicYear.Status == "ACTIVE"))
-            .OrderBy(semester => semester.StartDate)
-            .Select(semester => new MatrixSemesterOption(
-                semester.Id,
-                semester.AcademicYearId,
-                semester.Name,
-                semester.StartDate,
-                semester.EndDate))
+            .OrderBy(row => row.SchoolBranchId)
+            .ThenBy(row => row.SubjectId)
+            .ThenBy(row => row.GradeLevelId)
             .ToListAsync(cancellationToken);
 
-        // Bài học chỉ trả về khi đã chọn một ngữ cảnh cụ thể.
-        var selectedContext = academicContextId is null ? null : contextRows.SingleOrDefault();
-        var lessons = selectedContext is null
+        // Matrices have no year; pickers still show the ACTIVE one.
+        var activeYear = await db.AcademicYears
+            .AsNoTracking()
+            .Where(year => year.Status == "ACTIVE")
+            .OrderByDescending(year => year.Id)
+            .Select(year => new { year.Id, year.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var contextOptions = scopeRows
+            .Select(row => new MatrixAcademicContextOption(
+                new MatrixScope(row.SchoolBranchId, row.SubjectId, row.GradeLevelId).Key,
+                ScopeLabel(row.SubjectName, row.GradeLevelName, row.SchoolName, row.BranchName),
+                activeYear?.Id ?? 0,
+                row.SchoolBranchId,
+                row.SubjectId,
+                row.GradeLevelId,
+                row.SubjectName,
+                row.GradeLevelName,
+                activeYear?.Name ?? ""))
+            .ToArray();
+
+        var semesters = activeYear is null
             ? []
-            : await LessonsOf(selectedContext.SchoolBranchId, selectedContext.GradeLevelId, selectedContext.SubjectId)
-                .OrderBy(lesson => lesson.Chapter.SortOrder)
-                .ThenBy(lesson => lesson.Chapter.FieldId)
-                .ThenBy(lesson => lesson.SortOrder)
+            : await db.Semesters
+                .AsNoTracking()
+                .Where(semester => semester.AcademicYearId == activeYear.Id)
+                .OrderBy(semester => semester.Order)
+                .Select(semester => new MatrixSemesterOption(
+                    semester.Id,
+                    semester.AcademicYearId,
+                    semester.Name,
+                    null,
+                    null))
+                .ToListAsync(cancellationToken);
+
+        // Bài học chỉ trả về khi đã chọn một phạm vi cụ thể.
+        var selected = requested is null ? null : contextOptions.SingleOrDefault();
+        var lessons = selected is null
+            ? []
+            : await LessonsOf(selected.SchoolBranchId, selected.GradeLevelId, selected.SubjectId)
+                .OrderBy(lesson => lesson.ChapterId)
+                .ThenBy(lesson => lesson.Id)
                 .Select(lesson => new MatrixLessonOption(
                     lesson.Id,
-                    selectedContext.Id,
+                    selected.Id,
                     lesson.ChapterId,
                     lesson.Title,
-                    lesson.SortOrder,
-                    lesson.Code,
-                    lesson.Chapter.Code,
+                    // No stored order: position by id within the chapter, like the curriculum screen.
+                    (uint)db.Lessons.Count(other => other.ChapterId == lesson.ChapterId && other.Id <= lesson.Id),
+                    "",
+                    "",
                     lesson.Chapter.Title))
                 .ToListAsync(cancellationToken);
 
@@ -354,29 +305,5 @@ public sealed class MatrixReferenceRepository(
             : [];
 
         return new MatrixReferenceModel(contextOptions, semesters, lessons, teamLeads);
-    }
-
-    private async Task EnsureSemesterAsync(
-        ulong academicYearId,
-        ulong? semesterId,
-        CancellationToken cancellationToken)
-    {
-        if (semesterId is null)
-        {
-            return;
-        }
-
-        var semesterYearId = await db.Semesters
-            .AsNoTracking()
-            .Where(semester => semester.Id == semesterId.Value)
-            .Select(semester => (ulong?)semester.AcademicYearId)
-            .SingleOrDefaultAsync(cancellationToken);
-
-        if (semesterYearId is null || semesterYearId.Value != academicYearId)
-        {
-            throw new MatrixDomainException(
-                "InvalidReference",
-                "Học kỳ không thuộc năm học của ngữ cảnh học thuật.");
-        }
     }
 }

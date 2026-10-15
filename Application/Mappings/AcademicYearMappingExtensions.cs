@@ -13,15 +13,13 @@ public static class AcademicYearMappingExtensions
             query.Page,
             query.PageSize);
 
+    // `code` has no column in v2; it was always assigned from the name.
     public static AcademicYearDetailDto ToDetailDto(this AcademicYear academicYear) =>
         new(
             academicYear.Id,
-            academicYear.Code ?? string.Empty,
             academicYear.Name,
-            academicYear.StartDate,
-            academicYear.EndDate,
+            academicYear.Name,
             academicYear.Status,
-            academicYear.Version,
             academicYear.Semesters
                 .OrderBy(semester => semester.Order)
                 .Select(semester => semester.ToDto())
@@ -31,20 +29,13 @@ public static class AcademicYearMappingExtensions
         new(
             semester.Id,
             semester.Order,
-            semester.Name,
-            semester.StartDate,
-            semester.EndDate,
-            semester.Status,
-            semester.Version);
+            semester.Name);
 
     public static AcademicYearListItem ToListItem(this AcademicYear academicYear) =>
         new(
             academicYear.Id,
-            academicYear.Code ?? string.Empty,
             academicYear.Name,
-            academicYear.StartDate,
-            academicYear.EndDate,
+            academicYear.Name,
             academicYear.Status,
-            academicYear.Version,
             academicYear.Semesters.Count);
 }

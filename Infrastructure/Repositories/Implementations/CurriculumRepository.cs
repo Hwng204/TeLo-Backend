@@ -23,64 +23,68 @@ public sealed class CurriculumRepository(ApplicationDbContext db) : ICurriculumR
             .Select(grade => new CurriculumGradeRow(grade.Id, grade.Name))
             .ToListAsync(cancellationToken);
 
+    // Fields are subjects now; the row keeps its shape so the API does not change.
     public async Task<IReadOnlyList<CurriculumFieldRow>> ListFieldsAsync(CancellationToken cancellationToken) =>
-        await db.SubjectFields.AsNoTracking()
-            .Where(field => field.Status == ActiveStatus && field.Subject.Status == ActiveStatus)
-            .OrderBy(field => field.Subject.Name)
-            .ThenBy(field => field.Id)
-            .Select(field => new CurriculumFieldRow(field.Id, field.Name, field.SubjectId, field.Subject.Name))
+        await db.Subjects.AsNoTracking()
+            .Where(subject => subject.Status == ActiveStatus)
+            .OrderBy(subject => subject.Name)
+            .ThenBy(subject => subject.Id)
+            .Select(subject => new CurriculumFieldRow(subject.Id, subject.Name, subject.Id, subject.Name))
             .ToListAsync(cancellationToken);
 
+    // Code is no longer stored ("" in the rows); SortOrder is the position by id: chapters within their
+    // grade and subject, lessons within their chapter.
     public async Task<IReadOnlyList<CurriculumChapterRow>> ListChaptersAsync(
         ulong branchId,
         CancellationToken cancellationToken)
     {
         var chapters = await db.Chapters.AsNoTracking()
             .Where(chapter => chapter.SchoolBranchId == branchId)
+            .OrderBy(chapter => chapter.Id)
             .Select(chapter => new
             {
                 chapter.Id,
                 chapter.GradeLevelId,
                 GradeLevelName = chapter.GradeLevel.Name,
-                chapter.FieldId,
-                FieldName = chapter.Field.Name,
-                chapter.Code,
-                chapter.Title,
-                chapter.SortOrder
+                chapter.SubjectId,
+                SubjectName = chapter.Subject.Name,
+                chapter.Title
             })
             .ToListAsync(cancellationToken);
 
         var lessons = await db.Lessons.AsNoTracking()
             .Where(lesson => lesson.Chapter.SchoolBranchId == branchId)
-            .Select(lesson => new CurriculumLessonRow(
+            .OrderBy(lesson => lesson.Id)
+            .Select(lesson => new
+            {
                 lesson.Id,
                 lesson.ChapterId,
-                lesson.Code,
                 lesson.Title,
-                lesson.SortOrder,
-                db.MatrixDetails.Any(detail => detail.LessonId == lesson.Id) ||
-                db.QuestionTasks.Any(task => task.LessonId == lesson.Id)))
+                InUse = db.MatrixDetails.Any(detail => detail.LessonId == lesson.Id) ||
+                    db.QuestionTasks.Any(task => task.LessonId == lesson.Id)
+            })
             .ToListAsync(cancellationToken);
 
-        var lessonsByChapter = lessons
-            .OrderBy(lesson => lesson.SortOrder)
-            .ThenBy(lesson => lesson.Id)
-            .ToLookup(lesson => lesson.ChapterId);
+        var lessonsByChapter = lessons.ToLookup(lesson => lesson.ChapterId);
 
         return chapters
-            .OrderBy(chapter => chapter.GradeLevelName, StringComparer.CurrentCulture)
-            .ThenBy(chapter => chapter.SortOrder)
-            .ThenBy(chapter => chapter.FieldId)
-            .Select(chapter => new CurriculumChapterRow(
+            .GroupBy(chapter => (chapter.GradeLevelId, chapter.SubjectId))
+            .SelectMany(group => group.Select((chapter, index) => new CurriculumChapterRow(
                 chapter.Id,
                 chapter.GradeLevelId,
                 chapter.GradeLevelName,
-                chapter.FieldId,
-                chapter.FieldName,
-                chapter.Code,
+                chapter.SubjectId,
+                chapter.SubjectName,
+                string.Empty,
                 chapter.Title,
-                chapter.SortOrder,
-                lessonsByChapter[chapter.Id].ToArray()))
+                (uint)index + 1,
+                lessonsByChapter[chapter.Id]
+                    .Select((lesson, position) => new CurriculumLessonRow(
+                        lesson.Id, lesson.ChapterId, string.Empty, lesson.Title, (uint)position + 1, lesson.InUse))
+                    .ToArray())))
+            .OrderBy(chapter => chapter.GradeLevelName, StringComparer.CurrentCulture)
+            .ThenBy(chapter => chapter.FieldId)
+            .ThenBy(chapter => chapter.SortOrder)
             .ToArray();
     }
 
@@ -95,39 +99,31 @@ public sealed class CurriculumRepository(ApplicationDbContext db) : ICurriculumR
                 cancellationToken);
 
     // Comparisons run in MySQL, so they follow the column collation: case-insensitive, accent-sensitive.
-    public async Task<(bool CodeTaken, bool TitleTaken)> FindChapterConflictAsync(
+    public Task<bool> IsChapterTitleTakenAsync(
         ulong branchId,
         ulong gradeLevelId,
-        ulong fieldId,
-        string code,
+        ulong subjectId,
         string title,
         ulong? exceptChapterId,
-        CancellationToken cancellationToken)
-    {
-        var siblings = db.Chapters.AsNoTracking().Where(chapter =>
-            chapter.SchoolBranchId == branchId &&
-            chapter.GradeLevelId == gradeLevelId &&
-            chapter.FieldId == fieldId &&
-            (exceptChapterId == null || chapter.Id != exceptChapterId));
-        return (
-            await siblings.AnyAsync(chapter => chapter.Code == code, cancellationToken),
-            await siblings.AnyAsync(chapter => chapter.Title == title, cancellationToken));
-    }
+        CancellationToken cancellationToken) =>
+        db.Chapters.AnyAsync(chapter =>
+                chapter.SchoolBranchId == branchId &&
+                chapter.GradeLevelId == gradeLevelId &&
+                chapter.SubjectId == subjectId &&
+                chapter.Title == title &&
+                (exceptChapterId == null || chapter.Id != exceptChapterId),
+            cancellationToken);
 
-    public async Task<(bool CodeTaken, bool TitleTaken)> FindLessonConflictAsync(
+    public Task<bool> IsLessonTitleTakenAsync(
         ulong chapterId,
-        string code,
         string title,
         ulong? exceptLessonId,
-        CancellationToken cancellationToken)
-    {
-        var siblings = db.Lessons.AsNoTracking().Where(lesson =>
-            lesson.ChapterId == chapterId &&
-            (exceptLessonId == null || lesson.Id != exceptLessonId));
-        return (
-            await siblings.AnyAsync(lesson => lesson.Code == code, cancellationToken),
-            await siblings.AnyAsync(lesson => lesson.Title == title, cancellationToken));
-    }
+        CancellationToken cancellationToken) =>
+        db.Lessons.AnyAsync(lesson =>
+                lesson.ChapterId == chapterId &&
+                lesson.Title == title &&
+                (exceptLessonId == null || lesson.Id != exceptLessonId),
+            cancellationToken);
 
     public Task<bool> IsChapterInUseAsync(ulong chapterId, CancellationToken cancellationToken) =>
         db.Lessons.AnyAsync(
@@ -139,19 +135,6 @@ public sealed class CurriculumRepository(ApplicationDbContext db) : ICurriculumR
     public async Task<bool> IsLessonInUseAsync(ulong lessonId, CancellationToken cancellationToken) =>
         await db.MatrixDetails.AnyAsync(detail => detail.LessonId == lessonId, cancellationToken) ||
         await db.QuestionTasks.AnyAsync(task => task.LessonId == lessonId, cancellationToken);
-
-    public async Task<uint> NextChapterSortOrderAsync(
-        ulong branchId,
-        ulong gradeLevelId,
-        CancellationToken cancellationToken) =>
-        (await db.Chapters
-            .Where(chapter => chapter.SchoolBranchId == branchId && chapter.GradeLevelId == gradeLevelId)
-            .MaxAsync(chapter => (uint?)chapter.SortOrder, cancellationToken) ?? 0) + 1;
-
-    public async Task<uint> NextLessonSortOrderAsync(ulong chapterId, CancellationToken cancellationToken) =>
-        (await db.Lessons
-            .Where(lesson => lesson.ChapterId == chapterId)
-            .MaxAsync(lesson => (uint?)lesson.SortOrder, cancellationToken) ?? 0) + 1;
 
     public void Add(Chapter chapter) => db.Chapters.Add(chapter);
 

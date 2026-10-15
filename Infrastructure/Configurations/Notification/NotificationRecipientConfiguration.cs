@@ -8,7 +8,7 @@ public sealed class NotificationRecipientConfiguration : IEntityTypeConfiguratio
 {
     public void Configure(EntityTypeBuilder<NotificationRecipient> builder)
     {
-        builder.ToTable("notification_recipients", table =>
+        builder.ToTable("notification_user", table =>
         {
             table.HasCheckConstraint("ck_notification_recipients_email_status", "email_status IN ('PENDING', 'SENDING', 'SENT', 'ERROR', 'CANCELLED')");
             table.HasCheckConstraint("ck_notification_recipients_sent_at", "email_status <> 'SENT' OR email_sent_at IS NOT NULL");
@@ -22,7 +22,7 @@ public sealed class NotificationRecipientConfiguration : IEntityTypeConfiguratio
         builder.Property(entity => entity.DeliveryToken).HasColumnName("delivery_token").HasMaxLength(36);
         builder.Property(entity => entity.LastError).HasColumnName("last_error").HasMaxLength(100);
         builder.HasIndex(entity => new { entity.EmailStatus, entity.NextAttemptAt });
-        builder.Property(entity => entity.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
+        builder.Property(entity => entity.Id).HasColumnName("notification_user_id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
         builder.Property(entity => entity.NotificationId).HasColumnName("notification_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(entity => entity.UserId).HasColumnName("user_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(entity => entity.EmailStatus).HasColumnName("email_status").HasMaxLength(20).HasDefaultValue("PENDING").IsRequired();
@@ -39,12 +39,12 @@ public sealed class NotificationRecipientConfiguration : IEntityTypeConfiguratio
         builder.HasOne(entity => entity.Notification)
             .WithMany(notification => notification.Recipients)
             .HasForeignKey(entity => entity.NotificationId)
-            .HasConstraintName("fk_notification_recipients_notification")
+            .HasConstraintName("fk_notification_user_notification_id")
             .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(entity => entity.User)
             .WithMany()
             .HasForeignKey(entity => entity.UserId)
-            .HasConstraintName("fk_notification_recipients_user")
+            .HasConstraintName("fk_notification_user_user_id")
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

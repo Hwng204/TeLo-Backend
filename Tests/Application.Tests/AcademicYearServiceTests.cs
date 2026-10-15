@@ -10,7 +10,7 @@ namespace Application.Tests;
 public sealed class AcademicYearServiceTests
 {
     [Fact]
-    public async Task UpdateAsync_AllowsTermOnlyChangesForLegacyOverlappingYear()
+    public async Task UpdateAsync_ChecksNameConflictOnlyWhenTheNameChanges()
     {
         var repository = new FakeAcademicYearRepository { HasScheduleConflict = true };
         var service = new AcademicYearService(repository);
@@ -20,32 +20,33 @@ public sealed class AcademicYearServiceTests
         terms[1] = terms[1] with { Name = "Updated second term" };
 
         var result = await service.UpdateAsync(year.Id,
-            new UpdateAcademicYearRequest(year.Name, year.StartDate, year.EndDate, year.Version, terms),
+            new UpdateAcademicYearRequest(year.Name, terms),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal("Updated second term", result.Value!.Semesters[1].Name);
 
-        var changedSchedule = await service.UpdateAsync(year.Id,
-            new UpdateAcademicYearRequest(year.Name, year.StartDate.AddDays(-1), year.EndDate, year.Version, terms),
+        var renamed = await service.UpdateAsync(year.Id,
+            new UpdateAcademicYearRequest("2027-2028", terms),
             CancellationToken.None);
-        Assert.False(changedSchedule.IsSuccess);
-        Assert.Equal("ACADEMIC_YEAR_CONFLICT", changedSchedule.Error!.Code);
+        Assert.False(renamed.IsSuccess);
+        Assert.Equal("ACADEMIC_YEAR_CONFLICT", renamed.Error!.Code);
+        Assert.Equal("2026-2027", year.Name);
     }
 
     [Fact]
-    public async Task UpdateAsync_ChangesYearAndTermsAsOneValidSchedule()
+    public async Task UpdateAsync_RenamesYearAndTermsTogether()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
         await service.CreateAsync(ValidRequest() with { Terms = ValidTerms() }, CancellationToken.None);
         var year = Assert.Single(repository.AddedYears);
-        var request = new UpdateAcademicYearRequest("2027-2028", new DateOnly(2027, 8, 15), new DateOnly(2028, 5, 31), year.Version,
-            [new(1, "I", new DateOnly(2027, 8, 15), new DateOnly(2028, 1, 15)), new(2, "II", new DateOnly(2028, 1, 16), new DateOnly(2028, 5, 31))]);
+        var request = new UpdateAcademicYearRequest("2027-2028", [new(1, "Kỳ 1"), new(2, "Kỳ 2")]);
         var result = await service.UpdateAsync(year.Id, request, CancellationToken.None);
         Assert.True(result.IsSuccess);
         Assert.Equal("2027-2028", result.Value!.Name);
-        Assert.Equal(new DateOnly(2028, 1, 16), result.Value.Semesters[1].StartDate);
+        Assert.Equal("2027-2028", result.Value.Code);
+        Assert.Equal("Kỳ 2", result.Value.Semesters[1].Name);
     }
 
     [Fact]
@@ -55,39 +56,34 @@ public sealed class AcademicYearServiceTests
         var service = new AcademicYearService(repository);
         await service.CreateAsync(ValidRequest() with { Terms = ValidTerms() }, CancellationToken.None);
         var year = Assert.Single(repository.AddedYears);
-        var version = year.Version;
-        var request = new UpdateAcademicYearRequest("2027-2028", new DateOnly(2027, 8, 15), new DateOnly(2028, 5, 31), version, ValidTerms());
+        var request = new UpdateAcademicYearRequest("2027-2028", [new(1, "Kỳ"), new(2, "kỳ")]);
         var result = await service.UpdateAsync(year.Id, request, CancellationToken.None);
         Assert.False(result.IsSuccess);
         Assert.Equal("VALIDATION_ERROR", result.Error!.Code);
         Assert.Equal("2026-2027", year.Name);
-        Assert.Equal(version, year.Version);
-        Assert.Equal(new DateOnly(2026, 8, 15), year.Semesters.First().StartDate);
+        Assert.Equal(new[] { "I", "II" }, year.Semesters.OrderBy(term => term.Order).Select(term => term.Name));
     }
 
     [Fact]
-    public async Task ConfigureTermsAsync_CanEditOpenTermWhilePreservingClosedTerm()
+    public async Task ConfigureTermsAsync_RenamesTermsOfAnActiveYear()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
         await service.CreateAsync(ValidRequest() with { Terms = ValidTerms() }, CancellationToken.None);
         var year = Assert.Single(repository.AddedYears);
         year.Activate();
-        year.Semesters.First().Close();
-        var closedVersion = year.Semesters.First().Version;
         var terms = ValidTerms();
         terms[1] = terms[1] with { Name = "Second term updated" };
-        var result = await service.ConfigureTermsAsync(year.Id, new ConfigureTermsRequest(terms, year.Version), CancellationToken.None);
+        var result = await service.ConfigureTermsAsync(year.Id, new ConfigureTermsRequest(terms), CancellationToken.None);
         Assert.True(result.IsSuccess);
-        Assert.Equal(closedVersion, year.Semesters.First().Version);
+        Assert.Equal("I", year.Semesters.First().Name);
         Assert.Equal("Second term updated", year.Semesters.Last().Name);
     }
 
-    private static ConfigureTermItem[] ValidTerms() =>
-    [new(1, "I", new DateOnly(2026, 8, 15), new DateOnly(2027, 1, 15)), new(2, "II", new DateOnly(2027, 1, 16), new DateOnly(2027, 5, 31))];
+    private static ConfigureTermItem[] ValidTerms() => [new(1, "I"), new(2, "II")];
 
     [Fact]
-    public async Task CreateAsync_PersistsProvidedYearAndTermDatesTogether()
+    public async Task CreateAsync_PersistsProvidedTermNames()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
@@ -95,8 +91,8 @@ public sealed class AcademicYearServiceTests
         {
             Terms =
             [
-                new ConfigureTermItem(1, "  Term I  ", new DateOnly(2026, 8, 15), new DateOnly(2027, 1, 15)),
-                new ConfigureTermItem(2, "  Term II  ", new DateOnly(2027, 1, 16), new DateOnly(2027, 5, 31))
+                new ConfigureTermItem(1, "  Term I  "),
+                new ConfigureTermItem(2, "  Term II  ")
             ]
         };
 
@@ -105,23 +101,11 @@ public sealed class AcademicYearServiceTests
         Assert.True(result.IsSuccess);
         var year = Assert.Single(repository.AddedYears);
         Assert.Equal("DRAFT", year.Status);
-        Assert.Collection(year.Semesters.OrderBy(term => term.Order),
-            first =>
-            {
-                Assert.Equal("Term I", first.Name);
-                Assert.Equal(new DateOnly(2026, 8, 15), first.StartDate);
-                Assert.Equal(new DateOnly(2027, 1, 15), first.EndDate);
-            },
-            second =>
-            {
-                Assert.Equal("Term II", second.Name);
-                Assert.Equal(new DateOnly(2027, 1, 16), second.StartDate);
-                Assert.Equal(new DateOnly(2027, 5, 31), second.EndDate);
-            });
+        Assert.Equal(new[] { "Term I", "Term II" }, year.Semesters.OrderBy(term => term.Order).Select(term => term.Name));
     }
 
     [Fact]
-    public async Task CreateAsync_DoesNotPersistYearWhenProvidedTermsOverlap()
+    public async Task CreateAsync_DoesNotPersistYearWhenProvidedTermNamesRepeat()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
@@ -129,8 +113,8 @@ public sealed class AcademicYearServiceTests
         {
             Terms =
             [
-                new ConfigureTermItem(1, "Term I", new DateOnly(2026, 8, 15), new DateOnly(2027, 1, 15)),
-                new ConfigureTermItem(2, "Term II", new DateOnly(2027, 1, 15), new DateOnly(2027, 5, 31))
+                new ConfigureTermItem(1, "Term"),
+                new ConfigureTermItem(2, "term")
             ]
         };
 
@@ -138,7 +122,7 @@ public sealed class AcademicYearServiceTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal("VALIDATION_ERROR", result.Error?.Code);
-        Assert.Contains("terms[1].startDate", result.Error?.Details?.Keys ?? []);
+        Assert.Contains("terms[1].name", result.Error?.Details?.Keys ?? []);
         Assert.Empty(repository.AddedYears);
         Assert.Equal(0, repository.CreateCallCount);
     }
@@ -158,66 +142,7 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_RejectsStaleVersionWithoutChangingYear()
-    {
-        var repository = new FakeAcademicYearRepository();
-        var year = new AcademicYear
-        {
-            Id = 1,
-            Name = "2026-2027",
-            StartDate = new DateOnly(2026, 8, 15),
-            EndDate = new DateOnly(2027, 5, 31),
-            Status = "DRAFT",
-            Version = 7
-        };
-        repository.AddedYears.Add(year);
-        var service = new AcademicYearService(repository);
-        var request = new UpdateAcademicYearRequest(
-            "2026-2027", new DateOnly(2026, 9, 1), new DateOnly(2027, 5, 31), Version: 6);
-
-        var result = await service.UpdateAsync(1, request, CancellationToken.None);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(new DateOnly(2026, 8, 15), year.StartDate);
-        Assert.Equal(7u, year.Version);
-    }
-
-    [Fact]
-    public async Task ConfigureTermsAsync_RejectsStaleVersionWithoutChangingTerms()
-    {
-        var repository = new FakeAcademicYearRepository();
-        var year = new AcademicYear
-        {
-            Id = 1,
-            Name = "2026-2027",
-            StartDate = new DateOnly(2026, 8, 15),
-            EndDate = new DateOnly(2027, 5, 31),
-            Status = "DRAFT",
-            Version = 7,
-            Semesters =
-            [
-                new Semester { Id = 10, Order = 1, Name = "Original I", Status = "PLANNED" },
-                new Semester { Id = 11, Order = 2, Name = "Original II", Status = "PLANNED" }
-            ]
-        };
-        repository.AddedYears.Add(year);
-        var service = new AcademicYearService(repository);
-        var request = new ConfigureTermsRequest(
-        [
-            new ConfigureTermItem(1, "Updated I", new DateOnly(2026, 9, 1), new DateOnly(2027, 1, 15)),
-            new ConfigureTermItem(2, "Updated II", new DateOnly(2027, 1, 16), new DateOnly(2027, 5, 31))
-        ], Version: 6);
-
-        var result = await service.ConfigureTermsAsync(1, request, CancellationToken.None);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(7u, year.Version);
-        Assert.Equal(new[] { "Original I", "Original II" }, year.Semesters.OrderBy(term => term.Order).Select(term => term.Name));
-        Assert.All(year.Semesters, term => Assert.Null(term.StartDate));
-    }
-
-    [Fact]
-    public async Task CreateAsync_CreatesDraftYearWithExactlyTwoPlannedTerms()
+    public async Task CreateAsync_CreatesDraftYearWithExactlyTwoDefaultTerms()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
@@ -229,26 +154,19 @@ public sealed class AcademicYearServiceTests
         Assert.NotNull(result.Value);
         Assert.Equal("DRAFT", result.Value.Status);
         Assert.Equal("2026-2027", result.Value.Code);
+        Assert.Equal(2, result.Value.SemesterCount);
         var year = Assert.Single(repository.AddedYears);
-        Assert.Equal("2026-2027", year.Code);
-        Assert.Throws<InvalidOperationException>(() => year.AssignCode("01-2027-2028"));
         Assert.Collection(
             year.Semesters.OrderBy(term => term.Order),
             first =>
             {
                 Assert.Equal((byte)1, first.Order);
                 Assert.Equal("Học kỳ I", first.Name);
-                Assert.Equal("PLANNED", first.Status);
-                Assert.Null(first.StartDate);
-                Assert.Null(first.EndDate);
             },
             second =>
             {
                 Assert.Equal((byte)2, second.Order);
                 Assert.Equal("Học kỳ II", second.Name);
-                Assert.Equal("PLANNED", second.Status);
-                Assert.Null(second.StartDate);
-                Assert.Null(second.EndDate);
             });
     }
 
@@ -268,7 +186,7 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_RejectsAnOverlappingOrDuplicateYear()
+    public async Task CreateAsync_RejectsADuplicateYear()
     {
         var repository = new FakeAcademicYearRepository
         {
@@ -318,8 +236,6 @@ public sealed class AcademicYearServiceTests
         {
             Id = 1,
             Name = "2025-2026",
-            StartDate = new DateOnly(2025, 9, 1),
-            EndDate = new DateOnly(2026, 5, 31),
             Status = "CLOSED"
         };
         repository.AddedYears.Add(closedYear);
@@ -327,7 +243,7 @@ public sealed class AcademicYearServiceTests
 
         var result = await service.UpdateAsync(
             1,
-            new UpdateAcademicYearRequest("2025-2026", new DateOnly(2025, 9, 1), new DateOnly(2026, 6, 1)),
+            new UpdateAcademicYearRequest("2025-2026"),
             CancellationToken.None);
 
         Assert.False(result.IsSuccess);
@@ -335,15 +251,13 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_UpdatesDatesAndName_WhenValid()
+    public async Task UpdateAsync_UpdatesName_WhenValid()
     {
         var repository = new FakeAcademicYearRepository();
         var year = new AcademicYear
         {
             Id = 1,
             Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
             Status = "DRAFT"
         };
         repository.AddedYears.Add(year);
@@ -351,13 +265,12 @@ public sealed class AcademicYearServiceTests
 
         var result = await service.UpdateAsync(
             1,
-            new UpdateAcademicYearRequest("2026-2027", new DateOnly(2026, 9, 5), new DateOnly(2027, 5, 25)),
+            new UpdateAcademicYearRequest(" 2027-2028 "),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal("2026-2027", result.Value?.Name);
-        Assert.Equal(new DateOnly(2026, 9, 5), result.Value?.StartDate);
-        Assert.Equal(new DateOnly(2027, 5, 25), result.Value?.EndDate);
+        Assert.Equal("2027-2028", result.Value?.Name);
+        Assert.Equal("2027-2028", year.Name);
     }
 
     [Fact]
@@ -368,8 +281,6 @@ public sealed class AcademicYearServiceTests
         {
             Id = 1,
             Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
             Status = "DRAFT"
         };
         repository.AddedYears.Add(year);
@@ -385,19 +296,7 @@ public sealed class AcademicYearServiceTests
     public async Task ActivateAsync_ActivatesYear_WhenHasTwoTerms()
     {
         var repository = new FakeAcademicYearRepository();
-        var year = new AcademicYear
-        {
-            Id = 1,
-            Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
-            Status = "DRAFT",
-            Semesters = new List<Semester>
-            {
-                new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "PLANNED", StartDate = new DateOnly(2026, 9, 1), EndDate = new DateOnly(2027, 1, 15) },
-                new() { Id = 11, Order = 2, Name = "Học kỳ 2", Status = "PLANNED", StartDate = new DateOnly(2027, 1, 16), EndDate = new DateOnly(2027, 5, 31) }
-            }
-        };
+        var year = ConfiguredYear(1, 2026);
         repository.AddedYears.Add(year);
         var service = new AcademicYearService(repository);
 
@@ -408,22 +307,11 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task CloseAsync_ClosesYearAndCascadesToTerms()
+    public async Task CloseAsync_ClosesActiveYear()
     {
         var repository = new FakeAcademicYearRepository();
-        var year = new AcademicYear
-        {
-            Id = 1,
-            Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
-            Status = "ACTIVE",
-            Semesters = new List<Semester>
-            {
-                new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "ACTIVE" },
-                new() { Id = 11, Order = 2, Name = "Học kỳ 2", Status = "PLANNED" }
-            }
-        };
+        var year = ConfiguredYear(1, 2026);
+        year.Activate();
         repository.AddedYears.Add(year);
         var service = new AcademicYearService(repository);
 
@@ -431,11 +319,11 @@ public sealed class AcademicYearServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("CLOSED", result.Value?.Status);
-        Assert.All(result.Value!.Semesters, s => Assert.Equal("CLOSED", s.Status));
+        Assert.Equal(2, result.Value!.Semesters.Count);
     }
 
     [Fact]
-    public async Task ActivateAsync_ReplacesCurrentYearAndClosesItsTerms()
+    public async Task ActivateAsync_ReplacesCurrentYear()
     {
         var repository = new FakeAcademicYearRepository();
         var previous = ConfiguredYear(1, 2025);
@@ -448,10 +336,7 @@ public sealed class AcademicYearServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("CLOSED", previous.Status);
-        Assert.All(previous.Semesters, term => Assert.Equal("CLOSED", term.Status));
         Assert.Equal("ACTIVE", next.Status);
-        Assert.Equal("ACTIVE", next.Semesters.Single(term => term.Order == 1).Status);
-        Assert.Equal("PLANNED", next.Semesters.Single(term => term.Order == 2).Status);
         Assert.Single(repository.AddedYears, year => year.Status == "ACTIVE");
     }
 
@@ -470,16 +355,15 @@ public sealed class AcademicYearServiceTests
         Assert.False(result.IsSuccess);
         Assert.Equal("INCOMPLETE_TERMS", result.Error?.Code);
         Assert.Equal("ACTIVE", previous.Status);
-        Assert.Equal("ACTIVE", previous.Semesters.Single(term => term.Order == 1).Status);
         Assert.Equal("DRAFT", next.Status);
     }
 
     private static AcademicYear ConfiguredYear(ulong id, int firstYear) => new()
     {
-        Id = id, Name = $"{firstYear}-{firstYear + 1}", StartDate = new(firstYear, 8, 15), EndDate = new(firstYear + 1, 5, 31),
+        Id = id, Name = $"{firstYear}-{firstYear + 1}",
         Semesters = [
-            new() { Order = 1, Name = "Học kỳ I", StartDate = new(firstYear, 8, 15), EndDate = new(firstYear + 1, 1, 15) },
-            new() { Order = 2, Name = "Học kỳ II", StartDate = new(firstYear + 1, 1, 16), EndDate = new(firstYear + 1, 5, 31) }
+            new() { Order = 1, Name = "Học kỳ I" },
+            new() { Order = 2, Name = "Học kỳ II" }
         ]
     };
 
@@ -507,13 +391,11 @@ public sealed class AcademicYearServiceTests
         {
             Id = 1,
             Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
             Status = "DRAFT",
             Semesters = new List<Semester>
             {
-                new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "PLANNED" },
-                new() { Id = 11, Order = 2, Name = "Học kỳ 2", Status = "PLANNED" }
+                new() { Id = 10, Order = 1, Name = "Học kỳ 1" },
+                new() { Id = 11, Order = 2, Name = "Học kỳ 2" }
             }
         };
         repository.AddedYears.Add(year);
@@ -521,8 +403,8 @@ public sealed class AcademicYearServiceTests
 
         var request = new ConfigureTermsRequest(new List<ConfigureTermItem>
         {
-            new(1, "Học kỳ I", new DateOnly(2026, 9, 5), new DateOnly(2027, 1, 15)),
-            new(2, "Học kỳ II", new DateOnly(2027, 1, 16), new DateOnly(2027, 5, 25))
+            new(1, "Học kỳ I"),
+            new(2, "Học kỳ II")
         });
 
         var result = await service.ConfigureTermsAsync(1, request, CancellationToken.None);
@@ -533,51 +415,29 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task CloseTermAsync_ClosesSingleTerm()
+    public async Task CloseTermAsync_ReturnsTermStatusRemoved()
     {
         var repository = new FakeAcademicYearRepository();
-        var year = new AcademicYear
-        {
-            Id = 1,
-            Name = "2026-2027",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 5, 31),
-            Status = "ACTIVE",
-            Semesters = new List<Semester>
-            {
-                new() { Id = 10, Order = 1, Name = "Học kỳ 1", Status = "ACTIVE" },
-                new() { Id = 11, Order = 2, Name = "Học kỳ 2", Status = "PLANNED" }
-            }
-        };
-        repository.AddedYears.Add(year);
+        repository.AddedYears.Add(ConfiguredYear(1, 2026));
         var service = new AcademicYearService(repository);
 
         var result = await service.CloseTermAsync(1, 10, CancellationToken.None);
 
-        Assert.True(result.IsSuccess);
-        Assert.Equal("CLOSED", result.Value?.Status);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("TERM_STATUS_REMOVED", result.Error?.Code);
     }
 
-    private static CreateAcademicYearRequest ValidRequest() =>
-        new("2026-2027", new DateOnly(2026, 8, 15), new DateOnly(2027, 5, 31));
+    private static CreateAcademicYearRequest ValidRequest() => new("2026-2027");
 
     private sealed class FakeAcademicYearRepository : IAcademicYearRepository, IUnitOfWork
     {
         public IAcademicYearRepository AcademicYears => this;
-        public IProvinceRepository Provinces =>
-            throw new InvalidOperationException("Province repository is not used by these tests.");
         public IMatrixRepository Matrices =>
             throw new InvalidOperationException("Matrix repository is not used by these tests.");
         public IMatrixTaskRepository MatrixTasks =>
             throw new InvalidOperationException("Matrix task repository is not used by these tests.");
         public IMatrixReferenceRepository MatrixReferences =>
             throw new InvalidOperationException("Matrix reference repository is not used by these tests.");
-        public IExamRepository Exams =>
-            throw new InvalidOperationException("Exam repository is not used by these tests.");
-        public IExamSubjectRepository ExamSubjects =>
-            throw new InvalidOperationException("Exam-subject repository is not used by these tests.");
-        public IExamRoomRepository ExamRooms =>
-            throw new InvalidOperationException("Exam-room repository is not used by these tests.");
 
         public AcademicYearCreateOutcome CreateOutcome { get; init; } =
             AcademicYearCreateOutcome.Created;
@@ -613,8 +473,6 @@ public sealed class AcademicYearServiceTests
         public Task<bool> HasConflictExceptCurrentAsync(
             ulong currentId,
             string name,
-            DateOnly startDate,
-            DateOnly endDate,
             CancellationToken cancellationToken) =>
             Task.FromResult(HasScheduleConflict);
 

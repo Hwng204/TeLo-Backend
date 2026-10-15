@@ -127,19 +127,19 @@ public sealed class ExamRoomRepository(ApplicationDbContext context) : IExamRoom
 
         var students = await context.StudentEnrollments.AsNoTracking()
             .Where(enrollment =>
-                enrollment.AcademicYearId == exam.AcademicYearId &&
-                enrollment.Status == StudentEnrollmentStatusCodes.Active &&
-                enrollment.Student.Status == StudentStatusCodes.Active &&
+                enrollment.SchoolClass.AcademicYearId == exam.AcademicYearId &&
+                enrollment.EndedOn == null &&
+                enrollment.Student.User.Status == StudentStatusCodes.Active &&
                 enrollment.SchoolClass.Status == "ACTIVE" &&
                 enrollment.SchoolClass.SchoolBranchId == exam.SchoolBranchId &&
                 enrollment.SchoolClass.GradeLevelId == exam.GradeLevelId.Value)
-            .OrderBy(enrollment => enrollment.Student.FullName)
-            .ThenBy(enrollment => enrollment.Student.Code)
+            .OrderBy(enrollment => enrollment.Student.User.FullName)
+            .ThenBy(enrollment => enrollment.Student.User.Username)
             .ThenBy(enrollment => enrollment.StudentId)
             .Select(enrollment => new ExamCandidateData(
                 enrollment.StudentId,
-                enrollment.Student.Code,
-                enrollment.Student.FullName))
+                enrollment.Student.User.Username,
+                enrollment.Student.User.FullName))
             .ToArrayAsync(cancellationToken);
 
         return new ExamCandidateRosterData(true, students);

@@ -16,7 +16,6 @@ public sealed class EmailTemplateConfiguration : IEntityTypeConfiguration<EmailT
         b.Property(x => x.Name).HasColumnName("name").HasMaxLength(150).IsRequired();
         b.Property(x => x.EventCode).HasColumnName("event_code").HasMaxLength(100).IsRequired();
         b.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
-        b.Property(x => x.Version).HasColumnName("version").IsConcurrencyToken();
         b.Property(x => x.UsedAt).HasColumnName("used_at");
         b.HasIndex(x => new { x.SchoolId, x.Code }).IsUnique();
         b.HasIndex(x => new { x.SchoolId, x.EventCode, x.Status });

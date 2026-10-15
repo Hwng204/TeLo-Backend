@@ -17,7 +17,8 @@ public sealed class ProvinceRepository(ApplicationDbContext context) : IProvince
             {
                 province.Code,
                 province.Name,
-                ActiveSchoolCount = province.Schools.Count(school => school.Status == "ACTIVE"),
+                ActiveSchoolCount = context.Schools.Count(school =>
+                    school.ProvinceCode == province.Code && school.Status == "ACTIVE"),
             })
             .ToArrayAsync(cancellationToken);
 

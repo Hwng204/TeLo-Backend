@@ -80,7 +80,6 @@ public sealed class EmailManagementIntegrationTests
         Assert.Equal("SYSTEM", row.GetProperty("triggerKind").GetString());
         Assert.Equal("ACTIVE", row.GetProperty("eventStatus").GetString());
         Assert.Equal(saved.Id, row.GetProperty("configId").GetUInt64());
-        Assert.Equal(saved.Version, row.GetProperty("version").GetUInt32());
         Assert.Equal("ENABLED", row.GetProperty("configurationState").GetString());
         Assert.Equal(template.Template.Name, row.GetProperty("templateName").GetString());
         Assert.Equal(1u, row.GetProperty("revision").GetUInt32());
@@ -107,28 +106,11 @@ public sealed class EmailManagementIntegrationTests
             Assert.Equal(HttpStatusCode.UnprocessableEntity, (await pht.GetAsync(root + "/configurations?" + query)).StatusCode);
 
         await Read<EmailConfigItem>(await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", new SaveEmailConfigRequest {
-            Version = saved.Version, EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = false, Targets = saved.Targets.ToArray()
+            EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = false, Targets = saved.Targets.ToArray()
         }));
         var disabled = await Read<DirectoryPage<JsonElement>>(await pht.GetAsync(root + "/configurations?configurationState=DISABLED"));
         Assert.Equal("MATRIX_ASSIGNED", Assert.Single(disabled.Items).GetProperty("eventCode").GetString());
         Assert.Empty((await Read<DirectoryPage<JsonElement>>(await pht.GetAsync(root + "/configurations?configurationState=ENABLED"))).Items);
-    }
-
-    [IdentityMySqlFact]
-    public async Task BranchScopedVicePrincipal_CannotReadOrModifySchoolWideEmailConfiguration()
-    {
-        await using var fixture = await EmailFixture.CreateAsync();
-        await fixture.ScopeVicePrincipalToBranchAsync();
-        using var pht = await fixture.LoginAsync("phtA");
-        using var admin = await fixture.LoginAsync("admin");
-        var template = await Read<EmailTemplateDetail>(await admin.PostAsJsonAsync(fixture.RootA + "/templates", Template()), HttpStatusCode.Created);
-        var request = new SaveEmailConfigRequest { EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = true,
-            Targets = [new(null, fixture.IncludedA.Id, "INCLUDE")] };
-        Assert.Equal(HttpStatusCode.Forbidden, (await pht.PutAsJsonAsync(fixture.RootA + "/configuration/MATRIX_ASSIGNED", request)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await pht.GetAsync(fixture.RootA + "/configuration/MATRIX_ASSIGNED")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await pht.GetAsync(fixture.RootA + "/configurations")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await pht.PostAsJsonAsync(fixture.RootA + "/recipients/preview", request)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await pht.GetAsync("/api/email/schools")).StatusCode);
     }
 
     [Fact]
@@ -184,41 +166,35 @@ public sealed class EmailManagementIntegrationTests
         Assert.True(saved.IsActive);
         Assert.Equal(first.CurrentRevision.Id, saved.EmailTemplateVersionId);
 
-        configuration.Version = saved.Version;
         configuration.Targets = [new(null, fixture.UserB.Id, "INCLUDE")];
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", configuration)).StatusCode);
         configuration.Targets = saved.Targets.ToArray();
         configuration.EmailTemplateVersionId = otherSchool.CurrentRevision.Id;
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", configuration)).StatusCode);
         configuration.EmailTemplateVersionId = first.CurrentRevision.Id;
-        configuration.Version = 0;
-        Assert.Equal(HttpStatusCode.Conflict, (await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", configuration)).StatusCode);
 
         var update = Template();
-        update.Version = first.Template.Version;
         update.Subject = "Phiên bản mới {{schoolName}}";
         var second = await Read<EmailTemplateDetail>(await admin.PutAsJsonAsync(root + $"/templates/{first.Template.Id}", update));
         Assert.Equal(2u, second.CurrentRevision.Revision);
         Assert.NotEqual(first.CurrentRevision.Id, second.CurrentRevision.Id);
-        Assert.Equal(HttpStatusCode.Conflict, (await admin.PutAsJsonAsync(root + $"/templates/{first.Template.Id}", update)).StatusCode);
         var stillPinned = await Read<EmailConfigItem>(await pht.GetAsync(root + "/configuration/MATRIX_ASSIGNED"));
         Assert.Equal(first.CurrentRevision.Id, stillPinned.EmailTemplateVersionId);
         await fixture.VerifyAssignmentQueueAsync(first.CurrentRevision.Id);
         var revisions = await Read<DirectoryPage<EmailRevisionItem>>(await pht.GetAsync(root + $"/templates/{first.Template.Id}/revisions?pageSize=1&page=2"));
         Assert.Equal(2, revisions.TotalCount);
         Assert.Equal(first.CurrentRevision.Subject, Assert.Single(revisions.Items).Subject);
-        Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync(root + $"/templates/{first.Template.Id}?version={second.Template.Version}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await admin.DeleteAsync(root + $"/templates/{first.Template.Id}")).StatusCode);
 
-        var inactive = await Read<EmailTemplateDetail>(await admin.PatchAsJsonAsync(root + $"/templates/{first.Template.Id}/status", new EmailStatusRequest("INACTIVE", second.Template.Version)));
+        var inactive = await Read<EmailTemplateDetail>(await admin.PatchAsJsonAsync(root + $"/templates/{first.Template.Id}/status", new EmailStatusRequest("INACTIVE")));
         Assert.Equal("INACTIVE", inactive.Template.Status);
-        configuration.Version = saved.Version;
         configuration.EmailTemplateVersionId = second.CurrentRevision.Id;
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", configuration)).StatusCode);
         configuration.IsActive = false;
         Assert.False((await Read<EmailConfigItem>(await pht.PutAsJsonAsync(root + "/configuration/MATRIX_ASSIGNED", configuration))).IsActive);
 
         var unused = await Read<EmailTemplateDetail>(await admin.PostAsJsonAsync(root + "/templates", Template("UNUSED_NOTICE")), HttpStatusCode.Created);
-        Assert.True(await Read<bool>(await admin.DeleteAsync(root + $"/templates/{unused.Template.Id}?version={unused.Template.Version}")));
+        Assert.True(await Read<bool>(await admin.DeleteAsync(root + $"/templates/{unused.Template.Id}")));
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync(root + $"/templates/{unused.Template.Id}")).StatusCode);
     }
 
@@ -237,7 +213,7 @@ public sealed class EmailManagementIntegrationTests
         Assert.Empty(fixture.Sender.Messages);
         await fixture.DeliverAsync();
         var sent = Assert.Single(fixture.Sender.Messages);
-        Assert.Equal(fixture.IncludedA.Email, sent.To);
+        Assert.Equal(EmailFixture.EmailOf("includedA"), sent.To);
         Assert.DoesNotContain("{{", sent.Subject);
         Assert.DoesNotContain("{{", sent.Body);
         var deliveries = await Read<DirectoryPage<EmailDeliveryItem>>(await pht.GetAsync(fixture.RootA + $"/history/{queued.NotificationId}/recipients?pageSize=1"));
@@ -268,12 +244,11 @@ public sealed class EmailManagementIntegrationTests
         var template = await Read<EmailTemplateDetail>(await admin.PostAsJsonAsync(fixture.RootA + "/templates", Template()), HttpStatusCode.Created);
         var request = new SaveEmailConfigRequest { EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = true,
             Targets = [new(null, fixture.IncludedA.Id, "INCLUDE")] };
-        var saved = await Read<EmailConfigItem>(await admin.PutAsJsonAsync(fixture.RootA + "/configuration/MATRIX_ASSIGNED", request));
+        await Read<EmailConfigItem>(await admin.PutAsJsonAsync(fixture.RootA + "/configuration/MATRIX_ASSIGNED", request));
         var restored = await admin.GetFromJsonAsync<JsonElement>(fixture.RootA + "/configuration/MATRIX_ASSIGNED");
         Assert.Equal(template.Template.Name, restored.GetProperty("data").GetProperty("templateName").GetString());
         Assert.Equal(1u, restored.GetProperty("data").GetProperty("revision").GetUInt32());
         await fixture.DeactivateIncludedAsync();
-        request.Version = saved.Version;
         request.IsActive = false;
         Assert.False((await Read<EmailConfigItem>(await admin.PutAsJsonAsync(fixture.RootA + "/configuration/MATRIX_ASSIGNED", request))).IsActive);
     }
@@ -296,31 +271,29 @@ public sealed class EmailManagementIntegrationTests
         var template = await Read<EmailTemplateDetail>(await admin.PostAsJsonAsync(fixture.RootA + "/templates", input), HttpStatusCode.Created);
         var config = new SaveEmailConfigRequest { EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = true,
             Targets = [new(fixture.Group.Id, null, "INCLUDE"), new(null, fixture.ExcludedA.Id, "EXCLUDE")] };
-        var saved = await Read<EmailConfigItem>(await pht.PutAsJsonAsync(fixture.RootA + "/configuration/STAFF_MEETING", config));
+        await Read<EmailConfigItem>(await pht.PutAsJsonAsync(fixture.RootA + "/configuration/STAFF_MEETING", config));
         var updatedEvent = await Read<JsonElement>(await admin.PutAsJsonAsync(fixture.RootA + "/events/STAFF_MEETING", new {
-            definition.code, definition.name, definition.description, version = created.GetProperty("version").GetUInt32(),
+            definition.code, definition.name, definition.description,
             variableDefinitions = new[] { new { name = "meetingDate", label = "Meeting date", type = "DATE", required = true } } }));
-        Assert.Equal(2u, updatedEvent.GetProperty("version").GetUInt32());
+        Assert.Contains("meetingDate", updatedEvent.GetProperty("variables").EnumerateArray().Select(variable => variable.GetString()));
         // The pinned revision keeps its original topic variable after the event contract changes.
         var requestId = Guid.NewGuid();
-        var request = new { eventCode = "STAFF_MEETING", configVersion = saved.Version, requestId,
+        var request = new { eventCode = "STAFF_MEETING", requestId,
             values = new Dictionary<string, string> { ["topic"] = "Team meeting" }, scheduledFor = DateTimeOffset.UtcNow.AddHours(1) };
         var queued = await Read<EmailQueueResult>(await pht.PostAsJsonAsync(fixture.RootA + "/send", request));
         Assert.Equal(queued.NotificationId, (await Read<EmailQueueResult>(await pht.PostAsJsonAsync(fixture.RootA + "/send", request))).NotificationId);
         await fixture.DeliverAsync(); Assert.Empty(fixture.Sender.Messages);
         Assert.Equal(HttpStatusCode.Conflict, (await pht.PostAsJsonAsync(fixture.RootA + "/send", new {
-            request.eventCode, request.configVersion, request.requestId, values = new Dictionary<string,string> { ["topic"] = "Changed content" }, request.scheduledFor })).StatusCode);
-        var detail = await Read<JsonElement>(await pht.GetAsync(fixture.RootA + $"/history/{queued.NotificationId}"));
-        var version = detail.GetProperty("notification").GetProperty("version").GetUInt32();
-        Assert.True(await Read<bool>(await pht.PostAsJsonAsync(fixture.RootA + $"/history/{queued.NotificationId}/cancel", new { version })));
+            request.eventCode, request.requestId, values = new Dictionary<string,string> { ["topic"] = "Changed content" }, request.scheduledFor })).StatusCode);
+        Assert.True(await Read<bool>(await pht.PostAsync(fixture.RootA + $"/history/{queued.NotificationId}/cancel", null)));
         await fixture.MarkDueAsync(queued.NotificationId); await fixture.DeliverAsync(); Assert.Empty(fixture.Sender.Messages);
-        var immediate = await Read<EmailQueueResult>(await pht.PostAsJsonAsync(fixture.RootA + "/send", new { request.eventCode, request.configVersion,
+        var immediate = await Read<EmailQueueResult>(await pht.PostAsJsonAsync(fixture.RootA + "/send", new { request.eventCode,
             requestId = Guid.NewGuid(), request.values }));
         await fixture.DeliverAsync();
         Assert.Equal("Team meeting", Assert.Single(fixture.Sender.Messages).Subject);
-        Assert.Equal(HttpStatusCode.Conflict, (await pht.PostAsJsonAsync(fixture.RootA + $"/history/{immediate.NotificationId}/cancel", new { version = 1 })).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await pht.PostAsync(fixture.RootA + $"/history/{immediate.NotificationId}/cancel", null)).StatusCode);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await pht.PostAsJsonAsync(fixture.RootA + "/send", new {
-            request.eventCode, request.configVersion, requestId = Guid.NewGuid(), values = new Dictionary<string,string>() })).StatusCode);
+            request.eventCode, requestId = Guid.NewGuid(), values = new Dictionary<string,string>() })).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await pht.PostAsJsonAsync(fixture.RootB + "/send", request)).StatusCode);
     }
 
@@ -334,14 +307,14 @@ public sealed class EmailManagementIntegrationTests
             code = "GENERAL_NOTICE", name = "General notice", description = "", variableDefinitions = Array.Empty<object>() }), HttpStatusCode.Created);
         var input = Template("GENERAL_TEMPLATE"); input.EventCode = "GENERAL_NOTICE"; input.Subject = "Notice {{schoolName}}"; input.Body = "From {{actorName}}";
         var template = await Read<EmailTemplateDetail>(await admin.PostAsJsonAsync(root + "/templates", input), HttpStatusCode.Created);
-        var config = await Read<EmailConfigItem>(await admin.PutAsJsonAsync(root + "/configuration/GENERAL_NOTICE", new SaveEmailConfigRequest {
+        await Read<EmailConfigItem>(await admin.PutAsJsonAsync(root + "/configuration/GENERAL_NOTICE", new SaveEmailConfigRequest {
             EmailTemplateVersionId = template.CurrentRevision.Id, IsActive = true, Targets = [new(null, fixture.IncludedA.Id, "INCLUDE")] }));
-        var request = new { eventCode = "GENERAL_NOTICE", configVersion = config.Version, requestId = Guid.NewGuid(),
+        var request = new { eventCode = "GENERAL_NOTICE", requestId = Guid.NewGuid(),
             values = new Dictionary<string,string>(), scheduledFor = DateTimeOffset.UtcNow.AddHours(2) };
         var preview = await Read<EmailMessagePreview>(await admin.PostAsJsonAsync(root + "/send/preview", request));
         await fixture.ChangeRecipientEmailAsync();
         Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsJsonAsync(root + "/send", new {
-            request.eventCode, request.configVersion, request.requestId, request.values, request.scheduledFor, previewFingerprint = preview.Fingerprint })).StatusCode);
+            request.eventCode, request.requestId, request.values, request.scheduledFor, previewFingerprint = preview.Fingerprint })).StatusCode);
         var queued = await Read<EmailQueueResult>(await admin.PostAsJsonAsync(root + "/send", request));
         await fixture.MakeRetryDueAsync(queued.NotificationId);
         await fixture.DeliverAsync(); Assert.Empty(fixture.Sender.Messages);
@@ -351,7 +324,7 @@ public sealed class EmailManagementIntegrationTests
         try
         {
             await fixture.Sender.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsJsonAsync(root + $"/history/{queued.NotificationId}/cancel", new { version = 1 })).StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, (await admin.PostAsync(root + $"/history/{queued.NotificationId}/cancel", null)).StatusCode);
             // A second worker cannot claim the same recipient while the first is sending.
             await fixture.DeliverAsync(); Assert.Single(fixture.Sender.Messages);
         }
@@ -360,11 +333,10 @@ public sealed class EmailManagementIntegrationTests
         Assert.Equal(1, Assert.Single(history.Items).SentCount);
         Assert.False(history.Items[0].CanCancel);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await admin.PostAsJsonAsync(root + "/send", new {
-            request.eventCode, request.configVersion, requestId = Guid.NewGuid(), request.values, scheduledFor = DateTimeOffset.UtcNow.AddMinutes(-1) })).StatusCode);
-        var inactive = await Read<EmailEventItem>(await admin.GetAsync(root + "/events/GENERAL_NOTICE"));
-        await Read<EmailEventItem>(await admin.PatchAsJsonAsync(root + "/events/GENERAL_NOTICE/status", new EmailStatusRequest("INACTIVE", inactive.Version)));
+            request.eventCode, requestId = Guid.NewGuid(), request.values, scheduledFor = DateTimeOffset.UtcNow.AddMinutes(-1) })).StatusCode);
+        await Read<EmailEventItem>(await admin.PatchAsJsonAsync(root + "/events/GENERAL_NOTICE/status", new EmailStatusRequest("INACTIVE")));
         Assert.Equal(HttpStatusCode.UnprocessableEntity, (await admin.PostAsJsonAsync(root + "/send", new {
-            request.eventCode, request.configVersion, requestId = Guid.NewGuid(), request.values })).StatusCode);
+            request.eventCode, requestId = Guid.NewGuid(), request.values })).StatusCode);
     }
 
     private static SaveEmailTemplateRequest Template(string code = "MATRIX_NOTICE") => new()
@@ -411,6 +383,7 @@ public sealed class EmailManagementIntegrationTests
         public School SchoolA { get; } = new() { Code = "A", Name = "Trường A" };
         public School SchoolB { get; } = new() { Code = "B", Name = "Trường B" };
         public Role Group { get; } = new() { Code = "NOTICE_GROUP", Name = "Nhóm nhận email" };
+        private readonly Dictionary<string, Teacher> teachers = new();
         public User IncludedA { get; private set; } = null!;
         public User ExcludedA { get; private set; } = null!;
         public User ExtraA { get; private set; } = null!;
@@ -434,15 +407,17 @@ public sealed class EmailManagementIntegrationTests
             var branchA = new SchoolBranch { Code = "A1", Name = "Phân hiệu A", School = SchoolA };
             var branchB = new SchoolBranch { Code = "B1", Name = "Phân hiệu B", School = SchoolB };
             var admin = Account("admin", null);
-            admin.UserRoles.Add(new UserRole { Role = new Role { Code = "ADMIN", Name = "Admin", IsSystem = true } });
+            admin.UserRoles.Add(new UserRole { Role = new Role { Code = "ADMIN", Name = "Admin" } });
             var pht = Account("phtA", branchA);
-            pht.UserRoles.Add(new UserRole { Role = new Role { Code = "PHT", Name = "Hiệu phó", IsSystem = true } });
+            pht.UserRoles.Add(new UserRole { Role = new Role { Code = "PHT", Name = "Hiệu phó" } });
             IncludedA = Account("includedA", branchA);
             ExcludedA = Account("excludedA", branchA);
             ExtraA = Account("extraA", branchA);
             UserB = Account("userB", branchB);
             foreach (var user in new[] { IncludedA, ExcludedA, UserB }) user.UserRoles.Add(new UserRole { Role = Group });
             db.Users.AddRange(admin, pht, IncludedA, ExcludedA, ExtraA, UserB);
+            db.Teachers.AddRange(teachers.Values);
+            db.EmailEvents.AddRange(TestSeed.SystemEmailEvents());
             await db.SaveChangesAsync();
             factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
@@ -461,14 +436,6 @@ public sealed class EmailManagementIntegrationTests
                     services.AddSingleton<IEmailService>(Sender);
                 });
             });
-        }
-
-        public async Task ScopeVicePrincipalToBranchAsync()
-        {
-            var role = await db.Roles.SingleAsync(r => r.Code == "PHT");
-            role.SchoolId = SchoolA.Id;
-            role.SchoolBranchId = IncludedA.SchoolBranchId;
-            await db.SaveChangesAsync();
         }
 
         public async Task<HttpClient> LoginAsync(string username)
@@ -490,7 +457,7 @@ public sealed class EmailManagementIntegrationTests
 
         public async Task ChangeRecipientEmailAsync()
         {
-            IncludedA.Email = "changed@example.invalid";
+            teachers["includedA"].Email = "changed@example.invalid";
             await db.SaveChangesAsync();
         }
 
@@ -511,15 +478,10 @@ public sealed class EmailManagementIntegrationTests
 
         public async Task<ulong> SeedSubmittedMatrixAsync()
         {
-            var year = new AcademicYear { Name = "2026-2027", StartDate = new(2026, 8, 15), EndDate = new(2027, 5, 31) };
-            year.AssignCode("APPROVAL_TEST_YEAR");
             var matrix = new ExamMatrix {
                 Name = "Approval test matrix", Status = MatrixStatusCodes.Submitted, TotalScore = 10,
-                CreatedAt = DateTime.UtcNow, CreatedByUserId = IncludedA.Id,
-                AcademicContext = new AcademicContext {
-                    AcademicYear = year, SchoolId = SchoolA.Id, SchoolBranchId = IncludedA.SchoolBranchId!.Value,
-                    Subject = new Subject { Name = "Math" }, GradeLevel = new GradeLevel { Name = "Grade 1" }
-                }
+                CreatedByUserId = IncludedA.Id, BranchId = IncludedA.SchoolBranchId!.Value,
+                Subject = new Subject { Code = "MATH", Name = "Math" }, GradeLevel = new GradeLevel { Name = "Grade 1" }
             };
             db.ExamMatrices.Add(matrix);
             await db.SaveChangesAsync();
@@ -541,19 +503,15 @@ public sealed class EmailManagementIntegrationTests
 
         public async Task VerifyAssignmentQueueAsync(ulong revisionId)
         {
-            var year = new AcademicYear { Name = "2026-2027", StartDate = new(2026, 8, 15), EndDate = new(2027, 5, 31) };
-            year.AssignCode("EMAIL_TEST_YEAR");
-            var context = new AcademicContext
-            {
-                AcademicYear = year, SchoolId = SchoolA.Id, SchoolBranchId = IncludedA.SchoolBranchId!.Value,
-                Subject = await db.Subjects.SingleAsync(subject => subject.Name == "Toán"),
-                GradeLevel = new GradeLevel { Name = "Lớp 1" }
-            };
-            db.AcademicContexts.Add(context);
-            await db.SaveChangesAsync();
-            var task = new WorkTask { Name = "Lập ma trận test", AcademicContextId = context.Id,
+            // A matrix task's school and branch come from the matrix created with it.
+            var task = new WorkTask { Name = "Lập ma trận test",
                 CreatedByUserId = IncludedA.Id, AssignedToUserId = IncludedA.Id, TaskType = "MATRIX", Status = "ASSIGNED" };
-            db.WorkTasks.Add(task);
+            db.ExamMatrices.Add(new ExamMatrix
+            {
+                Task = task, Name = task.Name, Status = MatrixStatusCodes.Draft, TotalScore = 10,
+                CreatedByUserId = IncludedA.Id, BranchId = IncludedA.SchoolBranchId!.Value,
+                Subject = new Subject { Code = "TOAN", Name = "Toán" }, GradeLevel = new GradeLevel { Name = "Lớp 1" }
+            });
             await db.SaveChangesAsync();
             var key = $"matrix-task:{task.Id}:assigned";
             // The event must roll back with the business transaction.
@@ -594,10 +552,14 @@ public sealed class EmailManagementIntegrationTests
             await db.DisposeAsync();
         }
 
-        private static User Account(string name, SchoolBranch? branch)
+        public static string EmailOf(string name) => name + "@example.invalid";
+
+        // Email lives on teacher profiles only (no user.email); a teacher needs a branch to log in, so the admin is none.
+        private User Account(string name, SchoolBranch? branch)
         {
-            var user = new User { Username = name, FullName = name, Email = name + "@example.invalid", SchoolBranch = branch };
+            var user = new User { Username = name, FullName = name, SchoolBranch = branch };
             user.PasswordHash = new PasswordHasher<User>().HashPassword(user, "Email-test-password-123");
+            if (branch != null) teachers[name] = new Teacher { User = user, Email = EmailOf(name) };
             return user;
         }
     }

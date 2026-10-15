@@ -13,9 +13,10 @@ public sealed class IdentityManagementValidatorTests
     public void RejectsUnboundedPagination(int page, int size) =>
         Assert.NotEmpty(IdentityManagementValidator.Query(new IdentityListQuery { Page = page, PageSize = size }));
 
+    // role.code is varchar(50) (module codes stay 100).
     [Fact]
-    public void RejectsBranchWithoutSchool() => Assert.Contains("schoolId",
-        IdentityManagementValidator.Role(new SaveRoleRequest { Code = "TEST_ROLE", Name = "Role", SchoolBranchId = 2 }).Keys);
+    public void RejectsRoleCodeLongerThanColumn() => Assert.Contains("code",
+        IdentityManagementValidator.Role(new SaveRoleRequest { Code = new string('A', 51), Name = "Role" }).Keys);
 
     [Theory]
     [InlineData("")]
@@ -23,19 +24,20 @@ public sealed class IdentityManagementValidatorTests
     [InlineData("unsafe code")]
     [InlineData("<script>")]
     public void RejectsInvalidCode(string code) => Assert.Contains("code",
-        IdentityManagementValidator.Module(new SaveModuleRequest { Code = code, Name = "Module" }).Keys);
+        IdentityManagementValidator.Role(new SaveRoleRequest { Code = code, Name = "Vai trò" }).Keys);
 
     [Fact]
-    public void AcceptsTrimmedVietnameseNameAndScope() => Assert.Empty(IdentityManagementValidator.Role(
-        new SaveRoleRequest { Code = "SCHOOL_ADMIN", Name = "  Quản trị trường  ", SchoolId = 1 }));
+    public void ModuleIgnoresCodeBecauseErdV2HasNoModuleCode() => Assert.Empty(
+        IdentityManagementValidator.Module(new SaveModuleRequest { Code = "<script>", Name = "Module" }));
+
+    [Fact]
+    public void AcceptsTrimmedVietnameseName() => Assert.Empty(IdentityManagementValidator.Role(
+        new SaveRoleRequest { Code = "SCHOOL_ADMIN", Name = "  Quản trị trường  " }));
 
     [Fact]
     public void NewRoleCanApplyToAllSchools() => Assert.Empty(
         IdentityManagementValidator.Role(new SaveRoleRequest { Code = "TEST_ROLE", Name = "Vai trò" }));
 
-    [Fact]
-    public void NewRoleAppliesToEntireSchoolRatherThanOneBranch() => Assert.Contains("schoolBranchId",
-        IdentityManagementValidator.Role(new SaveRoleRequest { Code = "TEST_ROLE", Name = "Vai trò", SchoolId = 1, SchoolBranchId = 2 }).Keys);
 
     [Fact]
     public void RejectsOversizeNameAndDescription()
@@ -63,7 +65,6 @@ public sealed class IdentityManagementValidatorTests
         var request = new CreateUserRequest
         {
             Username = "  valid.user  ",
-            Email = " USER@example.com ",
             FullName = "  Nguyễn Văn A  ",
             Password = "Strong-password-123",
             Status = " active ",
@@ -79,7 +80,6 @@ public sealed class IdentityManagementValidatorTests
         var request = new CreateUserRequest
         {
             Username = "a",
-            Email = "not-an-email",
             FullName = "\u0001",
             Password = "weak",
             MoetIdentifier = "MOET\u0001",
@@ -91,13 +91,22 @@ public sealed class IdentityManagementValidatorTests
         var errors = IdentityManagementValidator.CreateUser(request);
 
         Assert.Contains("username", errors.Keys);
-        Assert.Contains("email", errors.Keys);
+        Assert.DoesNotContain("email", errors.Keys); // no user.email: request email is ignored
         Assert.Contains("fullName", errors.Keys);
         Assert.Contains("password", errors.Keys);
         Assert.Contains("moetIdentifier", errors.Keys);
         Assert.Contains("schoolBranchId", errors.Keys);
         Assert.Contains("status", errors.Keys);
         Assert.Contains("roleIds", errors.Keys);
+    }
+
+    [Fact]
+    public void RejectsMoetIdentifierLongerThanColumn()
+    {
+        var request = ValidUpdateUser();
+        request.MoetIdentifier = new string('M', 51);
+
+        Assert.Contains("moetIdentifier", IdentityManagementValidator.UpdateUser(request).Keys);
     }
 
     [Theory]
@@ -140,7 +149,6 @@ public sealed class IdentityManagementValidatorTests
     private static UpdateUserRequest ValidUpdateUser() => new()
     {
         Username = "valid.user",
-        Email = "user@example.com",
         FullName = "Nguyen Van A",
         Version = 1
     };

@@ -12,6 +12,7 @@ public static class SchoolDirectoryErrorCodes
     public const string ClassNotFound = "CLASS_NOT_FOUND";
     public const string ActiveAcademicYearNotFound = "ACTIVE_ACADEMIC_YEAR_NOT_FOUND";
     public const string StudentCodeDuplicate = "STUDENT_CODE_DUPLICATE";
+    public const string StudentAlreadyEnrolledInClass = "STUDENT_ALREADY_ENROLLED_IN_CLASS";
     public const string ClassCodeDuplicate = "CLASS_CODE_DUPLICATE";
     public const string TeacherAlreadyHomeroom = "TEACHER_ALREADY_HOMEROOM";
     public const string ClassHasActiveStudents = "CLASS_HAS_ACTIVE_STUDENTS";

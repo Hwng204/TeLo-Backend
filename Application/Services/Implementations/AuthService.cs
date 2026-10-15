@@ -35,7 +35,7 @@ public sealed class AuthService(
             return ServiceResult<bool>.Failure("INVALID_OTP", "Mã OTP không chính xác hoặc đã hết hạn.");
         }
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Email == email && u.Status == "ACTIVE", cancellationToken);
+        var user = await ActiveUserByEmailAsync(email, cancellationToken);
         if (user is null)
         {
             return ServiceResult<bool>.Failure("USER_NOT_FOUND", "Người dùng không hợp lệ.");
@@ -90,7 +90,7 @@ public sealed class AuthService(
         if (string.IsNullOrWhiteSpace(email))
             return ServiceResult<bool>.Failure("VALIDATION_ERROR", "Email không hợp lệ.");
 
-        var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Email == email && u.Status == "ACTIVE", cancellationToken);
+        var user = await ActiveUserByEmailAsync(email, cancellationToken);
         if (user is null)
         {
             return ServiceResult<bool>.Failure("USER_NOT_FOUND", "Email giáo viên không tồn tại vui lòng kiểm tra lại.");
@@ -111,6 +111,14 @@ public sealed class AuthService(
             cancellationToken);
 
         return ServiceResult<bool>.Success(true);
+    }
+
+    // Email lives on teacher.email, which is not unique: an address shared by several active accounts matches nobody.
+    private async Task<User?> ActiveUserByEmailAsync(string email, CancellationToken cancellationToken)
+    {
+        var users = await db.Users.Where(u => u.Status == "ACTIVE" && u.Teachers.Any(t => t.Email == email))
+            .Take(2).ToArrayAsync(cancellationToken);
+        return users.Length == 1 ? users[0] : null;
     }
 
     public ServiceResult<bool> VerifyOtp(VerifyOtpRequest request)

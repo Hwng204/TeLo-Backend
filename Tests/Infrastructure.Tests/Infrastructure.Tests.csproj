@@ -22,4 +22,9 @@
     <ProjectReference Include="..\..\Infrastructure\Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Khoá tạm DB v2: test của module chưa chuyển sang ERD (xem DB_V2.md mục 4). -->
+  <ItemGroup>
+    <Compile Remove="ExamRoomRepositoryQueryTests.cs;NsoProvinceProviderTests.cs" />
+  </ItemGroup>
+
 </Project>

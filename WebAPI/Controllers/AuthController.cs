@@ -96,16 +96,13 @@ public sealed class AuthController(
         var userIdString = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
         if (!ulong.TryParse(userIdString, out var userId)) return Unauthorized();
 
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        // Email ← teacher.email (null for accounts without a teacher profile).
+        var user = await db.Users.AsNoTracking().Where(u => u.Id == userId)
+            .Select(u => new { u.Username, u.FullName, Email = u.Teachers.Select(t => t.Email).FirstOrDefault(), u.Status })
+            .FirstOrDefaultAsync(cancellationToken);
         if (user is null) return NotFound();
 
-        return Ok(new
-        {
-            user.Username,
-            user.FullName,
-            user.Email,
-            user.Status
-        });
+        return Ok(user);
     }
 
     [Authorize]

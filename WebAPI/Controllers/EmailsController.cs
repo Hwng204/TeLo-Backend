@@ -35,7 +35,7 @@ public sealed class EmailsController(IEmailManagementService service) : Controll
     public Task<IActionResult> EventStatus(ulong schoolId, string code, EmailStatusRequest request, CancellationToken ct) => Respond(() => service.EventStatusAsync(schoolId, code, request, ActorId, ct));
 
     [HttpDelete("events/{code}")]
-    public Task<IActionResult> DeleteEvent(ulong schoolId, string code, [FromQuery] uint version, CancellationToken ct) => Respond(() => service.DeleteEventAsync(schoolId, code, version, ActorId, ct));
+    public Task<IActionResult> DeleteEvent(ulong schoolId, string code, CancellationToken ct) => Respond(() => service.DeleteEventAsync(schoolId, code, ActorId, ct));
 
     [HttpGet("delivery-status")]
     public Task<IActionResult> Runtime(ulong schoolId, CancellationToken ct) => Respond(() => service.RuntimeAsync(schoolId, ActorId, ct));
@@ -47,7 +47,7 @@ public sealed class EmailsController(IEmailManagementService service) : Controll
     public Task<IActionResult> Send(ulong schoolId, SendEmailRequest request, CancellationToken ct) => Respond(() => service.SendAsync(schoolId, request, ActorId, ct));
 
     [HttpPost("history/{id:long}/cancel")]
-    public Task<IActionResult> Cancel(ulong schoolId, ulong id, CancelEmailRequest request, CancellationToken ct) => Respond(() => service.CancelAsync(schoolId, id, request.Version, ActorId, ct));
+    public Task<IActionResult> Cancel(ulong schoolId, ulong id, CancellationToken ct) => Respond(() => service.CancelAsync(schoolId, id, ActorId, ct));
 
     [HttpGet("templates")]
     public Task<IActionResult> Templates(ulong schoolId, [FromQuery] EmailListQuery query, CancellationToken ct) => Respond(() => service.TemplatesAsync(schoolId, query, ActorId, ct));
@@ -68,7 +68,7 @@ public sealed class EmailsController(IEmailManagementService service) : Controll
     public Task<IActionResult> TemplateStatus(ulong schoolId, ulong id, EmailStatusRequest request, CancellationToken ct) => Respond(() => service.TemplateStatusAsync(schoolId, id, request, ActorId, ct));
 
     [HttpDelete("templates/{id:long}")]
-    public Task<IActionResult> DeleteTemplate(ulong schoolId, ulong id, [FromQuery] uint version, CancellationToken ct) => Respond(() => service.DeleteTemplateAsync(schoolId, id, version, ActorId, ct));
+    public Task<IActionResult> DeleteTemplate(ulong schoolId, ulong id, CancellationToken ct) => Respond(() => service.DeleteTemplateAsync(schoolId, id, ActorId, ct));
 
     [HttpGet("configurations")]
     public Task<IActionResult> Configurations(ulong schoolId, [FromQuery] EmailListQuery query, CancellationToken ct) => Respond(() => service.ConfigurationsAsync(schoolId, query, ActorId, ct));

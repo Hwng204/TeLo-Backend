@@ -17,48 +17,49 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
     {
         ValidatePage(query);
 
-        var tasks = Db.WorkTasks
-            .AsNoTracking()
-            .Where(task => task.TaskType == "MATRIX");
+        // matrix.task_id is unique: at most one matrix per task, which carries the task's scope.
+        var tasks =
+            from task in Db.WorkTasks.AsNoTracking().Where(task => task.TaskType == "MATRIX")
+            join matrix in Db.ExamMatrices on (ulong?)task.Id equals matrix.TaskId into matrices
+            from matrix in matrices.DefaultIfEmpty()
+            select new { Task = task, Matrix = matrix };
 
         if (query.InvolvingUserId is { } userId)
-            tasks = tasks.Where(task => task.CreatedByUserId == userId || task.AssignedToUserId == userId || task.ReviewerUserId == userId);
+            tasks = tasks.Where(row => row.Task.CreatedByUserId == userId || row.Task.AssignedToUserId == userId);
 
         if (query.AssignedToUserId is not null)
         {
-            tasks = tasks.Where(task => task.AssignedToUserId == query.AssignedToUserId.Value);
+            tasks = tasks.Where(row => row.Task.AssignedToUserId == query.AssignedToUserId.Value);
         }
 
         if (query.BranchId is not null)
         {
-            var branchId = query.BranchId.Value;
-            tasks = tasks.Where(task => Db.AcademicContexts.Any(context =>
-                context.Id == task.AcademicContextId &&
-                context.SchoolBranchId == branchId));
+            tasks = tasks.Where(row => row.Matrix != null && row.Matrix.BranchId == query.BranchId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(query.Status))
         {
-            tasks = tasks.Where(task => task.Status == query.Status.Trim().ToUpperInvariant());
+            tasks = tasks.Where(row => row.Task.Status == query.Status.Trim().ToUpperInvariant());
         }
 
         if (query.AcademicContextId is not null)
         {
-            tasks = tasks.Where(task => task.AcademicContextId == query.AcademicContextId.Value);
+            // A key that is not a scope matches nothing.
+            var scope = MatrixScope.TryParse(query.AcademicContextId.Value, out var parsed) ? parsed : default;
+            tasks = tasks.Where(row => row.Matrix != null &&
+                row.Matrix.BranchId == scope.BranchId &&
+                row.Matrix.SubjectId == scope.SubjectId &&
+                row.Matrix.GradeLevelId == scope.GradeLevelId);
         }
 
-        if (query.AcademicYearId is not null || query.SubjectId is not null || query.GradeLevelId is not null)
+        if (query.SubjectId is not null)
         {
-            var contexts = Db.AcademicContexts.AsQueryable();
-            if (query.AcademicYearId is not null) contexts = contexts.Where(context => context.AcademicYearId == query.AcademicYearId.Value);
-            if (query.SubjectId is not null) contexts = contexts.Where(context => context.SubjectId == query.SubjectId.Value);
-            if (query.GradeLevelId is not null) contexts = contexts.Where(context => context.GradeLevelId == query.GradeLevelId.Value);
-            tasks = tasks.Where(task => contexts.Any(context => context.Id == task.AcademicContextId));
+            tasks = tasks.Where(row => row.Matrix != null && row.Matrix.SubjectId == query.SubjectId.Value);
         }
 
-        if (query.SemesterId is not null)
+        if (query.GradeLevelId is not null)
         {
-            tasks = tasks.Where(task => task.SemesterId == query.SemesterId.Value);
+            tasks = tasks.Where(row => row.Matrix != null && row.Matrix.GradeLevelId == query.GradeLevelId.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(query.Keyword))
@@ -67,38 +68,42 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             // Gõ toàn số thì cũng khớp thẳng theo id, tiện khi biết id mà quên tên.
             var digits = new string(keyword.Where(char.IsDigit).ToArray());
             var byId = ulong.TryParse(digits, out var id) ? id : 0UL;
-            tasks = tasks.Where(task =>
-                (task.Name != null && EF.Functions.Like(task.Name, $"%{keyword}%")) ||
-                (task.Description != null && EF.Functions.Like(task.Description, $"%{keyword}%")) ||
-                (byId != 0UL && task.Id == byId));
+            tasks = tasks.Where(row =>
+                EF.Functions.Like(row.Task.Name, $"%{keyword}%") ||
+                (row.Task.Description != null && EF.Functions.Like(row.Task.Description, $"%{keyword}%")) ||
+                (byId != 0UL && row.Task.Id == byId));
         }
 
         if (query.DueBefore is not null)
         {
-            tasks = tasks.Where(task => task.DueAt != null && task.DueAt <= query.DueBefore);
+            tasks = tasks.Where(row => row.Task.DueAt != null && row.Task.DueAt <= query.DueBefore);
         }
 
         var totalCount = await tasks.CountAsync(cancellationToken);
         var rows = await tasks
-            .OrderByDescending(task => task.Id)
+            .OrderByDescending(row => row.Task.Id)
             .Skip((query.Page - 1) * query.PageSize)
             .Take(query.PageSize)
-            .Select(task => new
+            .Select(row => new
             {
-                task.Id,
-                task.CreatedByUserId,
-                task.AssignedToUserId,
-                task.DueAt,
-                task.Status,
-                task.TaskType,
-                task.Name,
-                task.Description,
-                task.AcademicContextId,
-                task.SemesterId,
-                MatrixId = Db.ExamMatrices
-                    .Where(matrix => matrix.TaskId == task.Id)
-                    .Select(matrix => (ulong?)matrix.Id)
-                    .FirstOrDefault()
+                row.Task.Id,
+                row.Task.CreatedByUserId,
+                row.Task.AssignedToUserId,
+                row.Task.DueAt,
+                row.Task.Status,
+                row.Task.TaskType,
+                row.Task.Name,
+                row.Task.Description,
+                Matrix = row.Matrix == null
+                    ? null
+                    : new
+                    {
+                        row.Matrix.Id,
+                        row.Matrix.BranchId,
+                        row.Matrix.SubjectId,
+                        row.Matrix.GradeLevelId,
+                        Started = row.Task.Status != "ASSIGNED" || row.Matrix.Status != MatrixStatusCodes.Draft || row.Matrix.Details.Any()
+                    }
             })
             .ToListAsync(cancellationToken);
 
@@ -112,9 +117,8 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
                 task.TaskType,
                 task.Name,
                 task.Description,
-                task.AcademicContextId,
-                task.SemesterId,
-                task.MatrixId))
+                task.Matrix is null ? null : new MatrixScope(task.Matrix.BranchId, task.Matrix.SubjectId, task.Matrix.GradeLevelId).Key,
+                task.Matrix is { Started: true } ? task.Matrix.Id : null))
             .ToArray();
 
         return new PagedResult<MatrixTaskRow>(items, query.Page, query.PageSize, totalCount);
@@ -129,9 +133,8 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
             .SingleOrDefaultAsync(task => task.Id == taskId, cancellationToken);
     }
 
-    public async Task LockAsync(ulong taskId, CancellationToken cancellationToken) =>
-        await Db.Database.SqlQuery<ulong>($"SELECT id AS Value FROM tasks WHERE id = {taskId} FOR UPDATE")
-            .ToListAsync(cancellationToken);
+    public Task LockAsync(ulong taskId, CancellationToken cancellationToken) =>
+        Db.LockTaskAsync(taskId, cancellationToken);
 
     public Task<WorkTask?> GetMatrixTaskAsync(
         ulong taskId,
@@ -144,46 +147,33 @@ public sealed class MatrixTaskRepository(ApplicationDbContext db)
                 cancellationToken);
     }
 
-    public Task<ulong?> GetLinkedMatrixIdAsync(
+    public async Task<TaskMatrixRow?> GetTaskMatrixAsync(
         ulong taskId,
         CancellationToken cancellationToken)
     {
-        return Db.ExamMatrices
+        var matrix = await Db.ExamMatrices
             .AsNoTracking()
             .Where(matrix => matrix.TaskId == taskId)
-            .Select(matrix => (ulong?)matrix.Id)
+            .Select(matrix => new
+            {
+                matrix.Id,
+                matrix.BranchId,
+                matrix.SubjectId,
+                matrix.GradeLevelId,
+                Started = matrix.Task!.Status != "ASSIGNED" || matrix.Status != MatrixStatusCodes.Draft || matrix.Details.Any()
+            })
             .SingleOrDefaultAsync(cancellationToken);
+        return matrix is null
+            ? null
+            : new TaskMatrixRow(matrix.Id, new MatrixScope(matrix.BranchId, matrix.SubjectId, matrix.GradeLevelId), matrix.Started);
     }
 
-    public Task<ulong?> GetContextBranchIdAsync(
-        ulong academicContextId,
-        CancellationToken cancellationToken)
-    {
-        return Db.AcademicContexts
-            .AsNoTracking()
-            .Where(context => context.Id == academicContextId)
-            .Select(context => (ulong?)context.SchoolBranchId)
-            .SingleOrDefaultAsync(cancellationToken);
-    }
-
-    public async Task<bool> DeleteIfNotStartedAsync(
+    // Checked and deleted under the task row lock: a team lead who has just filled the matrix (also under that
+    // lock) makes this delete nothing, and a deleted task's matrix is deleted with it, so it cannot be filled later.
+    public Task<bool> DeleteIfNotStartedAsync(
         ulong taskId,
-        CancellationToken cancellationToken)
-    {
-        // Kiểm tra "chưa có ma trận" và xoá trong cùng một câu lệnh: Tổ trưởng vừa lưu ma trận
-        // (dù chỉ trước đó một khoảnh khắc) thì câu lệnh không xoá gì. Chiều ngược lại do
-        // fk_exam_matrices_task chặn: nhiệm vụ đã xoá thì không lưu ma trận vào được nữa.
-        var deleted = await Db.WorkTasks
-            .Where(task =>
-                task.Id == taskId &&
-                task.TaskType == "MATRIX" &&
-                task.Status == "ASSIGNED" &&
-                !Db.ExamMatrices.Any(matrix => matrix.TaskId == taskId) &&
-                !Db.ExamSets.Any(set => set.TaskId == taskId) &&
-                !Db.Questions.Any(question => question.QuestionTaskDetail.QuestionTask.TaskId == taskId))
-            .ExecuteDeleteAsync(cancellationToken);
-        return deleted > 0;
-    }
+        CancellationToken cancellationToken) =>
+        Db.DeleteTaskIfNotStartedAsync(taskId, cancellationToken);
 
     private static void ValidatePage(MatrixTaskFilter query)
     {

@@ -31,8 +31,6 @@ public interface IAcademicYearRepository
     Task<bool> HasConflictExceptCurrentAsync(
         ulong currentYearId,
         string name,
-        DateOnly startDate,
-        DateOnly endDate,
         CancellationToken cancellationToken);
 
     Task<bool> HasActiveYearAsync(

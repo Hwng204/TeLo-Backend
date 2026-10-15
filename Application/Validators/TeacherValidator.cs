@@ -14,41 +14,40 @@ public static partial class TeacherValidator
     public static TeacherProfileValues Profile(TeacherProfileRequest request, DateOnly today)
     {
         if (request is null) throw Invalid("Hồ sơ giáo viên là bắt buộc.");
-        var code = Required(request.StaffCode, 64, "Mã cán bộ").ToUpperInvariant();
+        // Staff code is stored in user.moet_identifier varchar(50).
+        var code = Required(request.StaffCode, 50, "Mã cán bộ").ToUpperInvariant();
         if (!StaffCodePattern().IsMatch(code)) throw Invalid("Mã cán bộ chỉ gồm chữ Latin, số, dấu gạch ngang và gạch dưới.");
         var status = Required(request.EmploymentStatus, 32, "Trạng thái công tác").ToUpperInvariant();
         if (!EmploymentStatuses.Contains(status)) throw Invalid("Trạng thái công tác không hợp lệ.");
-        if (request.MainSubjectId == 0) throw Invalid("Môn dạy chính không hợp lệ.");
         if (request.DateOfBirth is { } birth && (birth >= today || birth.Year < 1900))
             throw Invalid("Ngày sinh phải từ năm 1900 và trước ngày hiện tại.");
-        if (request.JoinedOn is { } joined && (joined.Year < 1900 || joined > today ||
-                (request.DateOfBirth is { } dob && joined <= dob)))
-            throw Invalid("Ngày vào trường phải sau ngày sinh và không vượt quá ngày hiện tại.");
         var email = Optional(request.WorkEmail, 254, "Email công tác");
         if (email != null) email = Email(email);
-        var phone = Optional(request.Phone, 30, "Số điện thoại");
+        var phone = Optional(request.Phone, 20, "Số điện thoại");
         if (phone != null && (!PhonePattern().IsMatch(phone) || phone.Count(char.IsAsciiDigit) is < 7 or > 15))
             throw Invalid("Số điện thoại phải có từ 7 đến 15 chữ số.");
         return new(code, Required(request.FullName, 255, "Họ tên"),
-            Optional(request.Department, 150, "Tổ chuyên môn"), request.MainSubjectId,
-            Optional(request.Specialization, 255, "Chuyên môn"), Optional(request.Position, 150, "Chức vụ"),
-            request.Gender, phone, email, request.DateOfBirth, request.JoinedOn, status);
+            Optional(request.Specialization, 255, "Chuyên môn"),
+            request.Gender, phone, email, request.DateOfBirth, status);
     }
 
     public static TeacherFilter Filter(TeacherListQuery query)
     {
         Page(query.Page, query.PageSize);
+        if (query.SchoolBranchId == 0) throw Invalid("Mã môn/phân hiệu không hợp lệ.");
         if (query.AcademicYearId == 0) throw Invalid("Năm học không hợp lệ.");
-        if (query.MainSubjectId == 0 || query.SchoolBranchId == 0) throw Invalid("Mã môn/phân hiệu không hợp lệ.");
         var employment = Optional(query.EmploymentStatus, 32, "Trạng thái công tác")?.ToUpperInvariant();
         var account = Optional(query.AccountStatus, 32, "Trạng thái tài khoản")?.ToUpperInvariant();
         if (employment != null && !EmploymentStatuses.Contains(employment)) throw Invalid("Trạng thái công tác không hợp lệ.");
         if (account != null && !AccountStatuses.Contains(account)) throw Invalid("Trạng thái tài khoản không hợp lệ.");
+        // joinedOn is still accepted but has no column any more (sorts by full name).
         if (query.SortBy is not ("fullName" or "staffCode" or "joinedOn" or "createdAt"))
             throw Invalid("sortBy phải là fullName, staffCode, joinedOn hoặc createdAt.");
         if (query.SortDirection is not ("asc" or "desc")) throw Invalid("sortDirection phải là asc hoặc desc.");
-        return new(Optional(query.Search, 200, "Từ khóa"), Optional(query.Department, 150, "Tổ chuyên môn"),
-            query.MainSubjectId, employment, account, query.Gender, query.SchoolBranchId,
+        // Same mapping as writes: RESIGNED/INACTIVE mean an inactive account (derived status INACTIVE).
+        if (employment is "RESIGNED") employment = "INACTIVE";
+        return new(Optional(query.Search, 200, "Từ khóa"),
+            employment, account, query.Gender, query.SchoolBranchId,
             query.SortBy, query.SortDirection == "desc", query.Page, query.PageSize, query.AcademicYearId);
     }
 

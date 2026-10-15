@@ -16,8 +16,9 @@ public static class MatrixImportWorkbook
     public const int MaxFileBytes = 5 * 1024 * 1024;
     public static readonly string[] Headers = ["Bài học", "Mức nhận thức", "Loại câu hỏi", "Số câu", "Tỷ lệ %", "Điểm", "ID bài học"];
 
+    // Same text as the export's lesson column; unique per lesson (lesson title per chapter, chapter title per scope).
     public static string LessonLabel(MatrixLessonOption lesson) =>
-        $"Bài {lesson.Code}. {lesson.Title} — Chương {lesson.ChapterCode}. {lesson.ChapterTitle}";
+        $"Bài {lesson.Title} — Chương {lesson.ChapterTitle}";
 
     public static byte[] CreateTemplate(string? name, int totalScore, string contextLabel, string? semesterName,
         IReadOnlyList<MatrixLessonOption> lessons)

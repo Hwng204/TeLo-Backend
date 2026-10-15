@@ -148,7 +148,7 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
     public async Task<ExamFormOptionsData> GetFormOptionsAsync(CancellationToken cancellationToken)
     {
         var academicYears = await context.AcademicYears.AsNoTracking()
-            .OrderByDescending(item => item.StartDate)
+            .OrderByDescending(item => item.Id)
             .Select(item => new ExamAcademicYearOptionData(
                 item.Id,
                 item.Name,
@@ -179,9 +179,9 @@ public sealed class ExamRepository(ApplicationDbContext context) : IExamReposito
         CancellationToken cancellationToken) =>
         context.StudentEnrollments.AsNoTracking()
             .CountAsync(enrollment =>
-                enrollment.AcademicYearId == academicYearId &&
-                enrollment.Status == Domain.Entities.Identity.StudentEnrollmentStatusCodes.Active &&
-                enrollment.Student.Status == Domain.Entities.Identity.StudentStatusCodes.Active &&
+                enrollment.SchoolClass.AcademicYearId == academicYearId &&
+                enrollment.EndedOn == null &&
+                enrollment.Student.User.Status == Domain.Entities.Identity.StudentStatusCodes.Active &&
                 enrollment.SchoolClass.Status == "ACTIVE" &&
                 enrollment.SchoolClass.SchoolBranchId == schoolBranchId &&
                 enrollment.SchoolClass.GradeLevelId == gradeLevelId,

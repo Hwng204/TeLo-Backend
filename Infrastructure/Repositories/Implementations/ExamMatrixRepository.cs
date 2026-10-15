@@ -43,39 +43,33 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
 
         if (query.AcademicContextId is not null)
         {
+            // A key that is not a scope matches nothing, as an unknown context id did.
+            var scope = MatrixScope.TryParse(query.AcademicContextId.Value, out var parsed) ? parsed : default;
             matrices = matrices.Where(matrix =>
-                matrix.AcademicContextId == query.AcademicContextId.Value);
-        }
-
-        if (query.SemesterId is not null)
-        {
-            matrices = matrices.Where(matrix =>
-                matrix.SemesterId == query.SemesterId.Value);
-        }
-
-        if (query.AcademicYearId is not null)
-        {
-            matrices = matrices.Where(matrix =>
-                matrix.AcademicContext.AcademicYearId == query.AcademicYearId.Value);
+                matrix.BranchId == scope.BranchId &&
+                matrix.SubjectId == scope.SubjectId &&
+                matrix.GradeLevelId == scope.GradeLevelId);
         }
 
         if (query.SubjectId is not null)
         {
-            matrices = matrices.Where(matrix =>
-                matrix.AcademicContext.SubjectId == query.SubjectId.Value);
+            matrices = matrices.Where(matrix => matrix.SubjectId == query.SubjectId.Value);
         }
 
         if (query.GradeLevelId is not null)
         {
-            matrices = matrices.Where(matrix =>
-                matrix.AcademicContext.GradeLevelId == query.GradeLevelId.Value);
+            matrices = matrices.Where(matrix => matrix.GradeLevelId == query.GradeLevelId.Value);
         }
 
         if (query.BranchId is not null)
         {
-            matrices = matrices.Where(matrix =>
-                matrix.AcademicContext.SchoolBranchId == query.BranchId.Value);
+            matrices = matrices.Where(matrix => matrix.BranchId == query.BranchId.Value);
         }
+
+        // A task's matrix exists from task creation; until the team lead starts it, it is not a matrix to list.
+        matrices = matrices.Where(matrix =>
+            matrix.Task == null || matrix.Task.Status != "ASSIGNED" ||
+            matrix.Status != MatrixStatusCodes.Draft || matrix.Details.Any());
 
         if (query.HideTaskDrafts)
         {
@@ -101,16 +95,13 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                 matrix.Name,
                 matrix.Status,
                 matrix.TaskId,
-                matrix.AcademicContextId,
-                matrix.SemesterId,
+                matrix.BranchId,
+                matrix.SubjectId,
+                matrix.GradeLevelId,
                 matrix.CreatedByUserId,
-                matrix.CreatedAt,
-                matrix.ApprovedByUserId,
-                matrix.ApprovedAt,
-                SubjectName = matrix.AcademicContext.Subject.Name,
-                GradeLevelName = matrix.AcademicContext.GradeLevel.Name,
-                AcademicYearName = matrix.AcademicContext.AcademicYear.Name,
-                SemesterName = matrix.Semester == null ? null : matrix.Semester.Name,
+                TaskCreatorId = matrix.Task == null ? (ulong?)null : matrix.Task.CreatedByUserId,
+                SubjectName = matrix.Subject.Name,
+                GradeLevelName = matrix.GradeLevel.Name,
                 TotalQuestions = matrix.Details
                     .Select(detail => (long?)detail.QuestionCount)
                     .Sum() ?? 0,
@@ -123,15 +114,15 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             row.Name,
             row.Status,
             row.TaskId,
-            row.AcademicContextId,
-            row.SemesterId,
+            new MatrixScope(row.BranchId, row.SubjectId, row.GradeLevelId).Key,
             checked((uint)row.TotalQuestions),
             row.TotalScore,
             row.CreatedByUserId,
-            row.CreatedAt,
-            row.ApprovedByUserId,
-            row.ApprovedAt,
-            row.SubjectName, row.GradeLevelName, row.AcademicYearName, row.SemesterName)).ToArray();
+            // Same rule as ExamMatrix.ApprovedByUserId: reviewer = task creator, direct matrix = its author.
+            row.Status is MatrixStatusCodes.Approved or MatrixStatusCodes.Archived
+                ? row.TaskId is null ? row.CreatedByUserId : row.TaskCreatorId
+                : null,
+            row.SubjectName, row.GradeLevelName)).ToArray();
 
         return new PagedResult<MatrixListRow>(items, query.Page, query.PageSize, totalCount);
     }
@@ -142,7 +133,6 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
     {
         var matrix = await Db.ExamMatrices
             .Include(item => item.Task)
-            .Include(item => item.AcademicContext)
             .Include(item => item.Details)
                 .ThenInclude(detail => detail.Lesson)
                     .ThenInclude(lesson => lesson.Chapter)
@@ -151,23 +141,14 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
         if (matrix is not null)
         {
             matrix.Details = matrix.Details
-                .OrderBy(detail => detail.Lesson.Chapter.SortOrder)
-                .ThenBy(detail => detail.Lesson.SortOrder)
+                .OrderBy(detail => detail.Lesson.ChapterId)
+                .ThenBy(detail => detail.LessonId)
                 .ThenBy(detail => detail.CognitiveLevel)
                 .ThenBy(detail => detail.QuestionType)
                 .ToList();
         }
 
         return matrix;
-    }
-
-    public Task<bool> ExistsForTaskAsync(
-        ulong taskId,
-        CancellationToken cancellationToken)
-    {
-        return Db.ExamMatrices.AnyAsync(
-            matrix => matrix.TaskId == taskId,
-            cancellationToken);
     }
 
     // The task was loaded without tracking; attach it so EF does not try to insert it again.
@@ -179,11 +160,6 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             Db.Entry(matrix.Task).State == EntityState.Detached)
         {
             Db.Attach(matrix.Task);
-        }
-
-        if (matrix.CreatedAt == default)
-        {
-            matrix.CreatedAt = DateTime.UtcNow;
         }
 
         await Db.ExamMatrices.AddAsync(matrix, cancellationToken);
@@ -231,13 +207,7 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
         var affected = await Db.ExamMatrices
             .Where(item => item.Id == matrix.Id && item.Status == expectedStatus)
             .ExecuteUpdateAsync(
-                setters => setters
-                    .SetProperty(item => item.Status, matrix.Status)
-                    .SetProperty(item => item.RejectComment, matrix.RejectComment)
-                    .SetProperty(item => item.RejectedByUserId, matrix.RejectedByUserId)
-                    .SetProperty(item => item.RejectedAt, matrix.RejectedAt)
-                    .SetProperty(item => item.ApprovedByUserId, matrix.ApprovedByUserId)
-                    .SetProperty(item => item.ApprovedAt, matrix.ApprovedAt),
+                setters => setters.SetProperty(item => item.Status, matrix.Status),
                 cancellationToken);
 
         if (affected != 1)
@@ -245,20 +215,10 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             return false;
         }
 
-        // The columns are already written; stop EF from writing them again.
+        // The column is already written; stop EF from writing it again.
         var entry = Db.Entry(matrix);
         entry.Property(item => item.Status).OriginalValue = matrix.Status;
-        entry.Property(item => item.RejectComment).OriginalValue = matrix.RejectComment;
-        entry.Property(item => item.RejectedByUserId).OriginalValue = matrix.RejectedByUserId;
-        entry.Property(item => item.RejectedAt).OriginalValue = matrix.RejectedAt;
-        entry.Property(item => item.ApprovedByUserId).OriginalValue = matrix.ApprovedByUserId;
-        entry.Property(item => item.ApprovedAt).OriginalValue = matrix.ApprovedAt;
         entry.Property(item => item.Status).IsModified = false;
-        entry.Property(item => item.RejectComment).IsModified = false;
-        entry.Property(item => item.RejectedByUserId).IsModified = false;
-        entry.Property(item => item.RejectedAt).IsModified = false;
-        entry.Property(item => item.ApprovedByUserId).IsModified = false;
-        entry.Property(item => item.ApprovedAt).IsModified = false;
         return true;
     }
 
@@ -269,7 +229,7 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
         CancellationToken cancellationToken)
     {
         var rows = await Db.Database
-            .SqlQuery<ulong>($"SELECT id AS Value FROM exam_matrices WHERE id = {matrixId} AND status = {expectedStatus} FOR UPDATE")
+            .SqlQuery<ulong>($"SELECT matrix_id AS Value FROM matrix WHERE matrix_id = {matrixId} AND status = {expectedStatus} FOR UPDATE")
             .ToListAsync(cancellationToken);
         return rows.Count == 1;
     }
@@ -277,7 +237,6 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
     public async Task SetTaskStatusAsync(
         ulong taskId,
         string status,
-        ulong updatedByUserId,
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
@@ -286,10 +245,17 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(task => task.Status, status)
-                    .SetProperty(task => task.UpdatedAt, now)
-                    .SetProperty(task => task.UpdatedByUserId, updatedByUserId),
+                    .SetProperty(task => task.UpdatedAt, now),
                 cancellationToken);
     }
+
+    public void AddTaskHistory(TaskHistory history) => Db.TaskHistories.Add(history);
+
+    public Task<TaskHistory?> GetLatestTaskHistoryAsync(ulong taskId, CancellationToken cancellationToken) =>
+        Db.TaskHistories.AsNoTracking()
+            .Where(history => history.TaskId == taskId)
+            .OrderByDescending(history => history.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
     private static void ValidatePage(MatrixListFilter query)
     {

@@ -24,10 +24,9 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
         if (!bool.TryParse(configuration["NotificationEmail:Enabled"], out var enabled) || !enabled)
             return ServiceResult<EmailQueueResult>.Failure("UNAVAILABLE", "Chưa bật dịch vụ gửi email. Hãy cấu hình SMTP và NotificationEmail:Enabled trên máy chủ.");
         await using var tx = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-        await db.Users.FromSqlInterpolated($"SELECT * FROM users WHERE id = {actor} FOR UPDATE").ToArrayAsync(ct);
+        await db.Users.FromSqlInterpolated($"SELECT * FROM `user` WHERE user_id = {actor} FOR UPDATE").ToArrayAsync(ct);
         if (!await db.UserRoles.WhereEffective().AnyAsync(r => r.UserId == actor && r.User.Status == "ACTIVE" &&
-            (r.Role.Code == "ADMIN" || r.Role.Code == "OperationalAdmin") && (r.Role.SchoolId == null || r.Role.SchoolId == schoolId) &&
-            r.Role.SchoolBranchId == null, ct))
+            (r.Role.Code == "ADMIN" || r.Role.Code == "OperationalAdmin"), ct))
             return ServiceResult<EmailQueueResult>.Failure("FORBIDDEN", "Bạn không có quyền gửi thử trong trường này.");
         var key = $"test:{schoolId}:{actor}:{request.RequestId:N}";
         var existing = await db.Notifications.Include(n => n.Recipients).SingleOrDefaultAsync(n => n.EventKey == key, ct);
@@ -42,7 +41,8 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
             return ServiceResult<EmailQueueResult>.Failure("RATE_LIMITED", "Tối đa 10 email gửi thử mỗi giờ.");
         var revision = await db.EmailTemplateVersions.Include(r => r.Template)
             .SingleOrDefaultAsync(r => r.Id == request.RevisionId && r.Template.SchoolId == schoolId && r.Template.Status == "ACTIVE", ct);
-        var user = await recipients.EligibleUsers(schoolId).SingleOrDefaultAsync(u => u.Id == request.RecipientUserId, ct);
+        var user = await recipients.EligibleUsers(schoolId).Where(u => u.Id == request.RecipientUserId)
+            .Select(u => new { u.Id, Email = u.Teachers.Select(t => t.Email).FirstOrDefault() ?? "" }).SingleOrDefaultAsync(ct);
         if (revision == null || user == null || !ValidEmail(user.Email))
             return ServiceResult<EmailQueueResult>.Failure("VALIDATION_ERROR", "Chọn phiên bản mẫu đang áp dụng và người nhận có email hợp lệ trong trường.");
         if (!await db.EmailEvents.AnyAsync(e => e.Code == revision.Template.EventCode && (e.SchoolId == null || e.SchoolId == schoolId) && e.Status == "ACTIVE", ct))
@@ -71,8 +71,8 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
         var transactionId = db.Database.CurrentTransaction?.TransactionId
             ?? throw new InvalidOperationException("Matrix notifications require the business transaction.");
         var matrix = await db.ExamMatrices.AsNoTracking().Where(m => m.Id == matrixId)
-            .Select(m => new { m.Name, m.AcademicContext.SchoolId, m.AcademicContext.SchoolBranchId,
-                SchoolName = m.AcademicContext.School.Name, BranchName = m.AcademicContext.SchoolBranch.Name }).SingleAsync(ct);
+            .Select(m => new { m.Name, m.Branch.SchoolId, SchoolBranchId = m.BranchId,
+                SchoolName = m.Branch.School.Name, BranchName = m.Branch.Name }).SingleAsync(ct);
         await QueueEventAsync(matrix.SchoolId, matrix.SchoolBranchId, eventCode, $"matrix:{matrixId}:{eventCode}:{transactionId:N}", actor,
             new Dictionary<string, string> { ["schoolName"] = matrix.SchoolName, ["branchName"] = matrix.BranchName,
                 ["matrixName"] = matrix.Name, ["actionUrl"] = ActionUrl($"/matrices/{matrixId}") }, ct);
@@ -80,11 +80,10 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
 
     public async Task QueueMatrixAssignmentAsync(ulong taskId, ulong actor, CancellationToken ct)
     {
-        var task = await (from t in db.WorkTasks.AsNoTracking()
-            join context in db.AcademicContexts on t.AcademicContextId equals context.Id
-            where t.Id == taskId
-            select new { t.Name, t.DueAt, context.SchoolId, context.SchoolBranchId,
-                SchoolName = context.School.Name, BranchName = context.SchoolBranch.Name }).SingleAsync(ct);
+        // School and branch come from the task's matrix (its scope).
+        var task = await db.ExamMatrices.AsNoTracking().Where(m => m.TaskId == taskId)
+            .Select(m => new { m.Task!.Name, m.Task.DueAt, m.Branch.SchoolId, SchoolBranchId = m.BranchId,
+                SchoolName = m.Branch.School.Name, BranchName = m.Branch.Name }).SingleAsync(ct);
         await QueueEventAsync(task.SchoolId, task.SchoolBranchId, "MATRIX_ASSIGNED", $"matrix-task:{taskId}:assigned", actor,
             new Dictionary<string, string> { ["schoolName"] = task.SchoolName, ["branchName"] = task.BranchName,
                 ["taskName"] = task.Name, ["dueAt"] = task.DueAt?.ToString("dd/MM/yyyy HH:mm") ?? "Chưa đặt hạn",
@@ -112,7 +111,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
         while (true)
         {
             var batch = await recipients.Resolve(schoolId, rule).Where(u => u.Id > lastId).OrderBy(u => u.Id)
-                .Select(u => new { u.Id, u.Email }).Take(200).ToArrayAsync(ct);
+                .Select(u => new { u.Id, Email = u.Teachers.Select(t => t.Email).FirstOrDefault() ?? "" }).Take(200).ToArrayAsync(ct);
             if (batch.Length == 0) break;
             foreach (var user in batch)
             {
@@ -169,8 +168,6 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
         if (config == null || !config.IsActive || config.EmailTemplateVersion?.Template.Status != "ACTIVE" ||
             config.EmailTemplateVersion.Template.SchoolId != schoolId || config.EmailTemplateVersion.Template.EventCode != request.EventCode)
             return ServiceResult<PreparedManual>.Failure("VALIDATION_ERROR", "Cần lưu cấu hình đang bật và chọn mẫu đang áp dụng trước khi gửi.");
-        if (request.ConfigVersion == 0 || config.Version != request.ConfigVersion)
-            return ServiceResult<PreparedManual>.Failure("STALE_VERSION", "Cấu hình đã thay đổi. Vui lòng tải lại trước khi gửi.");
         var values = new Dictionary<string,string>(request.Values!);
         values["schoolName"] = await db.Schools.Where(s => s.Id == schoolId).Select(s => s.Name).SingleAsync(ct);
         values["actorName"] = await db.Users.Where(u => u.Id == actor).Select(u => u.FullName).SingleAsync(ct);
@@ -206,7 +203,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
             return ServiceResult<EmailQueueResult>.Failure("VALIDATION_ERROR", "Mã yêu cầu hoặc dữ liệu biến không hợp lệ.");
         var key = $"manual:{schoolId}:{actor}:{request.RequestId:N}";
         var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new {
-            request.EventCode, request.ConfigVersion, request.PreviewFingerprint, ScheduledFor = request.ScheduledFor?.UtcDateTime,
+            request.EventCode, request.PreviewFingerprint, ScheduledFor = request.ScheduledFor?.UtcDateTime,
             Values = request.Values.OrderBy(v => v.Key, StringComparer.Ordinal).ToArray() }))));
         var existing = await db.Notifications.SingleOrDefaultAsync(n => n.EventKey == key, ct);
         if (existing != null) return existing.RequestFingerprint == fingerprint
@@ -239,7 +236,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
         var emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         while (true)
         {
-            var batch = await recipients.Resolve(schoolId, rule).Where(u => u.Id > lastId).OrderBy(u => u.Id).Select(u => new {u.Id,u.Email}).Take(200).ToArrayAsync(ct);
+            var batch = await recipients.Resolve(schoolId, rule).Where(u => u.Id > lastId).OrderBy(u => u.Id).Select(u => new { u.Id, Email = u.Teachers.Select(t => t.Email).FirstOrDefault() ?? "" }).Take(200).ToArrayAsync(ct);
             if (batch.Length == 0) break;
             foreach (var user in batch)
             {
@@ -277,7 +274,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
             var token = Guid.NewGuid().ToString();
             await using var claimTransaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
             var notificationId = await db.NotificationRecipients.Where(r => r.Id == id).Select(r => r.NotificationId).SingleAsync(ct);
-            var parent = (await db.Notifications.FromSqlInterpolated($"SELECT * FROM notifications WHERE id = {notificationId} FOR UPDATE").AsNoTracking().ToArrayAsync(ct)).Single();
+            var parent = (await db.Notifications.FromSqlInterpolated($"SELECT * FROM notification WHERE notification_id = {notificationId} FOR UPDATE").AsNoTracking().ToArrayAsync(ct)).Single();
             if (parent.CancelledAt != null || parent.ScheduledFor > claimedAt) { await claimTransaction.RollbackAsync(ct); continue; }
             var claimed = await db.NotificationRecipients.Where(r => r.Id == id && r.AttemptCount < 3 &&
                     ((r.EmailStatus == "PENDING" && (r.NextAttemptAt == null || r.NextAttemptAt <= claimedAt)) ||
@@ -287,6 +284,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
             await claimTransaction.CommitAsync(ct);
             if (claimed == 0) continue;
             var row = await db.NotificationRecipients.AsNoTracking().Include(r => r.Notification)
+                .Include(r => r.User).ThenInclude(u => u.Teachers)
                 .Include(r => r.User).ThenInclude(u => u.SchoolBranch).ThenInclude(b => b!.School).SingleAsync(r => r.Id == id, ct);
             string status;
             string? error = null;
@@ -294,7 +292,7 @@ public sealed class EmailNotificationService(ApplicationDbContext db, EmailRecip
             {
                 if (row.User.Status != "ACTIVE" || row.User.SchoolBranch?.SchoolId != row.Notification.SchoolId ||
                     row.User.SchoolBranch.Status != "ACTIVE" || row.User.SchoolBranch.School.Status != "ACTIVE" ||
-                    !string.Equals(row.User.Email.Trim(), row.EmailAddress, StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(row.User.Teachers.Select(t => t.Email).FirstOrDefault()?.Trim(), row.EmailAddress, StringComparison.OrdinalIgnoreCase))
                 { status = "CANCELLED"; error = "RECIPIENT_NO_LONGER_ELIGIBLE"; }
                 else
                 {

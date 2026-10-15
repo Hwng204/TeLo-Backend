@@ -8,32 +8,28 @@ public sealed class SchoolClassConfiguration : IEntityTypeConfiguration<SchoolCl
 {
     public void Configure(EntityTypeBuilder<SchoolClass> builder)
     {
-        builder.ToTable("classes");
+        builder.ToTable("class");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnName("id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
-        builder.Property(x => x.SchoolBranchId).HasColumnName("school_branch_id").HasColumnType("bigint unsigned").IsRequired();
-        builder.Property(x => x.Code).HasColumnName("code").HasMaxLength(64).IsRequired();
-        builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
+        builder.Property(x => x.Id).HasColumnName("class_id").HasColumnType("bigint unsigned").ValueGeneratedOnAdd();
+        builder.Property(x => x.SchoolBranchId).HasColumnName("branch_id").HasColumnType("bigint unsigned").IsRequired();
+        builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(255).IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(32).HasDefaultValue("ACTIVE").IsRequired();
         builder.Property(x => x.AcademicYearId).HasColumnName("academic_year_id").HasColumnType("bigint unsigned").IsRequired();
         builder.Property(x => x.GradeLevelId).HasColumnName("grade_level_id").HasColumnType("bigint unsigned").IsRequired();
 
         builder.HasIndex(x => new { x.SchoolBranchId, x.AcademicYearId, x.Name })
-            .IsUnique().HasDatabaseName("uq_classes_branch_year_name");
-        builder.HasAlternateKey(x => new { x.Id, x.AcademicYearId }).HasName("uq_classes_id_year");
-        builder.HasIndex(x => new { x.SchoolBranchId, x.AcademicYearId, x.Code })
-            .IsUnique().HasDatabaseName("uq_classes_branch_year_code");
+            .IsUnique().HasDatabaseName("uq_class_branch_id_academic_year_id_name");
         builder.HasIndex(x => new { x.SchoolBranchId, x.AcademicYearId, x.GradeLevelId, x.Status })
             .HasDatabaseName("idx_classes_directory");
         builder.HasIndex(x => x.GradeLevelId).HasDatabaseName("idx_classes_grade");
         builder.HasOne(x => x.SchoolBranch).WithMany(x => x.Classes)
-            .HasForeignKey(x => x.SchoolBranchId).HasConstraintName("fk_classes_branch")
+            .HasForeignKey(x => x.SchoolBranchId).HasConstraintName("fk_class_branch_id")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.AcademicYear).WithMany()
-            .HasForeignKey(x => x.AcademicYearId).HasConstraintName("fk_classes_academic_year")
+            .HasForeignKey(x => x.AcademicYearId).HasConstraintName("fk_class_academic_year_id")
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.GradeLevel).WithMany()
-            .HasForeignKey(x => x.GradeLevelId).HasConstraintName("fk_classes_grade_level")
+            .HasForeignKey(x => x.GradeLevelId).HasConstraintName("fk_class_grade_level_id")
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

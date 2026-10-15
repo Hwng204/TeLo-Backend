@@ -6,59 +6,50 @@ namespace Application.Tests;
 public sealed class AcademicYearDomainTests
 {
     [Fact]
-    public void Activate_RejectsTwoTermsWithoutDates()
+    public void Activate_RejectsYearWithoutTwoTerms()
     {
         var year = CreateYear("DRAFT");
         year.Semesters.Add(new Semester { Order = 1, Name = "Học kỳ I" });
-        year.Semesters.Add(new Semester { Order = 2, Name = "Học kỳ II" });
         var error = Assert.Throws<AcademicCalendarDomainException>(year.Activate);
         Assert.Equal("INCOMPLETE_TERMS", error.Code);
         Assert.Equal("DRAFT", year.Status);
     }
 
-    [Fact]
-    public void Activate_RejectsOverlappingTerms()
+    [Theory]
+    [InlineData("Học kỳ I", "")]
+    [InlineData("Học kỳ", " học kỳ ")]
+    public void Activate_RejectsEmptyOrDuplicateTermNames(string first, string second)
     {
-        var year = ScheduledYear();
-        year.Semesters.Last().StartDate = new DateOnly(2027, 1, 15);
-        Assert.Throws<AcademicCalendarDomainException>(year.Activate);
+        var year = CreateYear("DRAFT");
+        year.Semesters.Add(new Semester { Order = 1, Name = first });
+        year.Semesters.Add(new Semester { Order = 2, Name = second });
+        var error = Assert.Throws<AcademicCalendarDomainException>(year.Activate);
+        Assert.Equal("INCOMPLETE_TERMS", error.Code);
     }
 
     [Fact]
-    public void ActivateAndCloseFirstTerm_AdvancesToSecondTerm()
+    public void Activate_SetsOnlyTheYearStatus()
     {
-        var year = ScheduledYear();
+        var year = NamedYear();
         year.Activate();
-        Assert.Equal("ACTIVE", year.Semesters.First().Status);
-        Assert.Equal("PLANNED", year.Semesters.Last().Status);
-        var previousVersion = year.Version;
-        year.CloseTerm(10);
-        Assert.Equal("CLOSED", year.Semesters.First().Status);
-        Assert.Equal("ACTIVE", year.Semesters.Last().Status);
-        Assert.True(year.Version > previousVersion);
+        Assert.Equal("ACTIVE", year.Status);
     }
 
     [Fact]
     public void Close_RejectsDraftYear()
     {
-        var year = ScheduledYear();
-        Assert.Throws<AcademicCalendarDomainException>(year.Close);
+        var year = NamedYear();
+        var error = Assert.Throws<AcademicCalendarDomainException>(year.Close);
+        Assert.Equal("ACADEMIC_YEAR_NOT_ACTIVE", error.Code);
     }
 
     [Fact]
-    public void CloseTerm_RejectsClosingSecondTermBeforeFirst()
+    public void Close_ClosesAnActiveYear()
     {
-        var year = ScheduledYear();
+        var year = NamedYear();
         year.Activate();
-        Assert.Throws<AcademicCalendarDomainException>(() => year.CloseTerm(11));
-    }
-
-    private static AcademicYear ScheduledYear()
-    {
-        var year = CreateYear("DRAFT");
-        year.Semesters.Add(new Semester { Id = 10, Order = 1, Name = "Học kỳ I", StartDate = year.StartDate, EndDate = new DateOnly(2027, 1, 15) });
-        year.Semesters.Add(new Semester { Id = 11, Order = 2, Name = "Học kỳ II", StartDate = new DateOnly(2027, 1, 16), EndDate = year.EndDate });
-        return year;
+        year.Close();
+        Assert.Equal("CLOSED", year.Status);
     }
 
     [Fact]
@@ -72,48 +63,15 @@ public sealed class AcademicYearDomainTests
     }
 
     [Fact]
-    public void Close_ClosesTheAcademicYearAndEveryOpenSemester()
+    public void UpdateSchedule_RenamesOpenYearAndRejectsClosedYear()
     {
         var year = CreateYear("ACTIVE");
-        year.Semesters.Add(new Semester { Id = 10, Order = 1, Status = "ACTIVE" });
-        year.Semesters.Add(new Semester { Id = 11, Order = 2, Status = "PLANNED" });
+        year.UpdateSchedule("2027-2028");
+        Assert.Equal("2027-2028", year.Name);
 
-        year.Close();
-
-        Assert.Equal("CLOSED", year.Status);
-        Assert.All(year.Semesters, semester => Assert.Equal("CLOSED", semester.Status));
-    }
-
-    [Fact]
-    public void EnsureCanUpdateSchedule_RejectsDatesThatExcludeAnExistingSemester()
-    {
-        var year = CreateYear("DRAFT");
-        year.Semesters.Add(new Semester
-        {
-            Order = 1,
-            Name = "Học kỳ 1",
-            StartDate = new DateOnly(2026, 9, 1),
-            EndDate = new DateOnly(2027, 1, 15)
-        });
-
-        var exception = Assert.Throws<AcademicCalendarDomainException>(() =>
-            year.EnsureCanUpdateSchedule(
-                new DateOnly(2026, 9, 2),
-                new DateOnly(2027, 5, 31)));
-
-        Assert.Equal("SEMESTER_OUT_OF_BOUNDS", exception.Code);
-    }
-
-    [Theory]
-    [InlineData("DRAFT")]
-    [InlineData("ACTIVE")]
-    public void EnsureCanUpdateSchedule_AllowsDraftAndActiveYears(string status)
-    {
-        var year = CreateYear(status);
-
-        year.EnsureCanUpdateSchedule(
-            new DateOnly(2026, 8, 15),
-            new DateOnly(2027, 5, 31));
+        var closed = CreateYear("CLOSED");
+        var exception = Assert.Throws<AcademicCalendarDomainException>(() => closed.UpdateSchedule("2027-2028"));
+        Assert.Equal("ACADEMIC_YEAR_CLOSED", exception.Code);
     }
 
     [Fact]
@@ -127,23 +85,28 @@ public sealed class AcademicYearDomainTests
     }
 
     [Fact]
-    public void EnsureCanConfigureTerm_RejectsAClosedSemester()
+    public void ConfigureTerm_RenamesTermAndRejectsMissingTerm()
     {
-        var year = CreateYear("ACTIVE");
-        year.Semesters.Add(new Semester { Order = 1, Status = "CLOSED" });
+        var year = NamedYear();
+        year.ConfigureTerm(2, "Kỳ hai");
+        Assert.Equal("Kỳ hai", year.Semesters.Single(term => term.Order == 2).Name);
 
-        var exception = Assert.Throws<AcademicCalendarDomainException>(() =>
-            year.EnsureCanConfigureTerm(1));
+        var exception = Assert.Throws<AcademicCalendarDomainException>(() => CreateYear("DRAFT").ConfigureTerm(1, "Kỳ một"));
+        Assert.Equal("TERM_NOT_FOUND", exception.Code);
+    }
 
-        Assert.Equal("TERM_CLOSED", exception.Code);
+    private static AcademicYear NamedYear()
+    {
+        var year = CreateYear("DRAFT");
+        year.Semesters.Add(new Semester { Id = 10, Order = 1, Name = "Học kỳ I" });
+        year.Semesters.Add(new Semester { Id = 11, Order = 2, Name = "Học kỳ II" });
+        return year;
     }
 
     private static AcademicYear CreateYear(string status) => new()
     {
         Id = 1,
         Name = "2026-2027",
-        StartDate = new DateOnly(2026, 8, 15),
-        EndDate = new DateOnly(2027, 5, 31),
         Status = status
     };
 }

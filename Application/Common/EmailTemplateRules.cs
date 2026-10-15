@@ -82,7 +82,7 @@ public static partial class EmailTemplateRules
     {
         var variables = Variables(row.VariablesJson, row.Code);
         return new(row.Code, row.Name, variables.Select(v => v.Name).ToArray(), row.Id, row.TriggerKind,
-            row.Status, row.Version, row.Description, variables, row.TriggerKind == "MANUAL" && row.UsedAt == null);
+            row.Status, row.Description, variables, row.TriggerKind == "MANUAL" && row.UsedAt == null);
     }
 
     public static EmailEventItem RevisionDefinition(EmailTemplateVersion revision)

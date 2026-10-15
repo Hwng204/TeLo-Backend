@@ -238,6 +238,8 @@ public sealed class StudentService(IStudentRepository studentRepository) : IStud
             ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Học sinh chưa có thông tin học tập trong năm học hiện tại."),
         DirectoryWriteStatus.UseClassTransfer =>
             ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Học sinh đã được xếp lớp. Vui lòng sử dụng chức năng chuyển lớp."),
+        DirectoryWriteStatus.AlreadyEnrolledInClass =>
+            ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.StudentAlreadyEnrolledInClass, "Học sinh đã từng thuộc lớp này, không thể ghi đè lịch sử."),
         DirectoryWriteStatus.InvalidEffectiveDate =>
             ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Ngày áp dụng chuyển lớp không hợp lệ."),
         _ => ServiceResult<T>.Failure(SchoolDirectoryErrorCodes.Validation, "Thao tác không thành công.")

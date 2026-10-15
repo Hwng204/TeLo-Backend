@@ -20,7 +20,7 @@ namespace WebAPI.Tests;
 public sealed class DirectoryAcademicYearIntegrationTests
 {
     [IdentityMySqlFact]
-    public async Task SelectedYearScopesStudentsClassesAndTeachersWithoutChangingActiveYear()
+    public async Task SelectedYearScopesStudentsAndClassesWhileTeachersKeepCurrentProfiles()
     {
         var connection = new MySqlConnectionStringBuilder(Environment.GetEnvironmentVariable("TELO_TEST_MYSQL")!);
         var database = "telo_directory_year_test_" + Guid.NewGuid().ToString("N");
@@ -42,24 +42,24 @@ public sealed class DirectoryAcademicYearIntegrationTests
             var finalClass = Class("Final old class", old, branch, grade);
             var currentClass = Class("Current class", current, branch, grade);
             var foreignClass = Class("Foreign class", old, otherBranch, grade);
-            var shared = new Student { Code = "SHARED", FullName = "A Shared" };
+            var shared = Student("SHARED", "A Shared", branch);
             Enroll(shared, oldClass, "TRANSFERRED_OUT", new(2025, 8, 15));
             Enroll(shared, finalClass, "COMPLETED", new(2026, 1, 1));
             Enroll(shared, currentClass, "ACTIVE", new(2026, 8, 15));
-            var oldOnly = new Student { Code = "OLD", FullName = "B Old" };
+            var oldOnly = Student("OLD", "B Old", branch);
             Enroll(oldOnly, finalClass, "COMPLETED", new(2025, 8, 15));
-            var currentOnly = new Student { Code = "CURRENT", FullName = "C Current" };
+            var currentOnly = Student("CURRENT", "C Current", branch);
             Enroll(currentOnly, currentClass, "ACTIVE", new(2026, 8, 15));
-            var foreign = new Student { Code = "FOREIGN", FullName = "Foreign" };
+            var foreign = Student("FOREIGN", "Foreign", otherBranch);
             Enroll(foreign, foreignClass, "COMPLETED", new(2025, 8, 15));
-            var admin = new User { Username = "year_admin", Email = "admin@test.invalid", FullName = "Admin" };
+            var admin = new User { Username = "year_admin", FullName = "Admin" };
             admin.PasswordHash = new PasswordHasher<User>().HashPassword(admin, "Year-test-password-123");
-            admin.UserRoles.Add(new UserRole { Role = new Role { Code = "OperationalAdmin", Name = "Admin", IsSystem = true } });
+            admin.UserRoles.Add(new UserRole { Role = new Role { Code = "OperationalAdmin", Name = "Admin" } });
             db.Users.Add(admin);
             var earlierTeacher = Teacher("earlier", branch, new(2025, 8, 15));
             var laterTeacher = Teacher("later", branch, new(2026, 8, 15));
             var unknownDateTeacher = Teacher("unknown", branch, null);
-            var boundaryTeacher = Teacher("boundary", branch, old.EndDate);
+            var boundaryTeacher = Teacher("boundary", branch, new(2026, 5, 31));
             var outsideTeacher = Teacher("outside", otherBranch, new(2025, 8, 15));
             db.Teachers.AddRange(earlierTeacher, laterTeacher, unknownDateTeacher, boundaryTeacher, outsideTeacher);
             db.Students.AddRange(shared, oldOnly, currentOnly, foreign);
@@ -98,7 +98,8 @@ public sealed class DirectoryAcademicYearIntegrationTests
             Assert.All(classes.Items, item => Assert.Equal(old.Id, item.AcademicYearId));
             var teachersPath = $"/api/admin/schools/{school.Id}/branches/{branch.Id}/teachers";
             var earlierTeachers = await Read<TeacherPage<TeacherListItem>>(client, $"{teachersPath}?academicYearId={old.Id}&pageSize=1");
-            Assert.Equal(3, earlierTeachers.TotalCount);
+            // DB v2 stores no joinedOn/year-end dates, so teachers show current profiles.
+            Assert.Equal(4, earlierTeachers.TotalCount);
             Assert.Single(earlierTeachers.Items);
             var currentTeachers = await Read<TeacherPage<TeacherListItem>>(client, $"{teachersPath}?academicYearId={current.Id}");
             Assert.Equal(4, currentTeachers.TotalCount);
@@ -118,21 +119,24 @@ public sealed class DirectoryAcademicYearIntegrationTests
 
     private static AcademicYear Year(int start, string status)
     {
-        var year = new AcademicYear { Name = $"{start}-{start + 1}", Status = status, StartDate = new(start, 8, 15), EndDate = new(start + 1, 5, 31) };
-        year.AssignCode($"AY_{start}");
-        return year;
+        return new AcademicYear { Name = $"{start}-{start + 1}", Status = status };
     }
 
     private static SchoolClass Class(string name, AcademicYear year, SchoolBranch branch, GradeLevel grade) =>
-        new() { Code = name, Name = name, AcademicYear = year, SchoolBranch = branch, GradeLevel = grade };
+        new() { Name = name, AcademicYear = year, SchoolBranch = branch, GradeLevel = grade };
 
     private static void Enroll(Student student, SchoolClass schoolClass, string status, DateOnly start) =>
-        student.Enrollments.Add(new StudentEnrollment { SchoolClass = schoolClass, AcademicYear = schoolClass.AcademicYear, Status = status, StartedOn = start });
+        student.Enrollments.Add(new StudentEnrollment { SchoolClass = schoolClass, StartedOn = start,
+            EndedOn = status == "ACTIVE" ? null : start.AddDays(1) });
+
+    private static Student Student(string code, string name, SchoolBranch branch) => new()
+    {
+        User = new User { Username = code, FullName = name, PasswordHash = "unused-test-hash", SchoolBranch = branch }
+    };
 
     private static Teacher Teacher(string name, SchoolBranch branch, DateOnly? joinedOn) => new()
     {
-        StaffCode = name.ToUpperInvariant(), JoinedOn = joinedOn,
-        User = new User { Username = name, FullName = name, Email = name + "@test.invalid", PasswordHash = "unused-test-hash", SchoolBranch = branch },
+        User = new User { Username = name, MoetIdentifier = name.ToUpperInvariant(), FullName = name, PasswordHash = "unused-test-hash", SchoolBranch = branch },
     };
 
     private static async Task<T> Read<T>(HttpClient client, string path)

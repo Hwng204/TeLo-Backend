@@ -22,23 +22,6 @@ public sealed class RoleAssignmentQueryTests
         Assert.Equal(["PHT"], grants.AsQueryable().WhereEffective().Select(grant => grant.Role.Code).ToArray());
     }
 
-    [Theory]
-    [InlineData(1, null, "ACTIVE", "ACTIVE", true)]
-    [InlineData(1, 10, "ACTIVE", "ACTIVE", true)]
-    [InlineData(2, null, "ACTIVE", "ACTIVE", false)]
-    [InlineData(1, 11, "ACTIVE", "ACTIVE", false)]
-    [InlineData(1, 10, "INACTIVE", "ACTIVE", false)]
-    [InlineData(1, 10, "ACTIVE", "INACTIVE", false)]
-    public void ScopedGrantRequiresMatchingActiveUnit(int schoolId, int? branchId, string schoolStatus, string branchStatus, bool expected)
-    {
-        var user = UserInBranch();
-        user.SchoolBranch!.School.Status = schoolStatus;
-        user.SchoolBranch.Status = branchStatus;
-        var grant = Grant(user, new Role { SchoolId = (ulong)schoolId, SchoolBranchId = (ulong?)branchId });
-
-        Assert.Equal(expected, new[] { grant }.AsQueryable().WhereEffective().Any());
-    }
-
     [Fact]
     public void GlobalAdministratorDoesNotRequireAnAssignedBranch()
     {
@@ -56,8 +39,7 @@ public sealed class RoleAssignmentQueryTests
 
         var query = context.UserRoles.WhereEffective().Where(grant => grant.UserId == 7).Select(grant => grant.Role.Code).ToQueryString();
         Assert.Contains("ACTIVE", query);
-        Assert.Contains("school_branch_id", query);
-        Assert.Contains("school_id", query);
+        Assert.Contains("`role`", query);
     }
 
     private static User UserInBranch() => new()

@@ -13,31 +13,19 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IModuleService, ModuleService>();
         services.AddScoped<IAcademicYearService, AcademicYearService>();
-        services.AddScoped<IProvinceCatalogService, ProvinceCatalogService>();
-        services.AddScoped<IProvinceSyncService, ProvinceSyncService>();
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IClassService, ClassService>();
-        services.AddScoped<IStudentImportService, StudentImportService>();
         services.AddScoped<ICurriculumService, CurriculumService>();
         services.AddScoped<IMatrixApplicationService, MatrixApplicationService>();
         services.AddScoped<IMatrixImportService, MatrixImportService>();
         services.AddScoped<IMatrixTaskApplicationService, MatrixTaskApplicationService>();
         services.AddScoped<ITaskService, TaskService>();
-        services.AddScoped<QuestionService>();
-        services.AddScoped<QuestionBankService>();
-        services.AddScoped<QuestionImportService>();
-        services.AddScoped<QuestionPaperService>();
-        services.AddScoped<IExamService, ExamService>();
-        services.AddScoped<IExamSubjectService, ExamSubjectService>();
-        services.AddScoped<IExamRoomService, ExamRoomService>();
         services.AddScoped<ISchoolService, SchoolService>();
         services.AddScoped<ISchoolBranchService, SchoolBranchService>();
         services.AddScoped<IMatrixPeopleResolver, MatrixPeopleResolver>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthService, AuthService>();
-        services.AddScoped<Application.Common.EmailRecipientResolver>();
-        services.AddScoped<IEmailManagementService, EmailManagementService>();
-        services.AddScoped<IEmailNotificationService, EmailNotificationService>();
+        services.AddScoped<IEmailNotificationService, LockedEmailNotificationService>();
 
         return services;
     }

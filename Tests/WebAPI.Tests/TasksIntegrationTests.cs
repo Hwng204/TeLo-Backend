@@ -14,8 +14,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -68,7 +66,6 @@ public sealed class TasksIntegrationTests
         Assert.Equal(("Nguyễn Thị Lan", "Tổ trưởng"), Person(created, "reviewer"));
         Assert.Equal(("Nguyễn Thị Lan", "Tổ trưởng"), Person(created, "createdBy"));
         Assert.False(created.TryGetProperty("reviewDueAt", out _));
-        Assert.Null(await f.Db.WorkTasks.Where(task => task.Id == id).Select(task => task.ReviewerUserId).SingleAsync());
         Assert.Equal(new[] { (a1, 18u, 8u), (a2, 12u, 6u) }, created.GetProperty("lessons").EnumerateArray()
             .Select(lesson => (lesson.GetProperty("lessonId").GetUInt64(), lesson.GetProperty("total").GetUInt32(), lesson.GetProperty("knowledge").GetUInt32())));
         Assert.Equal("Phân số", Text(created.GetProperty("lessons")[0], "lessonTitle"));
@@ -87,13 +84,6 @@ public sealed class TasksIntegrationTests
         var updated = Data(await Send(tl, HttpMethod.Put, $"{QuestionUrl}/{id}", QuestionBody(f.Id("gv1"), [(a2, 1, 0, 0)], 6)));
         Assert.Equal(a2, Assert.Single(updated.GetProperty("lessons").EnumerateArray()).GetProperty("lessonId").GetUInt64());
         Assert.Equal(("Nguyễn Thị Lan", "Tổ trưởng"), Person(updated, "reviewer"));
-
-        // Dữ liệu cũ còn giáo viên kiểm duyệt: sửa nhiệm vụ thì người kiểm duyệt chuyển về Tổ trưởng giao việc.
-        await f.Db.WorkTasks.Where(task => task.Id == id).ExecuteUpdateAsync(set => set.SetProperty(task => task.ReviewerUserId, (ulong?)f.Id("gv3")));
-        Assert.Equal("Vũ Văn Ba", Person(Data(await Send(gv3, HttpMethod.Get, $"/api/tasks/{id}")), "reviewer").Name);
-        var migrated = Data(await Send(tl, HttpMethod.Put, $"{QuestionUrl}/{id}", QuestionBody(f.Id("gv1"), [(a2, 1, 0, 0)], 7)));
-        Assert.Equal(("Nguyễn Thị Lan", "Tổ trưởng"), Person(migrated, "reviewer"));
-        Assert.Null(await f.Db.WorkTasks.Where(task => task.Id == id).Select(task => task.ReviewerUserId).SingleAsync());
         Assert.DoesNotContain(await ListAsync(gv3), item => Id(item) == id);
 
         // Giáo viên đã soạn câu hỏi: không đổi được bài, số câu, người thực hiện; vẫn sửa được hạn.
@@ -129,7 +119,8 @@ public sealed class TasksIntegrationTests
         Assert.Equal(new[] { "tl", "tl2" }, Names(options.GetProperty("teamLeads"), "username").Order());
         Assert.False(options.TryGetProperty("exams", out _));
         var option = Assert.Single(options.GetProperty("matrices").EnumerateArray());
-        Assert.Equal((f.ApprovedA.Id, "Toán 5 · Cuối học kỳ I", "Toán thử", "Khối thử", "2026-2027"),
+        // Matrices have no academic year any more (D10): the year name is empty.
+        Assert.Equal((f.ApprovedA.Id, "Toán 5 · Cuối học kỳ I", "Toán thử", "Khối thử", ""),
             (Id(option), Text(option, "name"), Text(option, "subjectName"), Text(option, "gradeLevelName"), Text(option, "academicYearName")));
         Assert.Empty(options.GetProperty("teachers").EnumerateArray());
 
@@ -149,13 +140,13 @@ public sealed class TasksIntegrationTests
         var created = Data(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"))));
         var id = Id(created);
         var exam = created.GetProperty("exam");
-        Assert.Equal((f.ApprovedA.Id, "Toán 5 · Cuối học kỳ I", "Toán thử", "Khối thử", "2026-2027"),
+        Assert.Equal((f.ApprovedA.Id, "Toán 5 · Cuối học kỳ I", "Toán thử", "Khối thử", ""),
             (exam.GetProperty("matrixId").GetUInt64(), Text(exam, "matrixName"), Text(exam, "subjectName"), Text(exam, "gradeLevelName"), Text(exam, "academicYearName")));
         Assert.False(exam.TryGetProperty("examId", out _));
         Assert.False(exam.TryGetProperty("examName", out _));
         Assert.Equal(new[] { "Đề 1", "Đề 2" }, Names(exam.GetProperty("papers"), "name"));
         Assert.All(exam.GetProperty("papers").EnumerateArray(), paper => Assert.Equal("Chưa tạo", Text(paper, "statusLabel")));
-        Assert.Equal(f.ContextA.Id, created.GetProperty("scope").GetProperty("academicContextId").GetUInt64());
+        Assert.Equal(f.ContextA, created.GetProperty("scope").GetProperty("academicContextId").GetUInt64());
         Assert.Equal(("Trần Thị Mai", "Phó Hiệu trưởng"), Person(created, "reviewer"));
         Assert.Equal(("Nguyễn Thị Lan", "Tổ trưởng"), Person(created, "performer"));
 
@@ -171,7 +162,7 @@ public sealed class TasksIntegrationTests
         Assert.Equal(new[] { "Đề 1", "Đề 2", "Đề 3" }, Names(updated.GetProperty("exam").GetProperty("papers"), "name"));
         var shrunk = Data(await Send(pht, HttpMethod.Put, $"{ExamUrl}/{id}", ExamBody(f.ApprovedA.Id, f.Id("tl2"), 9, 1)));
         Assert.Equal(new[] { "Đề 1" }, Names(shrunk.GetProperty("exam").GetProperty("papers"), "name"));
-        Assert.Equal(1, await f.Db.ExamTaskPapers.CountAsync(paper => paper.TaskId == id));
+        Assert.Equal(1, await f.Db.ExamSets.CountAsync(set => set.TaskId == id));
         Data(await Send(pht, HttpMethod.Put, $"{ExamUrl}/{id}", ExamBody(f.ApprovedA.Id, f.Id("tl2"), 9, 3)));
         Assert.DoesNotContain(await ListAsync(tl), item => Id(item) == id);
         Assert.Contains(await ListAsync(tl2), item => Id(item) == id);
@@ -201,23 +192,12 @@ public sealed class TasksIntegrationTests
         using var pht = await f.LoginAsync("pht");
         using var tl2 = await f.LoginAsync("tl2");
         using var admin = await f.LoginAsync("admin");
-        // GB-58: trường bật email "Giao nhiệm vụ lập ma trận" gửi cho Tổ trưởng nhận việc.
-        var emails = $"/api/schools/{f.School.Id}/emails";
-        var template = Data(await Send(admin, HttpMethod.Post, emails + "/templates", new SaveEmailTemplateRequest
-        {
-            Code = "TASK_NOTICE", Name = "Thông báo nhiệm vụ", EventCode = "MATRIX_ASSIGNED",
-            Subject = "Nhiệm vụ tại {{schoolName}}", Body = "{{actorName}} giao {{taskName}}, hạn {{dueAt}}. {{actionUrl}}"
-        }, HttpStatusCode.Created));
-        Data(await Send(pht, HttpMethod.Put, emails + "/configuration/MATRIX_ASSIGNED", new SaveEmailConfigRequest
-        {
-            EmailTemplateVersionId = template.GetProperty("currentRevision").GetProperty("id").GetUInt64(), IsActive = true,
-            Targets = [new(null, f.Id("tl"), "INCLUDE"), new(null, f.Id("tl2"), "INCLUDE")]
-        }));
-        object Matrix(string assignee, ulong contextId, ulong? semesterId, int due, string name = "Ma trận Toán 5 - Cuối học kỳ I") =>
-            new { assignedToUserId = f.Id(assignee), academicContextId = contextId, semesterId, dueAt = Day(due), name, description = "20 câu trắc nghiệm" };
+        // GB-58 email on assignment is locked with the email module (DB v2), so no notification is checked here.
+        object Matrix(string assignee, ulong contextId, int due, string name = "Ma trận Toán 5 - Cuối học kỳ I") =>
+            new { assignedToUserId = f.Id(assignee), academicContextId = contextId, semesterId = RemovedSemesterId, dueAt = Day(due), name, description = "20 câu trắc nghiệm" };
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await Send(pht, HttpMethod.Post, "/api/matrix-tasks", Matrix("tl", f.ContextA.Id, f.SemesterA.Id, -1))).Status);
-        var created = await Send(pht, HttpMethod.Post, "/api/matrix-tasks", Matrix("tl", f.ContextA.Id, f.SemesterA.Id, 3));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await Send(pht, HttpMethod.Post, "/api/matrix-tasks", Matrix("tl", f.ContextA, -1))).Status);
+        var created = await Send(pht, HttpMethod.Post, "/api/matrix-tasks", Matrix("tl", f.ContextA, 3));
         Assert.Equal(HttpStatusCode.Created, created.Status);
         var id = Id(created.Body);
 
@@ -226,32 +206,28 @@ public sealed class TasksIntegrationTests
         Assert.True(item.GetProperty("canEdit").GetBoolean());
 
         var url = $"/api/tasks/matrix/{id}";
-        Assert.Equal("assignedToUserId", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("gv1", f.ContextA.Id, null, 3))));
-        Assert.Equal("academicContextId", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextB.Id, null, 3))));
-        Assert.Equal("semesterId", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextA.Id, f.SemesterOther.Id, 3))));
-        Assert.Equal("dueAt", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextA.Id, null, -2))));
+        Assert.Equal("assignedToUserId", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("gv1", f.ContextA, 3))));
+        Assert.Equal("academicContextId", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextB, 3))));
+        Assert.Equal("dueAt", Invalid(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextA, -2))));
 
-        Assert.Equal(1, await f.Db.Notifications.CountAsync(notice => notice.EventKey == $"matrix-task:{id}:assigned"));
-        var updated = Data(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA.Id, f.SemesterA.Id, 4, "Ma trận Toán 5 - Giữa học kỳ I")));
-        // Đổi người nhận và hạn: báo lại; chỉ sửa yêu cầu công việc thì không gửi thêm.
-        var reassigned = await f.Db.Notifications.Where(notice => notice.EventKey != null && notice.EventKey.StartsWith($"matrix-task:{id}:updated:")).ToListAsync();
-        Assert.Contains("Ma trận Toán 5 - Giữa học kỳ I", Assert.Single(reassigned).Content);
+        var updated = Data(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA, 4, "Ma trận Toán 5 - Giữa học kỳ I")));
         Data(await Send(pht, HttpMethod.Put, url, new
         {
-            assignedToUserId = f.Id("tl2"), academicContextId = f.ContextA.Id, semesterId = f.SemesterA.Id, dueAt = Day(4),
+            assignedToUserId = f.Id("tl2"), academicContextId = f.ContextA, semesterId = RemovedSemesterId, dueAt = Day(4),
             name = "Ma trận Toán 5 - Giữa học kỳ I", description = "Chỉ đổi yêu cầu"
         }));
-        Assert.Single(await f.Db.Notifications.Where(notice => notice.EventKey != null && notice.EventKey.StartsWith($"matrix-task:{id}:updated:")).ToListAsync());
         Assert.Equal(("Ma trận Toán 5 - Giữa học kỳ I", "Đỗ Văn Tổ"), (Text(updated, "name"), Person(updated, "performer").Name));
+        // Tasks have no year or semester any more (D10): the scope is the matrix's subject and grade.
         var scope = updated.GetProperty("scope");
-        Assert.Equal(("Toán thử", "Khối thử", "2026-2027", "Học kỳ I"), (Text(scope, "subjectName"), Text(scope, "gradeLevelName"), Text(scope, "academicYearName"), Text(scope, "semesterName")));
-        Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl2, HttpMethod.Put, url, Matrix("tl2", f.ContextA.Id, f.SemesterA.Id, 4))).Status);
+        Assert.Equal(("Toán thử", "Khối thử", "", JsonValueKind.Null),
+            (Text(scope, "subjectName"), Text(scope, "gradeLevelName"), Text(scope, "academicYearName"), scope.GetProperty("semesterName").ValueKind));
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl2, HttpMethod.Put, url, Matrix("tl2", f.ContextA, 4))).Status);
 
         // Tổ trưởng lưu nháp ma trận: không đổi được người nhận và phạm vi; bản nháp vẫn riêng của Tổ trưởng (GB-47).
-        var draftId = await f.AddTaskMatrixAsync(id, f.Id("tl2"));
-        Assert.Equal("TASK_STARTED", Code(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextA.Id, f.SemesterA.Id, 4)), HttpStatusCode.Conflict));
-        Assert.Equal("TASK_STARTED", Code(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA.Id, null, 4)), HttpStatusCode.Conflict));
-        var renamed = Data(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA.Id, f.SemesterA.Id, 6, "Ma trận đổi tên")));
+        var draftId = await f.AddTaskMatrixAsync(id);
+        Assert.Equal("TASK_STARTED", Code(await Send(pht, HttpMethod.Put, url, Matrix("tl", f.ContextA, 4)), HttpStatusCode.Conflict));
+        Assert.Equal("TASK_STARTED", Code(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA2, 4)), HttpStatusCode.Conflict));
+        var renamed = Data(await Send(pht, HttpMethod.Put, url, Matrix("tl2", f.ContextA, 6, "Ma trận đổi tên")));
         Assert.Equal("Ma trận đổi tên", Text(renamed, "name"));
         var hidden = renamed.GetProperty("matrix");
         Assert.Equal((JsonValueKind.Null, JsonValueKind.Null, "DRAFT"), (hidden.GetProperty("id").ValueKind, hidden.GetProperty("name").ValueKind, Text(hidden, "status")));
@@ -348,7 +324,7 @@ public sealed class TasksIntegrationTests
     }
 
     [IdentityMySqlFact]
-    public async Task LegacyMatrixTaskDelete_RejectsStartedStatusesEvenWithoutAMatrix()
+    public async Task LegacyMatrixTaskDelete_RejectsStartedStatusesEvenWithAnEmptyMatrix()
     {
         await using var f = await TaskFixture.CreateAsync();
         using var pht = await f.LoginAsync("pht");
@@ -369,7 +345,8 @@ public sealed class TasksIntegrationTests
         using var pht2 = await f.LoginAsync("pht2");
         var id = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(pht2, HttpMethod.Post, "/api/matrices", MatrixBody(f, id))).Status);
-        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == id));
+        // The task's matrix exists from creation and stays empty.
+        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == id && matrix.Details.Any()));
     }
 
     [IdentityMySqlFact]
@@ -381,7 +358,7 @@ public sealed class TasksIntegrationTests
         var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
         var response = await Send(tl, HttpMethod.Post, "/api/matrices", new
         {
-            name = "Tổng số câu quá lớn", academicContextId = f.ContextA.Id, semesterId = f.SemesterA.Id, taskId, totalScore = 10,
+            name = "Tổng số câu quá lớn", academicContextId = f.ContextA, semesterId = RemovedSemesterId, taskId, totalScore = 10,
             details = new[]
             {
                 new { lessonId = f.LessonA1.Id, cognitiveLevel = "NHAN_BIET", questionCount = uint.MaxValue, percentage = 50 },
@@ -389,28 +366,29 @@ public sealed class TasksIntegrationTests
             }
         });
         Assert.Equal(HttpStatusCode.UnprocessableEntity, response.Status);
-        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == taskId));
+        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == taskId && matrix.Details.Any()));
     }
 
+    // A task has no academic year any more (D10): its scope is its matrix's.
     [IdentityMySqlFact]
-    public async Task MatrixTask_ClosedYearKeepsCurrentScopeMetadataAndAllowsDeadlineEdits()
+    public async Task MatrixTask_ScopeComesFromItsMatrixAndAllowsDeadlineEdits()
     {
         await using var f = await TaskFixture.CreateAsync();
         using var pht = await f.LoginAsync("pht");
         var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
-        await f.Db.AcademicYears.Where(year => year.Id == f.ContextA.AcademicYearId)
-            .ExecuteUpdateAsync(set => set.SetProperty(year => year.Status, "CLOSED"));
+        Assert.True(MatrixScope.TryParse(f.ContextA, out var expected));
 
         var scope = Data(await Send(pht, HttpMethod.Get, $"/api/tasks/{taskId}")).GetProperty("scope");
-        Assert.Equal(f.ContextA.AcademicYearId, scope.GetProperty("academicYearId").GetUInt64());
-        Assert.Equal(f.ContextA.SubjectId, scope.GetProperty("subjectId").GetUInt64());
-        Assert.Equal(f.ContextA.GradeLevelId, scope.GetProperty("gradeLevelId").GetUInt64());
+        Assert.Equal(f.ContextA, scope.GetProperty("academicContextId").GetUInt64());
+        Assert.Equal(JsonValueKind.Null, scope.GetProperty("academicYearId").ValueKind);
+        Assert.Equal(expected.SubjectId, scope.GetProperty("subjectId").GetUInt64());
+        Assert.Equal(expected.GradeLevelId, scope.GetProperty("gradeLevelId").GetUInt64());
         var updated = Data(await Send(pht, HttpMethod.Put, $"/api/tasks/matrix/{taskId}", new
         {
-            assignedToUserId = f.Id("tl"), academicContextId = f.ContextA.Id, semesterId = f.SemesterA.Id,
-            dueAt = Day(10), name = "Gia hạn nhiệm vụ năm đã đóng", description = "Giữ nguyên phạm vi"
+            assignedToUserId = f.Id("tl"), academicContextId = f.ContextA, semesterId = RemovedSemesterId,
+            dueAt = Day(10), name = "Gia hạn nhiệm vụ", description = "Giữ nguyên phạm vi"
         }));
-        Assert.Equal(f.ContextA.Id, updated.GetProperty("scope").GetProperty("academicContextId").GetUInt64());
+        Assert.Equal(f.ContextA, updated.GetProperty("scope").GetProperty("academicContextId").GetUInt64());
         Assert.Equal(Day(10), Text(updated, "dueAt"));
     }
 
@@ -443,7 +421,7 @@ public sealed class TasksIntegrationTests
     [IdentityMySqlFact]
     public async Task TaskMatrix_ReassignmentBeforeCreationLocksCannotUseThePreviousAssignee()
     {
-        var barrier = new ReferenceReadBarrier("tasks");
+        var barrier = new ReferenceReadBarrier("task");
         await using var f = await TaskFixture.CreateAsync(barrier);
         using var pht = await f.LoginAsync("pht");
         using var tl = await f.LoginAsync("tl");
@@ -458,7 +436,7 @@ public sealed class TasksIntegrationTests
         finally { barrier.Release.TrySetResult(); }
 
         Assert.Equal(HttpStatusCode.Forbidden, (await creation.WaitAsync(TimeSpan.FromSeconds(10))).Status);
-        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == taskId));
+        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == taskId && matrix.Details.Any()));
     }
 
     [IdentityMySqlFact]
@@ -501,7 +479,6 @@ public sealed class TasksIntegrationTests
         Assert.False((await Detail()).GetProperty("isOverdue").GetBoolean());
         Assert.Equal(HttpStatusCode.OK, (await Send(pht, HttpMethod.Post, $"/api/matrices/{id}/approve")).Status);
         Assert.Equal(("COMPLETED", "Hoàn thành"), await Status());
-        Assert.Equal(f.Id("pht"), await f.Db.WorkTasks.Where(task => task.Id == taskId).Select(task => task.UpdatedByUserId).SingleAsync());
     }
 
     [IdentityMySqlFact]
@@ -512,8 +489,9 @@ public sealed class TasksIntegrationTests
         using var tl = await f.LoginAsync("tl");
         var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
         async Task<JsonElement> MatrixOf(HttpClient actor) => Data(await Send(actor, HttpMethod.Get, $"/api/tasks/{taskId}")).GetProperty("matrix");
-        async Task<(string? Comment, DateTime? At)> Stored() => await f.Db.ExamMatrices.Where(matrix => matrix.TaskId == taskId)
-            .Select(matrix => new ValueTuple<string?, DateTime?>(matrix.RejectComment, matrix.RejectedAt)).SingleAsync();
+        async Task<(string? Comment, DateTime? At)> Stored() => await f.Db.TaskHistories.Where(history => history.TaskId == taskId)
+            .OrderByDescending(history => history.Id)
+            .Select(history => new ValueTuple<string?, DateTime?>(history.Content, history.CreateAt)).FirstOrDefaultAsync();
 
         var id = Id((await Send(tl, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId))).Body);
         Assert.Equal(JsonValueKind.Null, (await MatrixOf(tl)).GetProperty("rejectComment").ValueKind);
@@ -530,68 +508,22 @@ public sealed class TasksIntegrationTests
         }
         Assert.Equal(JsonValueKind.Null, (await MatrixOf(pht)).GetProperty("name").ValueKind);
 
-        // Nộp lại xóa dấu từ chối trên ma trận; detail theo đúng dữ liệu đó sau khi duyệt.
+        // Lần từ chối vẫn nằm trong task_history, nhưng chỉ bản nháp bị trả về mới hiện nó: đã duyệt thì không.
         Assert.Equal(HttpStatusCode.OK, (await Send(tl, HttpMethod.Post, $"/api/matrices/{id}/submit")).Status);
         Assert.Equal(HttpStatusCode.OK, (await Send(pht, HttpMethod.Post, $"/api/matrices/{id}/approve")).Status);
-        stored = await Stored();
+        Assert.Equal("Thêm câu vận dụng", (await Stored()).Comment);
         foreach (var actor in new[] { pht, tl })
         {
             var matrix = await MatrixOf(actor);
-            Assert.Equal(stored.Comment, matrix.GetProperty("rejectComment").ValueKind == JsonValueKind.Null ? null : Text(matrix, "rejectComment"));
-            Assert.Equal(stored.At is null, matrix.GetProperty("rejectedAt").ValueKind == JsonValueKind.Null);
+            Assert.Equal(JsonValueKind.Null, matrix.GetProperty("rejectComment").ValueKind);
+            Assert.Equal(JsonValueKind.Null, matrix.GetProperty("rejectedAt").ValueKind);
         }
-    }
-
-    [IdentityMySqlFact]
-    public async Task TaskMigration_NormalizesLegacyStatusesBothWays()
-    {
-        await using var f = await TaskFixture.CreateAsync();
-        using var pht = await f.LoginAsync("pht");
-        using var tl = await f.LoginAsync("tl");
-        async Task<ulong> MatrixTask(string? matrixStatus, string status, bool rejected = false)
-        {
-            var id = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
-            if (matrixStatus is not null)
-            {
-                var matrixId = await f.AddTaskMatrixAsync(id, f.Id("tl"));
-                // Từ chối không kèm nhận xét vẫn để lại dấu rejected_at.
-                await f.Db.ExamMatrices.Where(matrix => matrix.Id == matrixId).ExecuteUpdateAsync(set => set
-                    .SetProperty(matrix => matrix.Status, matrixStatus)
-                    .SetProperty(matrix => matrix.RejectedAt, rejected ? DateTime.UtcNow : (DateTime?)null));
-            }
-            await f.SetStatusAsync(id, status);
-            return id;
-        }
-
-        var drafting = await MatrixTask(MatrixStatusCodes.Draft, "IN_PROGRESS");
-        var revising = await MatrixTask(MatrixStatusCodes.Draft, "NEEDS_REVISION", rejected: true);
-        var reviewing = await MatrixTask(MatrixStatusCodes.Submitted, "PENDING_REVIEW");
-        var assigned = await MatrixTask(null, "ASSIGNED");
-        var exam = Id(Data(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl")))));
-        await f.SetStatusAsync(exam, "PENDING_REVIEW");
-        var question = Id(Data(await Send(tl, HttpMethod.Post, QuestionUrl, QuestionBody(f.Id("gv1"), [(f.LessonA1.Id, 1, 0, 0)]))));
-        await f.SetStatusAsync(question, "PENDING_REVIEW");
-        ulong[] ids = [drafting, revising, reviewing, assigned, exam, question];
-        async Task<string[]> Statuses()
-        {
-            var result = new List<string>();
-            foreach (var id in ids)
-                result.Add(await f.Db.Database.SqlQuery<string>($"SELECT status AS Value FROM tasks WHERE id = {id}").SingleAsync());
-            return [.. result];
-        }
-
-        var migrator = f.Db.GetService<IMigrator>();
-        await migrator.MigrateAsync("20261006045506_RemoveAdmissionDate");
-        Assert.Equal(new[] { "ASSIGNED", "ASSIGNED", "SUBMITTED", "ASSIGNED", "SUBMITTED", "PENDING_REVIEW" }, await Statuses());
-
-        await migrator.MigrateAsync();
-        Assert.Equal(new[] { "IN_PROGRESS", "NEEDS_REVISION", "PENDING_REVIEW", "ASSIGNED", "PENDING_REVIEW", "PENDING_REVIEW" }, await Statuses());
     }
 
     [IdentityMySqlFact]
     public async Task ExamTask_CreationRechecksApprovalAfterAConcurrentMatrixArchive()
     {
-        var barrier = new ReferenceReadBarrier("exam_matrices");
+        var barrier = new ReferenceReadBarrier("matrix");
         await using var f = await TaskFixture.CreateAsync(barrier);
         using var pht = await f.LoginAsync("pht");
         barrier.Arm();
@@ -607,33 +539,18 @@ public sealed class TasksIntegrationTests
         Assert.False(await f.Db.WorkTasks.AnyAsync());
     }
 
-    [IdentityMySqlFact]
-    public async Task TaskMigration_RefusesMultipleLessonRollbackBeforeDroppingExamPapers()
-    {
-        await using var f = await TaskFixture.CreateAsync();
-        using var pht = await f.LoginAsync("pht");
-        using var tl = await f.LoginAsync("tl");
-        Data(await Send(tl, HttpMethod.Post, QuestionUrl,
-            QuestionBody(f.Id("gv1"), [(f.LessonA1.Id, 1, 0, 0), (f.LessonA2.Id, 1, 0, 0)])));
-        Data(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"))));
-
-        var error = await Assert.ThrowsAsync<MySqlException>(() =>
-            f.Db.GetService<IMigrator>().MigrateAsync("20261006045506_RemoveAdmissionDate"));
-        Assert.Equal(1062, error.Number);
-        Assert.Equal(2, await f.Db.ExamTaskPapers.CountAsync());
-        Assert.Equal(2, await f.Db.QuestionTasks.CountAsync());
-        Assert.Contains("20261010180003_AddTaskReviewersAndExamPapers", await f.Db.Database.GetAppliedMigrationsAsync());
-    }
+    // Clients may still send semesterId; it is accepted and ignored (D10).
+    private const ulong RemovedSemesterId = 999;
 
     private static object MatrixTaskBody(TaskFixture f, string assignee = "tl") => new
     {
-        assignedToUserId = f.Id(assignee), academicContextId = f.ContextA.Id, semesterId = f.SemesterA.Id,
+        assignedToUserId = f.Id(assignee), academicContextId = f.ContextA, semesterId = RemovedSemesterId,
         dueAt = Day(5), name = "Ma trận Toán thử", description = "Nhiệm vụ thử phân quyền"
     };
 
     private static object MatrixBody(TaskFixture f, ulong taskId) => new
     {
-        name = "Ma trận của nhiệm vụ", academicContextId = f.ContextA.Id, semesterId = f.SemesterA.Id, taskId, totalScore = 10,
+        name = "Ma trận của nhiệm vụ", academicContextId = f.ContextA, semesterId = RemovedSemesterId, taskId, totalScore = 10,
         details = new[] { new { lessonId = f.LessonA1.Id, cognitiveLevel = "NHAN_BIET", questionCount = 2, percentage = 100 } }
     };
 
@@ -756,10 +673,10 @@ public sealed class TasksIntegrationTests
         public Lesson LessonA1 { get; private set; } = null!;
         public Lesson LessonA2 { get; private set; } = null!;
         public Lesson LessonB { get; private set; } = null!;
-        public AcademicContext ContextA { get; private set; } = null!;
-        public AcademicContext ContextB { get; private set; } = null!;
-        public Semester SemesterA { get; private set; } = null!;
-        public Semester SemesterOther { get; private set; } = null!;
+        // academicContextId values (MatrixScope.Key): ContextA2 is a second scope of branch A (another grade).
+        public ulong ContextA { get; private set; }
+        public ulong ContextA2 { get; private set; }
+        public ulong ContextB { get; private set; }
         public ExamMatrix ApprovedA { get; private set; } = null!;
         public ExamMatrix DraftA { get; private set; } = null!;
         public ExamMatrix ApprovedB { get; private set; } = null!;
@@ -792,22 +709,27 @@ public sealed class TasksIntegrationTests
 
         public async Task AddQuestionAsync(ulong taskId, ulong authorId)
         {
-            var detailId = await Db.QuestionTaskDetails.Where(detail => detail.QuestionTask.TaskId == taskId)
-                .Select(detail => detail.Id).FirstAsync();
-            Db.Questions.Add(new Question { QuestionTaskDetailId = detailId, Content = "Câu 1", Status = "DRAFT", CreatedByUserId = authorId });
+            var detail = await Db.QuestionTaskDetails.Where(detail => detail.QuestionTask.TaskId == taskId)
+                .Select(detail => new { detail.Id, detail.QuestionTask.LessonId }).FirstAsync();
+            Db.Questions.Add(new Question
+            {
+                QuestionTaskDetailId = detail.Id, LessonId = detail.LessonId, BankType = "TASK",
+                Content = "Câu 1", Status = "DRAFT", CreatedByUserId = authorId
+            });
             await Db.SaveChangesAsync();
         }
 
-        public async Task<ulong> AddTaskMatrixAsync(ulong taskId, ulong teamLeadId)
+        // The team lead saves a draft: the matrix created with the task gets its first detail row.
+        public async Task<ulong> AddTaskMatrixAsync(ulong taskId)
         {
-            var matrix = new ExamMatrix
+            var matrixId = await Db.ExamMatrices.Where(matrix => matrix.TaskId == taskId).Select(matrix => matrix.Id).SingleAsync();
+            Db.MatrixDetails.Add(new MatrixDetail
             {
-                Name = "Nháp của Tổ trưởng", Status = MatrixStatusCodes.Draft, TaskId = taskId, AcademicContextId = ContextA.Id,
-                TotalScore = 10, CreatedAt = DateTime.UtcNow, CreatedByUserId = teamLeadId
-            };
-            Db.ExamMatrices.Add(matrix);
+                ExamMatrixId = matrixId, LessonId = LessonA1.Id, CognitiveLevel = MatrixCognitiveLevels.Knowledge,
+                QuestionType = MatrixQuestionTypes.MultipleChoice, QuestionCount = 1, Percentage = 100
+            });
             await Db.SaveChangesAsync();
-            return matrix.Id;
+            return matrixId;
         }
 
         public Task SetStatusAsync(ulong taskId, string status) =>
@@ -841,27 +763,32 @@ public sealed class TasksIntegrationTests
             Account("student", "Học sinh", branchA, student);
             Account("admin", "Quản trị", null, NewRole("ADMIN"));
 
-            var year = new AcademicYear { Name = "2026-2027", StartDate = new(2026, 8, 1), EndDate = new(2027, 6, 30) };
-            year.AssignCode("TASK_TEST_2026");
-            var otherYear = new AcademicYear { Name = "2027-2028", StartDate = new(2027, 8, 1), EndDate = new(2028, 6, 30) };
-            otherYear.AssignCode("TASK_TEST_2027");
-            SemesterA = new Semester { AcademicYear = year, Order = 1, Name = "Học kỳ I", StartDate = new(2026, 8, 1), EndDate = new(2027, 1, 15) };
-            SemesterOther = new Semester { AcademicYear = otherYear, Order = 1, Name = "Học kỳ I", StartDate = new(2027, 8, 1), EndDate = new(2028, 1, 15) };
-            var subject = new Subject { Name = "Toán thử" };
-            var field = new SubjectField { Subject = subject, Name = "Số và phép tính" };
+            // A matrix scope exists through its chapters (no academic_contexts table any more).
+            var subject = new Subject { Code = "TOAN_THU", Name = "Toán thử" };
             var grade = new GradeLevel { Name = "Khối thử" };
-            var chapterA = new Chapter { SchoolBranch = branchA, GradeLevel = grade, Field = field, Code = "I", Title = "Số và phép tính", SortOrder = 1 };
-            var chapterB = new Chapter { SchoolBranch = branchB, GradeLevel = grade, Field = field, Code = "I", Title = "Số và phép tính", SortOrder = 1 };
-            LessonA1 = new Lesson { Chapter = chapterA, Code = "1", Title = "Phân số", SortOrder = 1 };
-            LessonA2 = new Lesson { Chapter = chapterA, Code = "2", Title = "Số thập phân", SortOrder = 2 };
-            LessonB = new Lesson { Chapter = chapterB, Code = "1", Title = "Phân số", SortOrder = 1 };
-            ContextA = new AcademicContext { AcademicYear = year, School = school, Subject = subject, GradeLevel = grade, SchoolBranch = branchA };
-            ContextB = new AcademicContext { AcademicYear = year, School = school, Subject = subject, GradeLevel = grade, SchoolBranch = branchB };
-            ApprovedA = NewMatrix("Toán 5 · Cuối học kỳ I", MatrixStatusCodes.Approved, ContextA);
-            DraftA = NewMatrix("Ma trận nháp", MatrixStatusCodes.Draft, ContextA);
-            ApprovedB = NewMatrix("Ma trận phân hiệu B", MatrixStatusCodes.Approved, ContextB);
-            Db.AddRange(LessonA1, LessonA2, LessonB, SemesterA, SemesterOther, ApprovedA, DraftA, ApprovedB);
+            var otherGrade = new GradeLevel { Name = "Khối khác" };
+            var chapterA = new Chapter { SchoolBranch = branchA, GradeLevel = grade, Subject = subject, Title = "Số và phép tính" };
+            var chapterA2 = new Chapter { SchoolBranch = branchA, GradeLevel = otherGrade, Subject = subject, Title = "Hình học" };
+            var chapterB = new Chapter { SchoolBranch = branchB, GradeLevel = grade, Subject = subject, Title = "Số và phép tính" };
+            LessonA1 = new Lesson { Chapter = chapterA, Title = "Phân số" };
+            LessonA2 = new Lesson { Chapter = chapterA, Title = "Số thập phân" };
+            LessonB = new Lesson { Chapter = chapterB, Title = "Phân số" };
+            Db.AddRange(LessonA1, LessonA2, LessonB, chapterA2);
             Db.Users.AddRange(users.Values);
+            Db.Students.Add(new Student { User = users["student"] });
+            await Db.SaveChangesAsync();
+
+            ContextA = new MatrixScope(branchA.Id, subject.Id, grade.Id).Key;
+            ContextA2 = new MatrixScope(branchA.Id, subject.Id, otherGrade.Id).Key;
+            ContextB = new MatrixScope(branchB.Id, subject.Id, grade.Id).Key;
+            ExamMatrix NewMatrix(string name, string status, SchoolBranch branch) => new()
+            {
+                Name = name, Status = status, Branch = branch, Subject = subject, GradeLevel = grade, TotalScore = 10, CreatedByUserId = Id("pht")
+            };
+            ApprovedA = NewMatrix("Toán 5 · Cuối học kỳ I", MatrixStatusCodes.Approved, branchA);
+            DraftA = NewMatrix("Ma trận nháp", MatrixStatusCodes.Draft, branchA);
+            ApprovedB = NewMatrix("Ma trận phân hiệu B", MatrixStatusCodes.Approved, branchB);
+            Db.ExamMatrices.AddRange(ApprovedA, DraftA, ApprovedB);
             await Db.SaveChangesAsync();
 
             factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -878,9 +805,6 @@ public sealed class TasksIntegrationTests
                             .UseMySql(connection.ConnectionString, new MySqlServerVersion(new Version(8, 0, 0)))
                             .AddInterceptors(interceptor));
                     }
-                    foreach (var worker in services.Where(descriptor => descriptor.ServiceType == typeof(IHostedService)
-                                 && descriptor.ImplementationType == typeof(WebAPI.EmailDeliveryWorker)).ToArray())
-                        services.Remove(worker);
                 });
             });
         }
@@ -895,19 +819,14 @@ public sealed class TasksIntegrationTests
             await Db.DisposeAsync();
         }
 
-        private static Role NewRole(string code) => new() { Code = code, Name = code, IsSystem = true };
+        private static Role NewRole(string code) => new() { Code = code, Name = code };
 
         private void Account(string username, string fullName, SchoolBranch? branch, Role role)
         {
-            var user = new User { Username = username, FullName = fullName, Email = username + "@example.invalid", SchoolBranch = branch };
+            var user = new User { Username = username, FullName = fullName, SchoolBranch = branch };
             user.PasswordHash = new PasswordHasher<User>().HashPassword(user, Password);
             user.UserRoles.Add(new UserRole { Role = role });
             users[username] = user;
         }
-
-        private static ExamMatrix NewMatrix(string name, string status, AcademicContext context) => new()
-        {
-            Name = name, Status = status, AcademicContext = context, TotalScore = 10, CreatedAt = DateTime.UtcNow
-        };
     }
 }

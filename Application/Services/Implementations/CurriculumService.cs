@@ -55,32 +55,29 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             return BranchRequired<CurriculumChapterRow>();
         }
 
-        var (code, title, errors) = await ValidateChapterAsync(request, cancellationToken);
+        var (title, errors) = await ValidateChapterAsync(request, cancellationToken);
         if (errors.Count > 0)
         {
             return ValidationFailure<CurriculumChapterRow>(errors);
         }
 
-        var conflict = await repository.FindChapterConflictAsync(
-            branchId, request.GradeLevelId, request.FieldId, code, title, null, cancellationToken);
-        if (conflict.CodeTaken || conflict.TitleTaken)
+        if (await repository.IsChapterTitleTakenAsync(
+                branchId, request.GradeLevelId, request.FieldId, title, null, cancellationToken))
         {
-            return ChapterDuplicate(conflict);
+            return ChapterDuplicate();
         }
 
         var chapter = new Chapter
         {
             SchoolBranchId = branchId,
             GradeLevelId = request.GradeLevelId,
-            FieldId = request.FieldId,
-            Code = code,
-            Title = title,
-            SortOrder = await repository.NextChapterSortOrderAsync(branchId, request.GradeLevelId, cancellationToken)
+            SubjectId = request.FieldId,
+            Title = title
         };
         repository.Add(chapter);
         if (await repository.SaveAsync(cancellationToken) == CurriculumSaveStatus.Duplicate)
         {
-            return ChapterDuplicate((true, false));
+            return ChapterDuplicate();
         }
 
         return await LoadChapterAsync(branchId, chapter.Id, cancellationToken);
@@ -103,14 +100,14 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             return ChapterNotFound<CurriculumChapterRow>();
         }
 
-        var (code, title, errors) = await ValidateChapterAsync(request, cancellationToken);
+        var (title, errors) = await ValidateChapterAsync(request, cancellationToken);
         if (errors.Count > 0)
         {
             return ValidationFailure<CurriculumChapterRow>(errors);
         }
 
         // Matrices and question tasks pick lessons by grade and subject, so a chapter in use keeps both.
-        var scopeChanged = chapter.GradeLevelId != request.GradeLevelId || chapter.FieldId != request.FieldId;
+        var scopeChanged = chapter.GradeLevelId != request.GradeLevelId || chapter.SubjectId != request.FieldId;
         if (scopeChanged && await repository.IsChapterInUseAsync(chapterId, cancellationToken))
         {
             return ServiceResult<CurriculumChapterRow>.Failure(
@@ -118,20 +115,18 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
                 "Không thể đổi khối lớp hoặc lĩnh vực vì chương học đã được sử dụng.");
         }
 
-        var conflict = await repository.FindChapterConflictAsync(
-            branchId, request.GradeLevelId, request.FieldId, code, title, chapterId, cancellationToken);
-        if (conflict.CodeTaken || conflict.TitleTaken)
+        if (await repository.IsChapterTitleTakenAsync(
+                branchId, request.GradeLevelId, request.FieldId, title, chapterId, cancellationToken))
         {
-            return ChapterDuplicate(conflict);
+            return ChapterDuplicate();
         }
 
         chapter.GradeLevelId = request.GradeLevelId;
-        chapter.FieldId = request.FieldId;
-        chapter.Code = code;
+        chapter.SubjectId = request.FieldId;
         chapter.Title = title;
         if (await repository.SaveAsync(cancellationToken) == CurriculumSaveStatus.Duplicate)
         {
-            return ChapterDuplicate((true, false));
+            return ChapterDuplicate();
         }
 
         return await LoadChapterAsync(branchId, chapterId, cancellationToken);
@@ -182,32 +177,25 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             return ChapterNotFound<CurriculumLessonRow>();
         }
 
-        var (code, title, errors) = ValidateLesson(request);
+        var (title, errors) = ValidateLesson(request);
         if (errors.Count > 0)
         {
             return ValidationFailure<CurriculumLessonRow>(errors);
         }
 
-        var conflict = await repository.FindLessonConflictAsync(chapterId, code, title, null, cancellationToken);
-        if (conflict.CodeTaken || conflict.TitleTaken)
+        if (await repository.IsLessonTitleTakenAsync(chapterId, title, null, cancellationToken))
         {
-            return LessonDuplicate(conflict);
+            return LessonDuplicate();
         }
 
-        var lesson = new Lesson
-        {
-            ChapterId = chapterId,
-            Code = code,
-            Title = title,
-            SortOrder = await repository.NextLessonSortOrderAsync(chapterId, cancellationToken)
-        };
+        var lesson = new Lesson { ChapterId = chapterId, Title = title };
         repository.Add(lesson);
         if (await repository.SaveAsync(cancellationToken) == CurriculumSaveStatus.Duplicate)
         {
-            return LessonDuplicate((true, false));
+            return LessonDuplicate();
         }
 
-        return ServiceResult<CurriculumLessonRow>.Success(ToRow(lesson, false));
+        return await LoadLessonAsync(branchId, lesson.Id, cancellationToken);
     }
 
     public async Task<ServiceResult<CurriculumLessonRow>> UpdateLessonAsync(
@@ -227,28 +215,24 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             return LessonNotFound<CurriculumLessonRow>();
         }
 
-        var (code, title, errors) = ValidateLesson(request);
+        var (title, errors) = ValidateLesson(request);
         if (errors.Count > 0)
         {
             return ValidationFailure<CurriculumLessonRow>(errors);
         }
 
-        var conflict = await repository.FindLessonConflictAsync(
-            lesson.ChapterId, code, title, lessonId, cancellationToken);
-        if (conflict.CodeTaken || conflict.TitleTaken)
+        if (await repository.IsLessonTitleTakenAsync(lesson.ChapterId, title, lessonId, cancellationToken))
         {
-            return LessonDuplicate(conflict);
+            return LessonDuplicate();
         }
 
-        lesson.Code = code;
         lesson.Title = title;
         if (await repository.SaveAsync(cancellationToken) == CurriculumSaveStatus.Duplicate)
         {
-            return LessonDuplicate((true, false));
+            return LessonDuplicate();
         }
 
-        return ServiceResult<CurriculumLessonRow>.Success(
-            ToRow(lesson, await repository.IsLessonInUseAsync(lessonId, cancellationToken)));
+        return await LoadLessonAsync(branchId, lessonId, cancellationToken);
     }
 
     public async Task<ServiceResult<bool>> DeleteLessonAsync(
@@ -284,7 +268,7 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
         var fields = await repository.ListFieldsAsync(cancellationToken);
         var content = CurriculumWorkbook.CreateTemplate(
             grades.Select(grade => grade.Name).ToArray(),
-            fields.Select(field => CurriculumImportRules.FieldLabel(field, fields)).ToArray());
+            fields.Select(field => CurriculumImportRules.Clean(field.Name)).ToArray());
         return ServiceResult<CurriculumFile>.Success(new CurriculumFile(TemplateFileName, content));
     }
 
@@ -320,46 +304,29 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
                 $"Tệp có {plan.Preview.Errors.Count} lỗi. Vui lòng sửa tệp và tải lên lại, hệ thống chưa lưu dữ liệu nào.");
         }
 
-        var nextChapterOrder = new Dictionary<ulong, uint>();
+        // Rows are added in file order, so ids (and the sort order derived from them) follow the file.
         foreach (var planned in plan.Chapters)
         {
             if (planned.ExistingChapterId is { } existingId)
             {
-                var order = await repository.NextLessonSortOrderAsync(existingId, cancellationToken);
                 foreach (var lesson in planned.Lessons)
                 {
-                    repository.Add(new Lesson
-                    {
-                        ChapterId = existingId,
-                        Code = lesson.Code,
-                        Title = lesson.Title,
-                        SortOrder = order++
-                    });
+                    repository.Add(new Lesson { ChapterId = existingId, Title = lesson.Title });
                 }
 
                 continue;
             }
 
-            if (!nextChapterOrder.TryGetValue(planned.GradeLevelId, out var chapterOrder))
-            {
-                chapterOrder = await repository.NextChapterSortOrderAsync(
-                    branchId, planned.GradeLevelId, cancellationToken);
-            }
-
-            nextChapterOrder[planned.GradeLevelId] = chapterOrder + 1;
             var chapter = new Chapter
             {
                 SchoolBranchId = branchId,
                 GradeLevelId = planned.GradeLevelId,
-                FieldId = planned.FieldId,
-                Code = planned.Code,
-                Title = planned.Title,
-                SortOrder = chapterOrder
+                SubjectId = planned.SubjectId,
+                Title = planned.Title
             };
-            uint lessonOrder = 1;
             foreach (var lesson in planned.Lessons)
             {
-                chapter.Lessons.Add(new Lesson { Code = lesson.Code, Title = lesson.Title, SortOrder = lessonOrder++ });
+                chapter.Lessons.Add(new Lesson { Title = lesson.Title });
             }
 
             repository.Add(chapter);
@@ -417,7 +384,7 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
         return ServiceResult<(ulong, CurriculumImportPlan)>.Success((branchId, plan));
     }
 
-    private async Task<(string Code, string Title, Dictionary<string, string[]> Errors)> ValidateChapterAsync(
+    private async Task<(string Title, Dictionary<string, string[]> Errors)> ValidateChapterAsync(
         SaveChapterRequest request,
         CancellationToken cancellationToken)
     {
@@ -440,18 +407,15 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             errors["fieldId"] = ["Lĩnh vực không hợp lệ."];
         }
 
-        var code = CheckText(request.Code, "code", "Mã chương", CurriculumImportRules.MaxCodeLength, errors);
         var title = CheckText(request.Title, "title", "Tên chương", CurriculumImportRules.MaxTitleLength, errors);
-        return (code, title, errors);
+        return (title, errors);
     }
 
-    private static (string Code, string Title, Dictionary<string, string[]> Errors) ValidateLesson(
-        SaveLessonRequest request)
+    private static (string Title, Dictionary<string, string[]> Errors) ValidateLesson(SaveLessonRequest request)
     {
         var errors = new Dictionary<string, string[]>();
-        var code = CheckText(request.Code, "code", "Mã bài", CurriculumImportRules.MaxCodeLength, errors);
         var title = CheckText(request.Title, "title", "Tên bài", CurriculumImportRules.MaxTitleLength, errors);
-        return (code, title, errors);
+        return (title, errors);
     }
 
     private static string CheckText(
@@ -484,8 +448,17 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
         return row is null ? ChapterNotFound<CurriculumChapterRow>() : ServiceResult<CurriculumChapterRow>.Success(row);
     }
 
-    private static CurriculumLessonRow ToRow(Lesson lesson, bool inUse) =>
-        new(lesson.Id, lesson.ChapterId, lesson.Code, lesson.Title, lesson.SortOrder, inUse);
+    // Reads the row back like the list does, so the derived sort order and the in-use flag match it.
+    private async Task<ServiceResult<CurriculumLessonRow>> LoadLessonAsync(
+        ulong branchId,
+        ulong lessonId,
+        CancellationToken cancellationToken)
+    {
+        var row = (await repository.ListChaptersAsync(branchId, cancellationToken))
+            .SelectMany(chapter => chapter.Lessons)
+            .SingleOrDefault(lesson => lesson.Id == lessonId);
+        return row is null ? LessonNotFound<CurriculumLessonRow>() : ServiceResult<CurriculumLessonRow>.Success(row);
+    }
 
     private static ServiceResult<T> BranchRequired<T>() => ServiceResult<T>.Failure(
         CurriculumErrorCodes.BranchRequired,
@@ -503,42 +476,18 @@ public sealed class CurriculumService(ICurriculumRepository repository) : ICurri
             "Vui lòng nhập đầy đủ và đúng các trường bắt buộc.",
             errors);
 
-    private static ServiceResult<CurriculumChapterRow> ChapterDuplicate((bool CodeTaken, bool TitleTaken) conflict)
+    private static ServiceResult<CurriculumChapterRow> ChapterDuplicate()
     {
-        var details = new Dictionary<string, string[]>();
-        if (conflict.CodeTaken)
-        {
-            details["code"] = ["Mã chương đã tồn tại trong khối lớp và lĩnh vực đã chọn."];
-        }
-
-        if (conflict.TitleTaken)
-        {
-            details["title"] = ["Tên chương đã tồn tại trong khối lớp và lĩnh vực đã chọn."];
-        }
-
+        const string message = "Tên chương đã tồn tại trong khối lớp và lĩnh vực đã chọn.";
         return ServiceResult<CurriculumChapterRow>.Failure(
-            CurriculumErrorCodes.ChapterDuplicate,
-            "Mã chương hoặc tên chương đã tồn tại trong khối lớp và lĩnh vực đã chọn.",
-            details);
+            CurriculumErrorCodes.ChapterDuplicate, message, new Dictionary<string, string[]> { ["title"] = [message] });
     }
 
-    private static ServiceResult<CurriculumLessonRow> LessonDuplicate((bool CodeTaken, bool TitleTaken) conflict)
+    private static ServiceResult<CurriculumLessonRow> LessonDuplicate()
     {
-        var details = new Dictionary<string, string[]>();
-        if (conflict.CodeTaken)
-        {
-            details["code"] = ["Mã bài học đã tồn tại trong chương này."];
-        }
-
-        if (conflict.TitleTaken)
-        {
-            details["title"] = ["Tên bài học đã tồn tại trong chương này."];
-        }
-
+        const string message = "Tên bài học đã tồn tại trong chương này.";
         return ServiceResult<CurriculumLessonRow>.Failure(
-            CurriculumErrorCodes.LessonDuplicate,
-            "Mã bài học hoặc tên bài học đã tồn tại trong chương này.",
-            details);
+            CurriculumErrorCodes.LessonDuplicate, message, new Dictionary<string, string[]> { ["title"] = [message] });
     }
 
     private static ServiceResult<bool> ChapterInUse() => ServiceResult<bool>.Failure(

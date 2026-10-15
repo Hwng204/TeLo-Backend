@@ -11,11 +11,17 @@ public sealed record AcademicYearValidationResult(
 
 public static partial class AcademicYearValidator
 {
-    public static AcademicYearValidationResult Validate(CreateAcademicYearRequest request)
+    public static AcademicYearValidationResult Validate(CreateAcademicYearRequest request) =>
+        ValidateName(request.Name);
+
+    public static AcademicYearValidationResult ValidateUpdate(UpdateAcademicYearRequest request) =>
+        ValidateName(request.Name);
+
+    private static AcademicYearValidationResult ValidateName(string? rawName)
     {
         var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
-        var name = request.Name?.Trim() ?? string.Empty;
+        var name = rawName?.Trim() ?? string.Empty;
         var nameMatch = AcademicYearNamePattern().Match(name);
         if (name.Length == 0)
         {
@@ -39,25 +45,6 @@ public static partial class AcademicYearValidator
             {
                 AddError(errors, "name", "Năm học phải nằm trong khoảng từ năm 2000 đến 2100.");
             }
-
-            if (request.StartDate.Year != startYear)
-            {
-                AddError(errors, "startDate", $"Ngày bắt đầu phải thuộc năm {startYear}.");
-            }
-
-            if (request.EndDate.Year != endYear)
-            {
-                AddError(errors, "endDate", $"Ngày kết thúc phải thuộc năm {endYear}.");
-            }
-        }
-
-        if (request.EndDate <= request.StartDate)
-        {
-            AddError(errors, "endDate", "Ngày kết thúc phải sau ngày bắt đầu.");
-        }
-        else if (request.EndDate.DayNumber - request.StartDate.DayNumber < 180)
-        {
-            AddError(errors, "endDate", "Năm học phải kéo dài tối thiểu 180 ngày.");
         }
 
         return new AcademicYearValidationResult(
@@ -67,66 +54,7 @@ public static partial class AcademicYearValidator
                 StringComparer.OrdinalIgnoreCase));
     }
 
-    public static AcademicYearValidationResult ValidateUpdate(UpdateAcademicYearRequest request)
-    {
-        var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        var name = request.Name?.Trim() ?? string.Empty;
-        var nameMatch = AcademicYearNamePattern().Match(name);
-        if (name.Length == 0)
-        {
-            AddError(errors, "name", "Tên năm học là bắt buộc.");
-        }
-        else if (!nameMatch.Success)
-        {
-            AddError(errors, "name", "Tên năm học phải có định dạng YYYY-YYYY.");
-        }
-        else
-        {
-            var startYear = int.Parse(nameMatch.Groups[1].Value);
-            var endYear = int.Parse(nameMatch.Groups[2].Value);
-
-            if (endYear != startYear + 1)
-            {
-                AddError(errors, "name", "Năm kết thúc phải ngay sau năm bắt đầu.");
-            }
-
-            if (startYear < 2000 || startYear > 2100)
-            {
-                AddError(errors, "name", "Năm học phải nằm trong khoảng từ năm 2000 đến 2100.");
-            }
-
-            if (request.StartDate.Year != startYear)
-            {
-                AddError(errors, "startDate", $"Ngày bắt đầu phải thuộc năm {startYear}.");
-            }
-
-            if (request.EndDate.Year != endYear)
-            {
-                AddError(errors, "endDate", $"Ngày kết thúc phải thuộc năm {endYear}.");
-            }
-        }
-
-        if (request.EndDate <= request.StartDate)
-        {
-            AddError(errors, "endDate", "Ngày kết thúc phải sau ngày bắt đầu.");
-        }
-        else if (request.EndDate.DayNumber - request.StartDate.DayNumber < 180)
-        {
-            AddError(errors, "endDate", "Năm học phải kéo dài tối thiểu 180 ngày.");
-        }
-
-        return new AcademicYearValidationResult(
-            errors.ToDictionary(
-                pair => pair.Key,
-                pair => pair.Value.ToArray(),
-                StringComparer.OrdinalIgnoreCase));
-    }
-
-    public static AcademicYearValidationResult ValidateConfigureTerms(
-        ConfigureTermsRequest request,
-        DateOnly yearStart,
-        DateOnly yearEnd)
+    public static AcademicYearValidationResult ValidateConfigureTerms(ConfigureTermsRequest request)
     {
         var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -165,58 +93,6 @@ public static partial class AcademicYearValidator
             string.Equals(term1.Name.Trim(), term2.Name.Trim(), StringComparison.OrdinalIgnoreCase))
         {
             AddError(errors, $"terms[{term2Index}].name", "Tên hai học kỳ không được trùng nhau.");
-        }
-
-        // Validate Term 1 dates
-        if (!term1.StartDate.HasValue || !term1.EndDate.HasValue)
-        {
-            if (!term1.StartDate.HasValue)
-                AddError(errors, $"terms[{term1Index}].startDate", "Vui lòng nhập ngày bắt đầu học kỳ 1.");
-            if (!term1.EndDate.HasValue)
-                AddError(errors, $"terms[{term1Index}].endDate", "Vui lòng nhập ngày kết thúc học kỳ 1.");
-        }
-        else if (term1.StartDate.HasValue && term1.EndDate.HasValue)
-        {
-            if (term1.StartDate.Value < yearStart || term1.StartDate.Value > yearEnd)
-                AddError(errors, $"terms[{term1Index}].startDate", "Ngày bắt đầu học kỳ 1 phải nằm trong khoảng thời gian năm học.");
-
-            if (term1.EndDate.Value < yearStart || term1.EndDate.Value > yearEnd)
-                AddError(errors, $"terms[{term1Index}].endDate", "Ngày kết thúc học kỳ 1 phải nằm trong khoảng thời gian năm học.");
-
-            if (term1.EndDate.Value <= term1.StartDate.Value)
-                AddError(errors, $"terms[{term1Index}].endDate", "Ngày kết thúc học kỳ 1 phải sau ngày bắt đầu.");
-        }
-
-        // Validate Term 2 dates
-        if (!term2.StartDate.HasValue || !term2.EndDate.HasValue)
-        {
-            if (!term2.StartDate.HasValue)
-                AddError(errors, $"terms[{term2Index}].startDate", "Vui lòng nhập ngày bắt đầu học kỳ 2.");
-            if (!term2.EndDate.HasValue)
-                AddError(errors, $"terms[{term2Index}].endDate", "Vui lòng nhập ngày kết thúc học kỳ 2.");
-        }
-        else if (term2.StartDate.HasValue && term2.EndDate.HasValue)
-        {
-            if (term2.StartDate.Value < yearStart || term2.StartDate.Value > yearEnd)
-                AddError(errors, $"terms[{term2Index}].startDate", "Ngày bắt đầu học kỳ 2 phải nằm trong khoảng thời gian năm học.");
-
-            if (term2.EndDate.Value < yearStart || term2.EndDate.Value > yearEnd)
-                AddError(errors, $"terms[{term2Index}].endDate", "Ngày kết thúc học kỳ 2 phải nằm trong khoảng thời gian năm học.");
-
-            if (term2.EndDate.Value <= term2.StartDate.Value)
-                AddError(errors, $"terms[{term2Index}].endDate", "Ngày kết thúc học kỳ 2 phải sau ngày bắt đầu.");
-        }
-
-        // Dependency between Term 1 and Term 2
-        if (term2.StartDate.HasValue && !term1.StartDate.HasValue)
-        {
-            AddError(errors, $"terms[{term1Index}].startDate", "Cần cấu hình thời gian học kỳ 1 trước khi cấu hình học kỳ 2.");
-        }
-
-        // Cross-term date check
-        if (term1.EndDate.HasValue && term2.StartDate.HasValue && term2.StartDate.Value <= term1.EndDate.Value)
-        {
-            AddError(errors, $"terms[{term2Index}].startDate", "Học kỳ 2 phải bắt đầu sau ngày kết thúc của học kỳ 1.");
         }
 
         return new AcademicYearValidationResult(

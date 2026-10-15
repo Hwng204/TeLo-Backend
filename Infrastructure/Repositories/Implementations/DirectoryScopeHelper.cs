@@ -1,30 +1,24 @@
 using Domain.Entities.Identity;
+using Domain.Entities.Organization;
 using Infrastructure.Context;
 using Infrastructure.Repositories.Interface;
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace Infrastructure.Repositories.Implement;
 
-/// <summary>
-/// ResolvedScope represents the resolved actor/school context for data filtering.
-/// </summary>
 internal sealed record ResolvedScope(ulong SchoolId, string? ProvinceCode, ulong[]? HomeroomClassIds = null);
 
-/// <summary>
-/// Helper chuyên trách phân giải phạm vi truy cập (Scope Resolver):
-/// - Xác định Trường học (SchoolId) & Tỉnh/Thành (ProvinceCode) từ ActorUserId (người dùng đăng nhập).
-/// - Nếu là Giáo viên và có cờ HomeroomOnly: xác định danh sách các lớp chủ nhiệm (HomeroomClassIds) để giới hạn dữ liệu.
-/// Lưu ý: Nghiệp vụ quản lý Năm học đã nằm riêng trong IAcademicYearRepository.
-/// </summary>
 internal static class DirectoryScopeHelper
 {
-    public const string ActiveYear = "ACTIVE";
+    private const string ActiveYear = "ACTIVE";
 
     public static async Task<(DirectoryReadStatus Status, ResolvedScope? Scope)> ResolveScopeAsync(
         ApplicationDbContext db,
         DirectoryScope requested,
         CancellationToken cancellationToken)
     {
+        // Admin path: the route names the school, so the actor needs no branch of its own.
         if (requested.SchoolId is { } schoolId)
         {
             var school = await db.Schools.AsNoTracking()
@@ -63,9 +57,11 @@ internal static class DirectoryScopeHelper
         ulong[]? homeroomClassIds = null;
         if (requested.HomeroomOnly)
         {
-            homeroomClassIds = await db.Teachers.AsNoTracking()
-                .Where(t => t.UserId == actorUserId && t.ClassId != null)
-                .Select(t => t.ClassId!.Value)
+            // No homeroom column in DB v2: a plain teacher sees the classes they are assigned to (R5).
+            homeroomClassIds = await db.TeacherAssignments.AsNoTracking()
+                .Where(a => a.Teacher.UserId == actorUserId)
+                .Select(a => a.ClassId)
+                .Distinct()
                 .ToArrayAsync(cancellationToken);
         }
 
@@ -78,13 +74,16 @@ internal static class DirectoryScopeHelper
         CancellationToken cancellationToken) =>
         db.AcademicYears.AsNoTracking()
             .Where(y => y.Status == ActiveYear)
-            .OrderByDescending(y => y.StartDate)
+            .OrderByDescending(y => y.Id)
             .Select(y => (ulong?)y.Id)
             .FirstOrDefaultAsync(cancellationToken);
+
+    // A student can hold several rows in one year once a class transfer keeps the old period, so
+    // only the open row counts as "current". Without this a transferred student appears twice.
 
     public static IQueryable<StudentEnrollment> CurrentEnrollments(ApplicationDbContext db, ulong schoolId) =>
         db.StudentEnrollments.AsNoTracking().Where(e =>
             e.SchoolClass.SchoolBranch.SchoolId == schoolId &&
-            e.AcademicYear.Status == ActiveYear &&
-            e.Status == StudentEnrollmentStatusCodes.Active);
+            e.SchoolClass.AcademicYear.Status == ActiveYear &&
+            e.EndedOn == null);
 }

@@ -13,7 +13,7 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         AcademicYear academicYear,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         try
         {
             if (await context.AcademicYears.AsNoTracking().AnyAsync(
@@ -86,7 +86,7 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
         AcademicYear academicYear,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         try
         {
             context.ChangeTracker.DetectChanges();
@@ -113,12 +113,17 @@ public sealed class AcademicYearRepository(ApplicationDbContext context) : IAcad
     public async Task<bool> TryActivateAsync(AcademicYear academicYear, CancellationToken cancellationToken)
     {
         academicYear.EnsureCanActivate();
-        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
         try
         {
-            // Single active year is enforced only by this serializable read-then-write (no DB unique key in v2).
-            var currentYears = await context.AcademicYears
-                .Where(year => year.Status == "ACTIVE" && year.Id != academicYear.Id).ToArrayAsync(cancellationToken);
+            // Serialize activation on a stable year row, including when no year is active.
+            // Locking reads see the latest committed status after waiting on another activation.
+            await context.Database.SqlQueryRaw<ulong>(
+                "SELECT academic_year_id AS Value FROM academic_year ORDER BY academic_year_id LIMIT 1 FOR UPDATE")
+                .ToListAsync(cancellationToken);
+            var currentYears = await context.AcademicYears.FromSqlInterpolated(
+                $"SELECT * FROM academic_year WHERE status = {"ACTIVE"} AND academic_year_id <> {academicYear.Id} FOR UPDATE")
+                .ToArrayAsync(cancellationToken);
             foreach (var current in currentYears) current.Close();
             academicYear.Activate();
             await context.SaveChangesAsync(cancellationToken);

@@ -91,7 +91,7 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
                         .HasColumnName("title")
-                        .UseCollation("utf8mb4_0900_as_ci");
+                        .UseCollation("utf8mb4_0900_ai_ci");
 
                     b.HasKey("Id");
 
@@ -168,7 +168,7 @@ namespace Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("varchar(255)")
                         .HasColumnName("title")
-                        .UseCollation("utf8mb4_0900_as_ci");
+                        .UseCollation("utf8mb4_0900_ai_ci");
 
                     b.HasKey("Id");
 

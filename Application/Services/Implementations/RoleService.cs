@@ -42,7 +42,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     {
         var errors = IdentityManagementValidator.Role(request);
         if (errors.Count > 0) return Invalid<RoleItem>(errors);
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
         var role = id.HasValue ? await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct) : new Role();
         if (role == null) return Missing<RoleItem>();
@@ -64,7 +64,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     public async Task<ServiceResult<RoleItem>> StatusAsync(ulong id, IdentityStatusRequest request, ulong actor, CancellationToken ct)
     {
         if (request.Status is not ("ACTIVE" or "INACTIVE")) return Invalid<RoleItem>(new Dictionary<string, string[]> { ["status"] = ["Trạng thái không hợp lệ."] });
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
         if (role == null) return Missing<RoleItem>();
@@ -84,7 +84,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
 
     public async Task<ServiceResult<bool>> DeleteAsync(ulong id, uint version, ulong actor, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<bool>();
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
         if (role == null) return Missing<bool>();
@@ -109,7 +109,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     {
         if (request.RoleIds == null || request.RoleIds.Length > 100 || request.RoleIds.Any(x => x == 0) || request.RoleIds.Distinct().Count() != request.RoleIds.Length)
             return Invalid<UserRolesDetail>(new Dictionary<string, string[]> { ["roleIds"] = ["Chọn tối đa 100 vai trò khác nhau."] });
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<UserRolesDetail>();
         var user = await db.Users.Include(u => u.UserRoles).ThenInclude(ur => ur.Role).SingleOrDefaultAsync(u => u.Id == id, ct);
         if (user == null) return Missing<UserRolesDetail>();
@@ -137,7 +137,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     {
         if (request.UserIds == null || request.UserIds.Length is < 1 or > 100 || request.UserIds.Any(x => x == 0) || request.UserIds.Distinct().Count() != request.UserIds.Length)
             return Invalid<RoleItem>(new Dictionary<string, string[]> { ["userIds"] = ["Chọn 1–100 người dùng khác nhau."] });
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
         if (role == null) return Missing<RoleItem>();
@@ -156,7 +156,7 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
 
     public async Task<ServiceResult<RoleItem>> RemoveUserAsync(ulong id, ulong userId, uint version, ulong actor, CancellationToken ct)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
         var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
         if (role == null) return Missing<RoleItem>();

@@ -140,3 +140,40 @@ dotnet tool run dotnet-ef database update --project Infrastructure --startup-pro
 
 Đừng sửa DB bằng tay hay bằng script SQL; mọi thay đổi đi qua migration. Cần cột đã bị bỏ thì báo nhóm thêm vào ERD
 trước.
+
+## 6. Dùng DB chung trên TiDB Cloud
+
+DB chung của nhóm đã được tạo với tên `sep_490`; thành viên dùng cấu hình ở bước 2. Bước 1 dành cho người phụ trách khi khởi tạo môi trường mới.
+
+Host/user/mật khẩu lấy từ người quản lý TiDB; **không** ghi vào file trong repo. Code đã sửa cho TiDB:
+cột `title` của chương/bài dùng `utf8mb4_0900_ai_ci` (TiDB không có `as_ci`), transaction dùng
+`ReadCommitted` cho user/role/module để kiểm tra quyền mới nhất sau khi chờ khoá, và `RepeatableRead` cho năm học (TiDB không hỗ trợ `Serializable`). TiDB mặc định không kiểm tra `CHECK` constraint.
+
+Khi kích hoạt năm học, repository dùng đọc có khoá `FOR UPDATE` để các yêu cầu đồng thời vẫn chỉ giữ một năm học ACTIVE.
+
+**Bước 1 — một người (phụ trách DB) làm một lần**, trong Workbench đã kết nối:
+
+```sql
+CREATE DATABASE IF NOT EXISTS sep_490 CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+```
+
+Rồi tạo bảng từ thư mục `LeTo-Backend`:
+
+```powershell
+dotnet tool restore
+dotnet tool run dotnet-ef database update --project Infrastructure --startup-project WebAPI --connection "Server=<host>;Port=4000;Database=sep_490;User ID=<user>;Password=<mật khẩu>;SslMode=VerifyFull;"
+```
+
+Kiểm tra: `USE sep_490; SHOW TABLES;` → 53 bảng. Có migration mới thì chỉ người này chạy lại lệnh trên.
+
+**Bước 2 — mỗi người**, cho backend trỏ vào TiDB (User Secrets, không nằm trong repo):
+
+```powershell
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=<host>;Port=4000;Database=sep_490;User ID=<user>;Password=<mật khẩu>;SslMode=VerifyFull;" --project WebAPI
+dotnet run --project WebAPI
+```
+
+Quay về DB local: `dotnet user-secrets remove "ConnectionStrings:DefaultConnection" --project WebAPI`.
+
+**Lưu ý:** cả nhóm dùng chung dữ liệu; không chạy `migrations add`/`database update` nếu không phụ trách;
+không trỏ `TELO_TEST_MYSQL` vào TiDB (test tự tạo/xoá database); không tạo bảng trong schema `sys`.

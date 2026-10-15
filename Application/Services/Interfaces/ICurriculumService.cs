@@ -21,7 +21,8 @@ public interface ICurriculumService
         SaveChapterRequest request,
         CancellationToken cancellationToken);
 
-    Task<ServiceResult<bool>> DeleteChapterAsync(
+    // Deletes the chapter and its lessons, or archives it (INACTIVE) when one of its lessons is in use.
+    Task<ServiceResult<CurriculumDeleteResultDto>> DeleteChapterAsync(
         CurriculumActor actor,
         ulong chapterId,
         CancellationToken cancellationToken);
@@ -38,7 +39,8 @@ public interface ICurriculumService
         SaveLessonRequest request,
         CancellationToken cancellationToken);
 
-    Task<ServiceResult<bool>> DeleteLessonAsync(
+    // Deletes the lesson, or archives it (INACTIVE) when it is in use.
+    Task<ServiceResult<CurriculumDeleteResultDto>> DeleteLessonAsync(
         CurriculumActor actor,
         ulong lessonId,
         CancellationToken cancellationToken);

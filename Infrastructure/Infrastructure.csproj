@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
@@ -34,4 +34,8 @@
     <Compile Remove="External\Provinces\IProvinceProvider.cs;External\Provinces\NsoProvinceProvider.cs;Exports\StudentImportWorkbook.cs" />
   </ItemGroup>
 
+  <!-- DB v2: preserve Question module source until its persistence is adapted. -->
+  <ItemGroup>
+    <Compile Remove="Configurations\QuestionBank\QuestionPackageSubmissionConfiguration.cs" />
+  </ItemGroup>
 </Project>

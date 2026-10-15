@@ -62,6 +62,9 @@ public sealed class TeacherRepository(
     {
         await ValidateBranchFilterAsync(scope, filter.BranchId, ct);
         var query = Scoped(scope).AsNoTracking();
+        // DB v2 has no employment dates: validate the year, but show current profiles.
+        if (filter.AcademicYearId is { } yearId && !await db.AcademicYears.AnyAsync(year => year.Id == yearId, ct))
+            throw Error("ACADEMIC_YEAR_NOT_FOUND", "Không tìm thấy năm học.");
         if (filter.BranchId is { } branchId) query = query.Where(x => x.User.SchoolBranchId == branchId);
         if (filter.Search is { } search) query = query.Where(x =>
             x.User.FullName.Contains(search) || (x.User.MoetIdentifier != null && x.User.MoetIdentifier.Contains(search)));

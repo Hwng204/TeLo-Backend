@@ -23,7 +23,16 @@ public sealed class LockedFeaturesControllerTests
         { "GET", "/api/schools/1/emails/templates" },
         { "GET", "/api/provinces" },
         { "POST", "/api/student-imports/preview" },
-        { "DELETE", "/api/admin/schools/1/student-imports/3" }
+        { "DELETE", "/api/admin/schools/1/student-imports/3" },
+        { "GET", "/api/question-banks/questions" },
+        { "POST", "/api/question-banks/questions/2/move-to-practice" },
+        { "GET", "/api/tasks/5/question-package" },
+        { "POST", "/api/tasks/5/question-package/submit" },
+        { "POST", "/api/tasks/5/questions" },
+        { "PUT", "/api/tasks/5/questions/2" },
+        { "DELETE", "/api/tasks/5/questions/2" },
+        { "POST", "/api/tasks/5/questions/import/preview" },
+        { "GET", "/api/tasks/5/papers/2/questions" }
     };
 
     [Theory]
@@ -42,13 +51,16 @@ public sealed class LockedFeaturesControllerTests
         Assert.Equal(LockedFeaturesController.ErrorCode, body.RootElement.GetProperty("error").GetProperty("code").GetString());
     }
 
-    [Fact]
-    public async Task LockedRoutesStillRequireAnAccount()
+    [Theory]
+    [InlineData("/api/exams")]
+    [InlineData("/api/question-banks/questions")]
+    [InlineData("/api/tasks/5/question-package")]
+    public async Task LockedRoutesStillRequireAnAccount(string route)
     {
         using var factory = Factory();
         using var client = factory.CreateClient();
 
-        var response = await client.GetAsync("/api/exams");
+        var response = await client.GetAsync(route);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

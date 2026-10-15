@@ -8,7 +8,7 @@
 | Nguồn schema | EF migrations như trước. Migration cũ đã xoá hết, chỉ còn `Infrastructure/Migrations/20261015020254_InitialCreate.cs` (52 bảng, không seed) |
 | Database | Đủ 51 bảng của ERD (Figma, section `167:6584`), đúng cột, khoá, quan hệ + bảng `user_roles` |
 | Ngoại lệ so với ERD (đã chốt) | Giữ bảng `user_roles` (một người nhiều vai trò) thay cho `user.role_id`, và cột `user.security_version` (thu hồi token khi đổi mật khẩu/khoá tài khoản). Bỏ mọi cột `version` |
-| Chức năng khoá tạm | Kỳ thi, quản lý email/thông báo, import học sinh, danh mục tỉnh, nhật ký audit: trả **501** (mục 4) |
+| Chức năng khoá tạm | Endpoint kỳ thi, quản lý email, import học sinh, danh mục tỉnh và Question: trả **501** (mục 4). Gửi thông báo và ghi audit bị vô hiệu hoá nội bộ. |
 | Frontend | Chưa đổi |
 
 ## 2. Mỗi người chuyển sang DB mới trên máy mình
@@ -18,7 +18,9 @@ Chạy từ thư mục gốc repo (`LeTo-Backend`), PowerShell hoặc Git Bash. 
 1. Lấy code mới:
 
 ```
-git pull origin main
+git fetch origin
+git switch feat/db-v2
+git pull --ff-only origin feat/db-v2
 ```
 
 2. Cài công cụ `dotnet-ef` của repo:
@@ -50,7 +52,7 @@ Lưu ý:
 - **DB cũ không dùng tiếp được** với code mới; giữ nguyên để tham khảo, không cần xoá.
 - **Chưa có seed data**: chưa có tài khoản, khối, môn. Muốn đăng nhập phải có seed hoặc tự chèn một `user` (mật
   khẩu hash theo `IPasswordHasher<User>`) + dòng `user_roles`.
-- Nhánh nào đang có **migration riêng chưa đẩy**: xoá migration đó, pull `main`, tạo lại bằng
+- Nhánh nào đang có **migration riêng chưa đẩy**: tạo lại migration đó trên nền nhánh DB v2 bằng
   `dotnet ef migrations add <Tên>` trên nền `InitialCreate` mới.
 - Làm lại từ đầu: `DROP DATABASE leto_v2;` rồi bước 3 và 5.
 
@@ -69,6 +71,8 @@ Nguyên tắc: request gửi trường đã bỏ vẫn được nhận và **b�
 | `/api/exams*`, `/api/schools/{id}/emails*`, `/api/provinces*`, `/api/student-imports*`, `/api/admin/schools/{id}/student-imports*` | — | — | **501** `FEATURE_LOCKED_DB_V2` (mục 4) |
 | `/api/auth/forgot-password`, `verify-otp`, `reset-password`, `profile` | — | — | tìm user theo teacher.email; profile email ← teacher.email |
 | `/api/teachers*`, admin teachers | department, mainSubjectId, position, joinedOn, version | department, mainSubject*, joinedOn, position, version, homeroomClass* | staffCode ← user.moet_identifier; employmentStatus ← user.status |
+| Danh sách lớp/học sinh | — | — | Giữ bộ lọc academicYearId từ main; lịch sử chuyển lớp lấy theo các kỳ lớp trong student_enrollment. Mỗi năm hiển thị kỳ lớp gần nhất. |
+| Danh sách giáo viên | academicYearId không lọc lịch sử ngày vào làm | — | Vẫn kiểm tra năm học có tồn tại; trả hồ sơ hiện tại vì DB v2 không có joinedOn và ngày năm học. |
 | `/api/classes*`, admin classes | code, homeroomTeacherId | homeroomTeacher* (null) | code ← name |
 | `/api/students*`, admin students | — | — | code/fullName/status ← user; tạo học sinh = tạo kèm `user` |
 | `/api/curriculum*` | code của chapter/lesson | — | fields[] ← subjects; fieldId ← subject_id; code ← ""; sortOrder ← vị trí theo id |
@@ -106,6 +110,15 @@ nguyên chỗ cũ nhưng bị loại khỏi biên dịch bằng `<Compile Remove
 | Định danh | Nhật ký audit (hàm `Audit` trong UserService/RoleService không làm gì) | ERD không có bảng audit, cần thêm vào ERD nếu muốn giữ |
 | Yêu cầu (`request_*`) | Chưa có chức năng | 6 bảng `request_*` đã có entity |
 | Phân công giáo viên | Chưa có chức năng ghi | `teacher_assignment` |
+| Question từ main | `/api/question-banks*`, `/api/tasks/{id}/question-package*`, `/api/tasks/{id}/questions*`, `/api/tasks/{id}/papers/{paperId}/questions*` trả 501; không chạy QuestionPracticeWorker | Giữ code qua Compile Remove. Chưa chuyển lịch sử gửi gói, version và lịch chuyển câu hỏi ôn tập sang DB v2. Không thêm bảng/cột ngoài 52 bảng. |
+
+### Kết hợp thay đổi từ main
+
+- Giữ kiến trúc tách `ClassService`, `StudentService`, `ClassRepository`, `StudentRepository`, `SchoolRepository` và `DirectoryScopeHelper`.
+- Các lớp này dùng entity DB v2: thông tin học sinh nằm trên user; năm học lấy qua class; trạng thái nhập học suy ra từ ended_on; phạm vi giáo viên lấy từ teacher_assignment.
+- Xoá hai migration `20261013162424_AddQuestionPackages` và `20261013170332_AddQuestionPaperLinks` cùng Designer vì chúng dùng schema cũ. Giữ nguyên `20261015020254_InitialCreate` và snapshot DB v2.
+- Các test tích hợp Question chưa tương thích được giữ trong repo nhưng loại khỏi biên dịch cùng module; không tính chúng là test pass. Test thuần QuestionRules vẫn chạy.
+- `Tools/QuestionDemo` cũng bị khoá: chỉ in thông báo và thoát mã 1, không chạy seed/migration. File seed cũ được giữ nhưng loại khỏi biên dịch.
 
 **Mở khoá một phần:** viết lại repository/service trên bảng ERD (hoặc sửa code cũ cho khớp), xoá dòng tương ứng trong
 khối `<Compile Remove>` của các `.csproj` và route tương ứng trong `LockedFeaturesController`, rồi build và chạy test.

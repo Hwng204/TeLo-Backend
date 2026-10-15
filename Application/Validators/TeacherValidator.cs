@@ -35,6 +35,7 @@ public static partial class TeacherValidator
     {
         Page(query.Page, query.PageSize);
         if (query.SchoolBranchId == 0) throw Invalid("Mã môn/phân hiệu không hợp lệ.");
+        if (query.AcademicYearId == 0) throw Invalid("Năm học không hợp lệ.");
         var employment = Optional(query.EmploymentStatus, 32, "Trạng thái công tác")?.ToUpperInvariant();
         var account = Optional(query.AccountStatus, 32, "Trạng thái tài khoản")?.ToUpperInvariant();
         if (employment != null && !EmploymentStatuses.Contains(employment)) throw Invalid("Trạng thái công tác không hợp lệ.");
@@ -47,7 +48,7 @@ public static partial class TeacherValidator
         if (employment is "RESIGNED") employment = "INACTIVE";
         return new(Optional(query.Search, 200, "Từ khóa"),
             employment, account, query.Gender, query.SchoolBranchId,
-            query.SortBy, query.SortDirection == "desc", query.Page, query.PageSize);
+            query.SortBy, query.SortDirection == "desc", query.Page, query.PageSize, query.AcademicYearId);
     }
 
     public static void Page(int page, int size)

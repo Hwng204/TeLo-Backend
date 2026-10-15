@@ -11,7 +11,8 @@ public sealed record TeacherListQuery(
     string SortBy = "fullName",
     string SortDirection = "asc",
     int Page = 1,
-    int PageSize = 20);
+    int PageSize = 20,
+    ulong? AcademicYearId = null);
 
 public sealed record TeacherPage<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)
 {

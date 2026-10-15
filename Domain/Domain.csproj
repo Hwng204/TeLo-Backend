@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
@@ -17,4 +17,8 @@
     <Compile Remove="Entities\Identity\StudentImportBatch.cs;Entities\Identity\StudentImportRow.cs;Entities\Identity\IdentityAudit.cs;Entities\QuestionBank\ExamVariantQuestion.cs" />
   </ItemGroup>
 
+  <!-- DB v2: preserve Question module source until its persistence is adapted. -->
+  <ItemGroup>
+    <Compile Remove="Entities\QuestionBank\QuestionPackageSubmission.cs" />
+  </ItemGroup>
 </Project>

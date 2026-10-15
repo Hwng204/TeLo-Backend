@@ -14,6 +14,10 @@ namespace WebAPI.Controllers;
 [Route("api/provinces/{**rest}")]
 [Route("api/student-imports/{**rest}")]
 [Route("api/admin/schools/{schoolId:long}/student-imports/{**rest}")]
+[Route("api/question-banks/{**rest}")]
+[Route("api/tasks/{taskId:long}/question-package/{**rest}")]
+[Route("api/tasks/{taskId:long}/questions/{**rest}")]
+[Route("api/tasks/{taskId:long}/papers/{paperId:long}/questions/{**rest}")]
 public sealed class LockedFeaturesController : ControllerBase
 {
     public const string ErrorCode = "FEATURE_LOCKED_DB_V2";

@@ -243,16 +243,84 @@ public sealed class StudentImportRepository(
             .Select(b => new { b.SchoolId, b.AcademicYearId })
             .SingleAsync(cancellationToken);
 
+        // If any student has empty code, auto-generate sequential codes by branch and cohort
+        var studentsList = students.ToList();
+        var hasEmptyCodes = studentsList.Any(s => string.IsNullOrWhiteSpace(s.Code));
+        if (hasEmptyCodes)
+        {
+            var classIds = studentsList.Select(s => s.SchoolClassId).Distinct().ToArray();
+            var classes = await db.SchoolClasses
+                .Include(c => c.SchoolBranch)
+                .Include(c => c.AcademicYear)
+                .AsNoTracking()
+                .Where(c => classIds.Contains(c.Id))
+                .ToDictionaryAsync(c => c.Id, cancellationToken);
+
+            var branchGroups = studentsList.GroupBy(s =>
+            {
+                classes.TryGetValue(s.SchoolClassId, out var cls);
+                return (BranchId: cls?.SchoolBranchId ?? 0, AcademicYearId: cls?.AcademicYearId ?? 0);
+            }).ToList();
+
+            foreach (var group in branchGroups)
+            {
+                var sampleClass = classes.Values.FirstOrDefault(c => c.SchoolBranchId == group.Key.BranchId && c.AcademicYearId == group.Key.AcademicYearId);
+                var branchCode = sampleClass?.SchoolBranch?.Code?.Trim() ?? "BR";
+                var year = sampleClass?.AcademicYear?.StartDate.Year ?? DateTime.UtcNow.Year;
+                var cohort = (year % 100).ToString("D2");
+                var prefix = $"{branchCode}-{cohort}";
+
+                var existingCodes = await db.Students
+                    .AsNoTracking()
+                    .Where(s => s.Code.StartsWith(prefix))
+                    .Select(s => s.Code)
+                    .ToListAsync(cancellationToken);
+
+                var maxSeq = 0;
+                foreach (var c in existingCodes)
+                {
+                    var suffix = c.Substring(prefix.Length);
+                    if (int.TryParse(suffix, out var num) && num > maxSeq)
+                    {
+                        maxSeq = num;
+                    }
+                }
+
+                var enrolledCount = await db.StudentEnrollments
+                    .AsNoTracking()
+                    .CountAsync(e => e.SchoolClass.SchoolBranchId == group.Key.BranchId &&
+                                     e.AcademicYearId == group.Key.AcademicYearId, cancellationToken);
+
+                if (enrolledCount > maxSeq) maxSeq = enrolledCount;
+
+                for (var i = 0; i < studentsList.Count; i++)
+                {
+                    var s = studentsList[i];
+                    if (group.Contains(s) && string.IsNullOrWhiteSpace(s.Code))
+                    {
+                        maxSeq++;
+                        var genCode = $"{prefix}{maxSeq:D4}";
+                        while (await db.Students.AnyAsync(st => st.Code == genCode, cancellationToken))
+                        {
+                            maxSeq++;
+                            genCode = $"{prefix}{maxSeq:D4}";
+                        }
+                        studentsList[i] = s with { Code = genCode };
+                    }
+                }
+            }
+        }
+
         // Days can pass between preview and approval: codes may have been taken and classes
         // deactivated or moved since. Re-check before writing anything.
         var conflicts = await FindConflictsAsync(
-            batch.SchoolId, batch.AcademicYearId, students, cancellationToken);
+            batch.SchoolId, batch.AcademicYearId, studentsList, cancellationToken);
         if (conflicts.Count > 0)
         {
             return new ImportApplyResult(ImportApplyStatus.RowsConflict, 0, conflicts);
         }
 
-        var rowIds = students.Select(s => s.RowId).ToArray();
+        var rowIds = studentsList.Select(s => s.RowId).ToArray();
         var rows = await db.StudentImportRows
             .Where(r => rowIds.Contains(r.Id))
             .ToDictionaryAsync(r => r.Id, cancellationToken);
@@ -261,7 +329,7 @@ public sealed class StudentImportRepository(
             .Where(c => classIds.Contains(c.Id))
             .ToDictionaryAsync(c => c.Id, c => c.SchoolBranchId, cancellationToken);
 
-        foreach (var item in students)
+        foreach (var item in studentsList)
         {
             var student = new Student
             {
@@ -282,6 +350,7 @@ public sealed class StudentImportRepository(
             db.Students.Add(student);
             // EF fills the FK once the student row is inserted, in the same SaveChanges.
             rows[item.RowId].CreatedStudent = student;
+            rows[item.RowId].RawCode = item.Code;
         }
 
         try

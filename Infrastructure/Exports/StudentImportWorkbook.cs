@@ -32,7 +32,7 @@ public static class StudentImportWorkbook
     // Column order is the contract with Read: A..F. "classCode" holds the class name (DB v2 has no class code).
     public static readonly StudentImportColumn[] Columns =
     [
-        new("code", "Mã học sinh (*)", true, "Chữ/số, tối đa 64 ký tự, không trùng", "HS2025001"),
+        new("code", "Mã học sinh", false, "Chữ/số, tối đa 64 ký tự (để trống hệ thống tự sinh mã)", "1TL-A-260001"),
         new("fullName", "Họ và tên (*)", true, "Tối đa 255 ký tự", "Nguyễn Văn An"),
         new("dateOfBirth", "Ngày sinh", false, "dd/MM/yyyy", "15/03/2014"),
         new("gender", "Giới tính", false, "NAM, NU hoặc KHAC", "NAM"),

@@ -11,7 +11,11 @@ public static class SchoolDirectoryValidator
     public static Dictionary<string, string[]> ValidateCreateStudent(CreateStudentRequest request, out string code, out string fullName, out string status)
     {
         var errors = new Dictionary<string, string[]>();
-        code = Required(request.Code, "code", 64, errors);
+        code = request.Code?.Trim() ?? string.Empty;
+        if (code.Length > 64)
+        {
+            errors["code"] = ["Mã học sinh tối đa 64 ký tự."];
+        }
         fullName = Required(request.FullName, "fullName", 255, errors);
         status = Status(request.Status, StudentStatusCodes.All, StudentStatusCodes.Active, errors);
         RequireId(request.SchoolClassId, "schoolClassId", errors);

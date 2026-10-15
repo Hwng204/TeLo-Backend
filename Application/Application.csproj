@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\Domain.csproj" />
@@ -21,4 +21,8 @@
     <Compile Remove="Services\Interfaces\IExamRoomService.cs;Services\Interfaces\IExamService.cs;Services\Interfaces\IExamSubjectService.cs;Services\Interfaces\IEmailManagementService.cs;Services\Interfaces\IStudentImportService.cs;Services\Interfaces\IProvinceCatalogService.cs;Services\Interfaces\IProvinceSyncService.cs" />
   </ItemGroup>
 
+  <!-- DB v2: preserve Question module source until its persistence is adapted. -->
+  <ItemGroup>
+    <Compile Remove="Services\Implementations\QuestionService.cs;Services\Implementations\QuestionBankService.cs;Services\Implementations\QuestionImportService.cs;Services\Implementations\QuestionPaperService.cs" />
+  </ItemGroup>
 </Project>

@@ -7,7 +7,7 @@ namespace WebAPI.Controllers;
 
 [Route("api/classes")]
 [Authorize(Policy = SchoolReadPolicy)]
-public sealed class ClassesController(ISchoolDirectoryService service) : SchoolDirectoryControllerBase
+public sealed class ClassesController(IClassService service) : SchoolDirectoryControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> List(

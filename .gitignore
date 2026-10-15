@@ -52,3 +52,6 @@ GEMINI.md
 /Infrastructure.Tests/
 /WebAPI.IntegrationTests/
 /docs/
+
+# Personal plans, notes, and test data records
+/tasks/

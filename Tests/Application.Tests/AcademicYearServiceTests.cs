@@ -142,7 +142,7 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_CreatesDraftYearWithExactlyTwoDefaultTerms()
+    public async Task CreateAsync_CreatesDraftYearWithoutImplicitTerms()
     {
         var repository = new FakeAcademicYearRepository();
         var service = new AcademicYearService(repository);
@@ -154,20 +154,9 @@ public sealed class AcademicYearServiceTests
         Assert.NotNull(result.Value);
         Assert.Equal("DRAFT", result.Value.Status);
         Assert.Equal("2026-2027", result.Value.Code);
-        Assert.Equal(2, result.Value.SemesterCount);
+        Assert.Equal(0, result.Value.SemesterCount);
         var year = Assert.Single(repository.AddedYears);
-        Assert.Collection(
-            year.Semesters.OrderBy(term => term.Order),
-            first =>
-            {
-                Assert.Equal((byte)1, first.Order);
-                Assert.Equal("Học kỳ I", first.Name);
-            },
-            second =>
-            {
-                Assert.Equal((byte)2, second.Order);
-                Assert.Equal("Học kỳ II", second.Name);
-            });
+        Assert.Empty(year.Semesters);
     }
 
     [Fact]
@@ -274,7 +263,7 @@ public sealed class AcademicYearServiceTests
     }
 
     [Fact]
-    public async Task ActivateAsync_ReturnsConflict_WhenIncompleteTerms()
+    public async Task ActivateAsync_ActivatesYearWithoutTerms()
     {
         var repository = new FakeAcademicYearRepository();
         var year = new AcademicYear
@@ -288,8 +277,8 @@ public sealed class AcademicYearServiceTests
 
         var result = await service.ActivateAsync(1, CancellationToken.None);
 
-        Assert.False(result.IsSuccess);
-        Assert.Equal("INCOMPLETE_TERMS", result.Error?.Code);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("ACTIVE", result.Value!.Status);
     }
 
     [Fact]
@@ -348,14 +337,15 @@ public sealed class AcademicYearServiceTests
         previous.Activate();
         var next = ConfiguredYear(2, 2026);
         next.Semesters.Clear();
+        next.Status = "CLOSED";
         repository.AddedYears.AddRange([previous, next]);
 
         var result = await new AcademicYearService(repository).ActivateAsync(next.Id, CancellationToken.None);
 
         Assert.False(result.IsSuccess);
-        Assert.Equal("INCOMPLETE_TERMS", result.Error?.Code);
+        Assert.Equal("ACADEMIC_YEAR_CLOSED", result.Error?.Code);
         Assert.Equal("ACTIVE", previous.Status);
-        Assert.Equal("DRAFT", next.Status);
+        Assert.Equal("CLOSED", next.Status);
     }
 
     private static AcademicYear ConfiguredYear(ulong id, int firstYear) => new()

@@ -6,25 +6,26 @@ namespace Application.Tests;
 public sealed class AcademicYearDomainTests
 {
     [Fact]
-    public void Activate_RejectsYearWithoutTwoTerms()
+    public void Activate_DoesNotRequireTwoTerms()
     {
         var year = CreateYear("DRAFT");
         year.Semesters.Add(new Semester { Order = 1, Name = "Học kỳ I" });
-        var error = Assert.Throws<AcademicCalendarDomainException>(year.Activate);
-        Assert.Equal("INCOMPLETE_TERMS", error.Code);
-        Assert.Equal("DRAFT", year.Status);
+        year.Activate();
+        Assert.Equal("ACTIVE", year.Status);
+        Assert.Single(year.Semesters);
     }
 
     [Theory]
     [InlineData("Học kỳ I", "")]
     [InlineData("Học kỳ", " học kỳ ")]
-    public void Activate_RejectsEmptyOrDuplicateTermNames(string first, string second)
+    public void Activate_DoesNotValidateUnrelatedLegacyTermNames(string first, string second)
     {
         var year = CreateYear("DRAFT");
         year.Semesters.Add(new Semester { Order = 1, Name = first });
         year.Semesters.Add(new Semester { Order = 2, Name = second });
-        var error = Assert.Throws<AcademicCalendarDomainException>(year.Activate);
-        Assert.Equal("INCOMPLETE_TERMS", error.Code);
+        year.Activate();
+        Assert.Equal("ACTIVE", year.Status);
+        Assert.Equal(2, year.Semesters.Count);
     }
 
     [Fact]

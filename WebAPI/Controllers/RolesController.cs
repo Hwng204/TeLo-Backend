@@ -5,8 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 namespace WebAPI.Controllers;
 
 [Route("api/roles")]
-public sealed class RolesController(IRoleService service) : IdentityControllerBase
+public sealed class RolesController(IRoleService service, Application.Services.Implement.RequiredRolesService requiredRoles) : IdentityControllerBase
 {
+    [HttpGet("required")]
+    public async Task<IActionResult> Required(CancellationToken ct) => Ok(Application.Common.ApiResponse<Application.Services.Implement.RequiredRoleStatus[]>.Ok(
+        await requiredRoles.GetAsync(ct)));
+    [HttpPost("required/restore")]
+    public Task<IActionResult> RestoreRequired(CancellationToken ct) => Respond(() => requiredRoles.RestoreAsync(ActorId, ct));
     [HttpGet]
     public Task<IActionResult> List([FromQuery] IdentityListQuery query, CancellationToken ct) => Respond(() => service.ListAsync(query, ct));
     [HttpGet("{id:long}")]

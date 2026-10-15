@@ -11,7 +11,9 @@ public sealed class QuestionImportService(QuestionService service)
 {
     private static string Level(string code) => MatrixLevels.GetValueOrDefault(code, code);
     private static readonly Dictionary<string, string> MatrixLevels = new() { ["NHAN_BIET"] = "Nhận biết", ["THONG_HIEU"] = "Thông hiểu", ["VAN_DUNG"] = "Vận dụng" };
-    private static string Lesson(QuestionTarget target) => $"{target.GradeName} · {target.ChapterCode}/{target.LessonCode} · {target.LessonTitle}";
+    private static string Lesson(QuestionTarget target) => !string.IsNullOrEmpty(target.ChapterCode) && !string.IsNullOrEmpty(target.LessonCode)
+        ? $"{target.GradeName} · {target.ChapterCode}/{target.LessonCode} · {target.LessonTitle}"
+        : $"{target.GradeName} · {target.ChapterTitle} · {target.LessonTitle}";
     private async Task<QuestionPackage> PackageAsync(QuestionActor actor, ulong id, CancellationToken ct)
     {
         var package = await service.GetAsync(actor, id, ct);
@@ -45,8 +47,9 @@ public sealed class QuestionImportService(QuestionService service)
         if (rows.Length == 0) errors.Add(new(2, "Nội dung", "Tệp chưa có câu hỏi."));
         foreach (var row in rows)
         {
-            var target = row.TargetId != 0 ? package.Targets.SingleOrDefault(t => t.DetailId == row.TargetId) :
-                package.Targets.FirstOrDefault(t => Lesson(t) == row.Lesson && Level(t.CognitiveLevel) == row.Level);
+            var matches = row.TargetId != 0 ? package.Targets.Where(t => t.DetailId == row.TargetId).ToArray() :
+                package.Targets.Where(t => Lesson(t) == row.Lesson && Level(t.CognitiveLevel) == row.Level).ToArray();
+            var target = matches.Length == 1 ? matches[0] : null;
             if (target is null || !row.PrefilledContext && (Lesson(target) != row.Lesson || Level(target.CognitiveLevel) != row.Level))
             { errors.Add(new(row.Row, "Bài học/Mức nhận thức", "Không khớp nhiệm vụ. Giữ bài học và mức theo tệp mẫu.")); continue; }
             var question = new SaveQuestionRequest(version, target.DetailId, row.Content, row.Options, row.Answer, row.Explanation);

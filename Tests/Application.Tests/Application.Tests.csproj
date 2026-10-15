@@ -33,6 +33,5 @@
 
   <!-- DB v2: preserve Question module source until its persistence is adapted. -->
   <ItemGroup>
-    <Compile Remove="QuestionImportTests.cs" />
   </ItemGroup>
 </Project>

@@ -22,6 +22,7 @@ public static class TaskErrorCodes
     public const string NotFound = "TASK_NOT_FOUND";
     public const string Started = "TASK_STARTED";
     public const string Completed = "TASK_COMPLETED";
+    public const string ExamFlowChanged = "EXAM_TASK_FLOW_CHANGED";
 }
 
 public sealed class TaskService(
@@ -54,7 +55,7 @@ public sealed class TaskService(
         if (!actor.IsPrincipal && await BranchOfAsync(actor.UserId, cancellationToken) is null)
             return BranchRequired<DirectoryPage<TaskListItem>>();
 
-        var tasks = Involving(actor.UserId);
+        var tasks = Involving(actor.UserId).Where(task => task.TaskType != ExamPackageStorage.InternalTaskType);
         if (!string.IsNullOrEmpty(query.TaskType)) tasks = tasks.Where(task => task.TaskType == query.TaskType);
         if (query.Status == TaskRules.Overdue) tasks = tasks.Where(OverdueBefore(Today.ToDateTime(TimeOnly.MinValue)));
         else if (!string.IsNullOrEmpty(query.Status)) tasks = tasks.Where(task => task.Status == query.Status);
@@ -75,6 +76,8 @@ public sealed class TaskService(
         var ids = rows.Select(task => task.Id).ToArray();
         var notStarted = await db.WorkTasks.Where(task => ids.Contains(task.Id)).WhereNotStarted(db)
             .Select(task => task.Id).ToListAsync(cancellationToken);
+        var reviewTaskIds = await db.ExamSets.Where(set => ids.Contains(set.TaskId ?? 0) && set.ApprovedByUserId != null)
+            .Select(set => set.TaskId!.Value).Distinct().ToArrayAsync(cancellationToken);
         var people = await peopleResolver.ResolveAsync(
             rows.SelectMany(task => new ulong?[] { task.AssignedToUserId, task.CreatedByUserId }), cancellationToken);
         var today = Today;
@@ -88,7 +91,7 @@ public sealed class TaskService(
             task.DueAt,
             Person(people, task.AssignedToUserId, task),
             Person(people, task.CreatedByUserId, task),
-            CanEdit(actor, task),
+            CanEdit(actor, task) && !reviewTaskIds.Contains(task.Id),
             CanDelete(actor, task) && notStarted.Contains(task.Id))).ToArray();
         return ServiceResult<DirectoryPage<TaskListItem>>.Success(
             new DirectoryPage<TaskListItem>(items, query.Page, query.PageSize, totalCount));
@@ -100,7 +103,7 @@ public sealed class TaskService(
             return BranchRequired<TaskDetail>();
 
         var task = await db.WorkTasks.AsNoTracking().SingleOrDefaultAsync(item => item.Id == taskId, cancellationToken);
-        if (task is null) return NotFound<TaskDetail>();
+        if (task is null || task.TaskType == ExamPackageStorage.InternalTaskType) return NotFound<TaskDetail>();
         if (task.CreatedByUserId != actor.UserId && task.AssignedToUserId != actor.UserId)
             return Forbidden<TaskDetail>("Bạn không phụ trách nhiệm vụ này nên không xem được.");
 
@@ -158,36 +161,15 @@ public sealed class TaskService(
             return null;
         }, cancellationToken);
 
-    public async Task<ServiceResult<TaskDetail>> CreateExamAsync(
+    // Keep the route contract for older clients, but never create blank papers.
+    // PHT generates a complete package first, then assigns its review task.
+    public Task<ServiceResult<TaskDetail>> CreateExamAsync(
         TaskActor actor,
         SaveExamTaskRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (!actor.IsPht) return Forbidden<TaskDetail>("Chỉ Phó Hiệu trưởng được giao nhiệm vụ tạo đề thi.");
-        if (await BranchOfAsync(actor.UserId, cancellationToken) is not { } branchId) return BranchRequired<TaskDetail>();
-
-        await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
-        var errors = TaskRules.ExamTask(request, null, Today);
-        await CheckExamAsync(branchId, request, null, null, errors, cancellationToken);
-        if (errors.Count > 0) return Invalid<TaskDetail>(errors);
-
-        var task = new WorkTask
-        {
-            TaskType = TaskTypeCodes.Exam,
-            Status = MatrixTaskStatusCodes.Assigned,
-            Name = request.Name!.Trim(),
-            CreatedByUserId = actor.UserId,
-            AssignedToUserId = request.AssignedToUserId,
-            DueAt = request.DueAt,
-            CreatedAt = DateTime.UtcNow
-        };
-        db.WorkTasks.Add(task);
-        AddPapers(task, request);
-        await db.SaveChangesAsync(cancellationToken);
-        var detail = await DetailAsync(actor, task, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return ServiceResult<TaskDetail>.Success(detail);
-    }
+        CancellationToken cancellationToken) => Task.FromResult(actor.IsPht
+            ? ServiceResult<TaskDetail>.Failure(TaskErrorCodes.ExamFlowChanged,
+                "PHT cần tạo đề tự động từ ma trận tại Kho đề, sau đó giao giáo viên hoặc tổ trưởng review đề đã tạo.")
+            : Forbidden<TaskDetail>("Chỉ PHT được tạo đề tự động và giao review."));
 
     public Task<ServiceResult<TaskDetail>> UpdateExamAsync(
         TaskActor actor,
@@ -197,7 +179,8 @@ public sealed class TaskService(
         UpdateAsync(actor, taskId, TaskTypeCodes.Exam, async (task, branchId) =>
         {
             // Mỗi đề cần tạo là một exam_set Nháp của nhiệm vụ; ma trận nguồn nằm trên các đề đó.
-            var current = await db.ExamSets.Where(set => set.TaskId == task.Id).ToListAsync(cancellationToken);
+            var linked = await LinkedPapersAsync(task.Id, cancellationToken);
+            var current = await db.ExamSets.Where(set => set.TaskId == task.Id || linked.Contains(set.Id)).ToListAsync(cancellationToken);
             var matrixId = current.Select(set => set.ExamMatrixId).FirstOrDefault();
             var errors = TaskRules.ExamTask(request, task, Today);
             await CheckExamAsync(branchId, request, task, matrixId, errors, cancellationToken);
@@ -325,6 +308,8 @@ public sealed class TaskService(
         if (task.Status == MatrixTaskStatusCodes.Completed)
             return ServiceResult<TaskDetail>.Failure(TaskErrorCodes.Completed, "Nhiệm vụ đã hoàn thành, không thể chỉnh sửa.");
 
+        if (taskType == TaskTypeCodes.Exam && await IsReviewTaskAsync(task.Id, cancellationToken))
+            return ServiceResult<TaskDetail>.Failure(TaskErrorCodes.Started, "Hãy cập nhật người review và hạn tại chi tiết bộ đề.");
         if (await apply(task, branchId) is { } failure) return failure;
 
         task.UpdatedAt = DateTime.UtcNow;
@@ -349,7 +334,7 @@ public sealed class TaskService(
             task.Status,
             TaskRules.IsOverdue(task.Status, task.DueAt, Today),
             started,
-            CanEdit(actor, task),
+            CanEdit(actor, task) && !await IsReviewTaskAsync(task.Id, cancellationToken),
             CanDelete(actor, task) && !started,
             people.GetValueOrDefault(task.CreatedByUserId),
             // Lưu theo giờ UTC: đánh dấu để client đổi đúng sang giờ địa phương.
@@ -366,8 +351,9 @@ public sealed class TaskService(
     // Phạm vi của nhiệm vụ ma trận là ma trận của nó; của nhiệm vụ đề là ma trận nguồn của các đề. Không còn năm học, học kỳ.
     private async Task<TaskScope?> ScopeAsync(ulong taskId, CancellationToken cancellationToken)
     {
+        var linked = await LinkedPapersAsync(taskId, cancellationToken);
         var matrix = await db.ExamMatrices.AsNoTracking()
-            .Where(item => item.TaskId == taskId || db.ExamSets.Any(set => set.TaskId == taskId && set.ExamMatrixId == item.Id))
+            .Where(item => item.TaskId == taskId || db.ExamSets.Any(set => (set.TaskId == taskId || linked.Contains(set.Id)) && set.ExamMatrixId == item.Id))
             .Select(item => new { item.BranchId, item.SubjectId, item.GradeLevelId, Subject = item.Subject.Name, Grade = item.GradeLevel.Name })
             .FirstOrDefaultAsync(cancellationToken);
         return matrix is null
@@ -408,26 +394,36 @@ public sealed class TaskService(
             rejection is null ? null : DateTime.SpecifyKind(rejection.CreateAt, DateTimeKind.Utc));
     }
 
+    private Task<bool> IsReviewTaskAsync(ulong taskId, CancellationToken ct) =>
+        db.ExamSets.AnyAsync(set => set.TaskId == taskId && set.ApprovedByUserId != null, ct);
+
+    private async Task<ulong[]> LinkedPapersAsync(ulong taskId, CancellationToken ct)
+    {
+        var entries = await new TaskJournal(db, time).ReadAsync(taskId, "paper-links", ct);
+        return entries.LastOrDefault()?.Read<ulong[]>() ?? [];
+    }
+
     private async Task<TaskExamInfo?> ExamOfAsync(WorkTask task, CancellationToken cancellationToken)
     {
-        var papers = await db.ExamSets.AsNoTracking()
-            .Where(set => set.TaskId == task.Id)
-            .OrderBy(set => set.Id)
-            .Select(set => new { set.Name, set.ExamMatrixId })
-            .ToListAsync(cancellationToken);
-        if (papers.FirstOrDefault()?.ExamMatrixId is not { } matrixId) return null;
-
-        var matrix = await db.ExamMatrices.AsNoTracking()
-            .Where(item => item.Id == matrixId)
-            .Select(item => new
-            {
-                item.Name,
-                Subject = item.Subject.Name,
-                Grade = item.GradeLevel.Name
-            })
-            .SingleAsync(cancellationToken);
-        return new TaskExamInfo(matrixId, matrix.Name, matrix.Subject, matrix.Grade, "",
-            papers.Select(paper => new TaskPaperItem(paper.Name)).ToList());
+        var linked = await LinkedPapersAsync(task.Id, cancellationToken);
+        var papers = await db.ExamSets.AsNoTracking().Where(set => set.TaskId == task.Id || linked.Contains(set.Id)).OrderBy(set => set.Id).ToArrayAsync(cancellationToken);
+        if (papers.FirstOrDefault() is not { } first) return null;
+        var storage = new ExamPackageStorage(db, new TaskJournal(db, time), time);
+        var matrix = await storage.MatrixAsync(first.ExamMatrixId, cancellationToken);
+        var items = new List<TaskPaperItem>();
+        ulong? reviewPackage = null;
+        var year = "";
+        foreach (var paper in papers)
+        {
+            var (state, version) = await storage.ReadAsync(paper, cancellationToken);
+            if (state.AuthoringTaskId != task.Id && paper.TaskId != task.Id) continue;
+            var created = !state.Deleted && (state.Rows.Count > 0 || version > 0);
+            items.Add(new(paper.Name, paper.Id, created ? paper.Id : null, state.Rows.Count,
+                created ? paper.Status : "NOT_CREATED", state.History.LastOrDefault()?.At));
+            if (state.ReviewAssigned && paper.TaskId == task.Id) reviewPackage = paper.Id;
+            year = state.AcademicYearName;
+        }
+        return new TaskExamInfo(matrix.Id, matrix.Name, matrix.Subject.Name, matrix.GradeLevel.Name, year, items, reviewPackage);
     }
 
     private Task<List<TaskLessonItem>> LessonsOfAsync(ulong taskId, CancellationToken cancellationToken) =>

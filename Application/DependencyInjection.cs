@@ -27,6 +27,15 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IEmailNotificationService, LockedEmailNotificationService>();
 
+        services.AddScoped<TaskJournal>();
+        services.AddScoped<QuestionAccess>();
+        services.AddScoped<RequiredRolesService>();
+        services.AddScoped<ExamPackageStorage>();
+        services.AddScoped<QuestionService>();
+        services.AddScoped<QuestionBankService>();
+        services.AddScoped<QuestionImportService>();
+        services.AddScoped<QuestionPaperService>();
+        services.AddScoped<ExamPackageService>();
         return services;
     }
 }

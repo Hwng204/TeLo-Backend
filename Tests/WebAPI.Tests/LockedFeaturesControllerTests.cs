@@ -24,15 +24,6 @@ public sealed class LockedFeaturesControllerTests
         { "GET", "/api/provinces" },
         { "POST", "/api/student-imports/preview" },
         { "DELETE", "/api/admin/schools/1/student-imports/3" },
-        { "GET", "/api/question-banks/questions" },
-        { "POST", "/api/question-banks/questions/2/move-to-practice" },
-        { "GET", "/api/tasks/5/question-package" },
-        { "POST", "/api/tasks/5/question-package/submit" },
-        { "POST", "/api/tasks/5/questions" },
-        { "PUT", "/api/tasks/5/questions/2" },
-        { "DELETE", "/api/tasks/5/questions/2" },
-        { "POST", "/api/tasks/5/questions/import/preview" },
-        { "GET", "/api/tasks/5/papers/2/questions" }
     };
 
     [Theory]

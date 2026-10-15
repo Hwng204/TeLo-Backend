@@ -23,6 +23,6 @@
 
   <!-- DB v2: preserve Question module source until its persistence is adapted. -->
   <ItemGroup>
-    <Compile Remove="Services\Implementations\QuestionService.cs;Services\Implementations\QuestionBankService.cs;Services\Implementations\QuestionImportService.cs;Services\Implementations\QuestionPaperService.cs" />
+    <Compile Remove="Services\Implementations\QuestionPaperService.cs" />
   </ItemGroup>
 </Project>

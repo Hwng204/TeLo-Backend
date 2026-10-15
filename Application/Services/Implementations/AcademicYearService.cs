@@ -34,16 +34,13 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
         var academicYear = new AcademicYear
         {
             Name = request.Name.Trim(),
-            Status = "DRAFT",
-            Semesters =
-            [
-                new Semester { Order = 1, Name = "Học kỳ I" },
-                new Semester { Order = 2, Name = "Học kỳ II" }
-            ]
+            Status = "DRAFT"
         };
+        // Retain the legacy terms API for existing consumers, but never create
+        // terms implicitly when the year-only UI creates an academic year.
         if (request.Terms is not null)
             foreach (var term in request.Terms)
-                academicYear.ConfigureTerm(term.Order, term.Name.Trim());
+                academicYear.Semesters.Add(new Semester { Order = term.Order, Name = term.Name.Trim() });
 
         var createOutcome = await uow.AcademicYears.TryAddAsync(academicYear, cancellationToken);
 
@@ -109,6 +106,9 @@ public sealed class AcademicYearService(IUnitOfWork uow) : IAcademicYearService
                 "ACADEMIC_YEAR_NOT_FOUND",
                 "Không tìm thấy năm học.");
         }
+
+        if (request.Version is { } expected && expected != year.ToDetailDto().Version)
+            return WriteConflict<AcademicYearDetailDto>();
 
         try
         {

@@ -1,7 +1,7 @@
 namespace Application.DTOs;
 
-// Legacy request fields (startDate, endDate, version, terms[].startDate/endDate) are no longer stored;
-// System.Text.Json ignores them when clients still send them.
+// Legacy dates are no longer stored; System.Text.Json ignores them if sent.
+// Response/update Version is a computed state token, not a mapped DB column.
 public sealed record CreateAcademicYearRequest(
     string Name,
     IReadOnlyList<ConfigureTermItem>? Terms = null);
@@ -11,7 +11,10 @@ public sealed record AcademicYearListItem(
     string Code,
     string Name,
     string Status,
-    int SemesterCount);
+    int SemesterCount)
+{
+    public uint Version => Application.Common.RevisionToken.For(Id, Name, Status);
+}
 
 public sealed record AcademicYearPage(
     IReadOnlyList<AcademicYearListItem> Items,
@@ -38,11 +41,15 @@ public sealed record AcademicYearDetailDto(
     string Code,
     string Name,
     string Status,
-    IReadOnlyList<SemesterDto> Semesters);
+    IReadOnlyList<SemesterDto> Semesters)
+{
+    public uint Version => Application.Common.RevisionToken.For(Id, Name, Status);
+}
 
 public sealed record UpdateAcademicYearRequest(
     string Name,
-    IReadOnlyList<ConfigureTermItem>? Terms = null);
+    IReadOnlyList<ConfigureTermItem>? Terms = null,
+    uint? Version = null);
 
 public sealed record ConfigureTermItem(
     byte Order,

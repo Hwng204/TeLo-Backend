@@ -43,6 +43,15 @@ public sealed class RoleManagementTests
     [InlineData("ADMIN")]
     [InlineData("OperationalAdmin")]
     [InlineData("TEACHER")]
+    [InlineData("GIAO_VIEN")]
+    [InlineData("STUDENT")]
+    [InlineData("HOC_SINH")]
+    [InlineData("HIEU_TRUONG")]
+    [InlineData("PRINCIPAL")]
+    [InlineData("TO_TRUONG")]
+    [InlineData("TEAM_LEAD")]
+    [InlineData("PHO_HIEU_TRUONG")]
+    [InlineData("VICE_PRINCIPAL")]
     [InlineData("pht")]
     public void SystemRoleIsDerivedFromCodeAndCannotBeDeleted(string code)
     {

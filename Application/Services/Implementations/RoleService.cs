@@ -13,7 +13,7 @@ using static Application.Common.IdentityManagementRules;
 
 namespace Application.Services.Implement;
 
-// Roles are global (no school/branch scope) and have no version column; `version` arguments are ignored.
+// Global roles; response revision tokens are compared under native row locks.
 public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog roleCatalog) : IRoleService
 {
     private Expression<Func<Role, RoleItem>> RoleProjection => IdentityProjections.Role(SystemRoleCodes(roleCatalog));
@@ -44,8 +44,10 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         if (errors.Count > 0) return Invalid<RoleItem>(errors);
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
-        var role = id.HasValue ? await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct) : new Role();
+        var role = id.HasValue ? (await db.Roles.FromSqlInterpolated($"SELECT * FROM role WHERE role_id = {id.Value} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault() : new Role();
         if (role == null) return Missing<RoleItem>();
+        if (id.HasValue && request.Version is { } expected && expected != (await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct)).Version)
+            return Conflict<RoleItem>();
         if (id.HasValue && !string.Equals(role.Code, request.Code.Trim(), StringComparison.OrdinalIgnoreCase))
             return Invalid<RoleItem>(new Dictionary<string, string[]> { ["code"] = ["Không được thay đổi mã vai trò."] });
         if (!id.HasValue && IsAdministrator(request.Code.Trim())) return Conflict<RoleItem>("Không được tạo thêm mã quản trị hệ thống.");
@@ -66,8 +68,9 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
         if (request.Status is not ("ACTIVE" or "INACTIVE")) return Invalid<RoleItem>(new Dictionary<string, string[]> { ["status"] = ["Trạng thái không hợp lệ."] });
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
-        var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
+        var role = (await db.Roles.FromSqlInterpolated($"SELECT * FROM role WHERE role_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (role == null) return Missing<RoleItem>();
+        if (request.Version != 0 && request.Version != (await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct)).Version) return Conflict<RoleItem>();
         if (IsAdministrator(role.Code) && request.Status != "ACTIVE") return Conflict<RoleItem>("Không ngừng áp dụng vai trò quản trị hệ thống.");
         if (role.Status != request.Status)
         {
@@ -86,8 +89,9 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<bool>();
-        var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
+        var role = (await db.Roles.FromSqlInterpolated($"SELECT * FROM role WHERE role_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (role == null) return Missing<bool>();
+        if (version != 0 && version != (await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct)).Version) return Conflict<bool>();
         var item = await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct);
         if (!item.CanDelete) return Conflict<bool>(item.DeleteBlockedReason);
         Audit(actor, "ROLE", id, "DELETE", Snapshot(role));
@@ -139,8 +143,9 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
             return Invalid<RoleItem>(new Dictionary<string, string[]> { ["userIds"] = ["Chọn 1–100 người dùng khác nhau."] });
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
-        var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
+        var role = (await db.Roles.FromSqlInterpolated($"SELECT * FROM role WHERE role_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (role == null) return Missing<RoleItem>();
+        if (request.Version is { } expected && expected != (await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct)).Version) return Conflict<RoleItem>();
         var users = await db.Users.Include(u => u.UserRoles).Where(u => request.UserIds.Contains(u.Id)).ToArrayAsync(ct);
         if (users.Length != request.UserIds.Length || users.Any(u => !CanAssign(role, u))) return Conflict<RoleItem>("Người dùng/vai trò không hoạt động.");
         if (users.Any(u => !u.UserRoles.Any(ur => ur.RoleId == id) && u.UserRoles.Count >= 100)) return Conflict<RoleItem>("Mỗi người dùng được gán tối đa 100 vai trò.");
@@ -158,8 +163,9 @@ public sealed class RoleService(ApplicationDbContext db, IMatrixRoleCatalog role
     {
         await using var transaction = await db.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct);
         if (!await AuthorizeMutationAsync(db, actor, ct)) return Forbidden<RoleItem>();
-        var role = await db.Roles.SingleOrDefaultAsync(r => r.Id == id, ct);
+        var role = (await db.Roles.FromSqlInterpolated($"SELECT * FROM role WHERE role_id = {id} FOR UPDATE").ToArrayAsync(ct)).SingleOrDefault();
         if (role == null) return Missing<RoleItem>();
+        if (version != 0 && version != (await db.Roles.Where(r => r.Id == id).Select(RoleProjection).SingleAsync(ct)).Version) return Conflict<RoleItem>();
         if (userId == actor && IsAdministrator(role.Code)) return Conflict<RoleItem>("Không tự thu hồi vai trò quản trị đang dùng.");
         var assignment = await db.UserRoles.Include(ur => ur.User).SingleOrDefaultAsync(ur => ur.RoleId == id && ur.UserId == userId, ct);
         if (assignment == null) return Missing<RoleItem>();

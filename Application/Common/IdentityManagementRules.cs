@@ -9,7 +9,7 @@ public static class IdentityManagementRules
 {
     // Codes the old migration flagged is_system; roles are global, so the flag is derived from the code.
     private static readonly string[] FixedSystemRoleCodes =
-        ["ADMIN", "OPERATIONALADMIN", "TEACHER", "GIAO_VIEN", "STUDENT", "HIEU_TRUONG", "PRINCIPAL", "PHT", "TEAM_LEAD", "TO_TRUONG"];
+        ["ADMIN", "OPERATIONALADMIN", "TEACHER", "GIAO_VIEN", "STUDENT", "HOC_SINH", "HIEU_TRUONG", "PRINCIPAL", "PHT", "PHO_HIEU_TRUONG", "VICE_PRINCIPAL", "TEAM_LEAD", "TO_TRUONG", "SUBJECT_COORDINATOR"];
 
     public static string[] SystemRoleCodes(IMatrixRoleCatalog catalog) => FixedSystemRoleCodes
         .Concat(catalog.PhtRoleCodes).Concat(catalog.PrincipalRoleCodes).Concat(catalog.TeamLeadRoleCodes)

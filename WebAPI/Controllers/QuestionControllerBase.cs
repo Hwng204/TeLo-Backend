@@ -13,7 +13,7 @@ public abstract class QuestionControllerBase(IMatrixRoleCatalog roles, IConfigur
     {
         var codes = User.FindAll(ClaimTypes.Role).Select(x => x.Value).ToArray();
         return new(ulong.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var id) ? id : 0,
-            codes.Intersect(TaskService.TeacherRoleCodes(configuration)).Any(), codes.Any(roles.IsTeamLead), codes.Any(roles.IsPht), codes.Any(roles.IsPrincipal));
+            codes.Intersect(TaskService.TeacherRoleCodes(configuration), StringComparer.OrdinalIgnoreCase).Any(), codes.Any(roles.IsTeamLead), codes.Any(roles.IsPht), codes.Any(roles.IsPrincipal));
     }
 
     protected async Task<IActionResult> Result<T>(Func<Task<T>> action, string? message = null)

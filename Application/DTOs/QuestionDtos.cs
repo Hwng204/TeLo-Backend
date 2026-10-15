@@ -1,13 +1,14 @@
+using System.Text.Json.Serialization;
 namespace Application.DTOs;
 
 public sealed record QuestionActor(ulong UserId, bool Teacher, bool TeamLead, bool Pht, bool Principal);
-public sealed record SaveQuestionRequest(int Version, ulong DetailId, string? Content, string[]? Options, string? CorrectOption, string? Explanation);
-public sealed record QuestionCommand(int Version);
-public sealed record ReviewQuestionRequest(int Version, string? Comment, IReadOnlyList<QuestionReviewNote>? Notes);
+public sealed record SaveQuestionRequest([property: JsonRequired] int Version, ulong DetailId, string? Content, string[]? Options, string? CorrectOption, string? Explanation);
+public sealed record QuestionCommand([property: JsonRequired] int Version);
+public sealed record ReviewQuestionRequest([property: JsonRequired] int Version, string? Comment, IReadOnlyList<QuestionReviewNote>? Notes);
 public sealed record QuestionReviewNote(ulong QuestionId, string Comment);
 public sealed record QuestionItem(ulong Id, ulong DetailId, string Content, string[] Options, string? CorrectOption, string? Explanation, bool IsComplete);
 public sealed record QuestionTarget(ulong DetailId, ulong LessonId, string GradeName, string ChapterCode, string LessonCode, string LessonTitle,
-    string CognitiveLevel, uint RequiredCount, int Written, int ValidCount);
+    string CognitiveLevel, uint RequiredCount, int Written, int ValidCount, string? ChapterTitle = null);
 public sealed record QuestionSubmission(ulong Id, int Number, DateTime SubmittedAt, string Status, string? Comment, DateTime? ReviewedAt,
     IReadOnlyList<QuestionReviewNote> Notes, IReadOnlyList<QuestionItem> Questions);
 public sealed record QuestionPackage(ulong TaskId, string Name, string Status, int Version, DateTime? DueAt,

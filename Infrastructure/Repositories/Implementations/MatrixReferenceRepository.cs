@@ -79,9 +79,10 @@ public sealed class MatrixReferenceRepository(
             lessons.ToDictionary(lesson => lesson.Id, lesson => $"Bài {lesson.Title} — Chương {lesson.Chapter}"));
     }
 
-    // A scope exists through its chapters, the same rows the reference data lists.
+    // A scope exists through its ACTIVE chapters, the same rows the reference data lists.
     private Task<bool> ScopeExistsAsync(MatrixScope scope, CancellationToken cancellationToken) =>
         db.Chapters.AnyAsync(chapter =>
+                chapter.Status == "ACTIVE" &&
                 chapter.SchoolBranchId == scope.BranchId &&
                 chapter.SubjectId == scope.SubjectId &&
                 chapter.GradeLevelId == scope.GradeLevelId,

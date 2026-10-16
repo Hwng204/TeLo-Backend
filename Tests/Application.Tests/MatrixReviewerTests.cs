@@ -31,11 +31,24 @@ public sealed class MatrixReviewerTests
         Assert.Equal(reject ? MatrixStatusCodes.Draft : MatrixStatusCodes.Approved, matrix.Status);
     }
 
+    // A direct matrix has no reviewer column: only its author approves or confirms it.
     [Fact]
-    public void DirectMatrix_StillAllowsVicePrincipalReview()
+    public void DirectMatrix_OnlyItsAuthorCanApproveOrConfirm()
     {
-        var matrix = new ExamMatrix { Status = MatrixStatusCodes.Submitted, CreatedByUserId = 1 };
-        matrix.Approve(new MatrixActor(2, MatrixActorRole.Pht));
-        Assert.Equal(MatrixStatusCodes.Approved, matrix.Status);
+        var other = new MatrixActor(2, MatrixActorRole.Pht);
+        var author = new MatrixActor(1, MatrixActorRole.Pht);
+        var submitted = new ExamMatrix { Status = MatrixStatusCodes.Submitted, CreatedByUserId = 1 };
+        Assert.Equal("Forbidden", Assert.Throws<MatrixDomainException>(() => submitted.Approve(other)).Code);
+        Assert.Equal(MatrixStatusCodes.Submitted, submitted.Status);
+        submitted.Approve(author);
+        Assert.Equal(MatrixStatusCodes.Approved, submitted.Status);
+
+        var draft = new ExamMatrix { Status = MatrixStatusCodes.Draft, CreatedByUserId = 1 };
+        draft.Details.Add(new MatrixDetail { LessonId = 5, QuestionCount = 2, Percentage = 100 });
+        Assert.Equal("Forbidden", Assert.Throws<MatrixDomainException>(() => draft.ConfirmDirect(other)).Code);
+        Assert.Equal(MatrixStatusCodes.Draft, draft.Status);
+        draft.ConfirmDirect(author);
+        Assert.Equal(MatrixStatusCodes.Approved, draft.Status);
+        Assert.Equal(1UL, draft.ApprovedByUserId);
     }
 }

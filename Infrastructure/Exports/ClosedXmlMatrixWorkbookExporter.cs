@@ -19,14 +19,12 @@ public sealed class ClosedXmlMatrixWorkbookExporter : IMatrixWorkbookExporter
         sheet.Cell("B4").Value = matrix.TaskId?.ToString() ?? string.Empty;
         sheet.Cell("A5").Value = "Ngữ cảnh học thuật";
         sheet.Cell("B5").Value = SafeText(matrix.ContextLabel);
-        sheet.Cell("A6").Value = "Học kỳ";
-        sheet.Cell("B6").Value = SafeText(matrix.SemesterName);
-        sheet.Cell("A7").Value = "Tổng số câu";
-        sheet.Cell("B7").Value = matrix.TotalQuestions;
-        sheet.Cell("A8").Value = "Tổng điểm";
-        sheet.Cell("B8").Value = matrix.TotalScore;
+        sheet.Cell("A6").Value = "Tổng số câu";
+        sheet.Cell("B6").Value = matrix.TotalQuestions;
+        sheet.Cell("A7").Value = "Tổng điểm";
+        sheet.Cell("B7").Value = matrix.TotalScore;
 
-        var headerRow = 10;
+        var headerRow = 9;
         var headers = MatrixImportWorkbook.Headers;
 
         for (var column = 0; column < headers.Length; column++)

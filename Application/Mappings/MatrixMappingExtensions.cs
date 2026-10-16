@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 using Domain.Entities.QuestionBank;
 using Infrastructure.Exports;
@@ -108,8 +109,10 @@ public static class MatrixMappingExtensions
         IReadOnlyDictionary<ulong, MatrixPerson>? people = null,
         TaskHistory? lastHistory = null)
     {
-        var rejection = matrix.Status == MatrixStatusCodes.Draft && matrix.TaskId is not null ? lastHistory : null;
+        // Only a draft sent back (task NEEDS_REVISION) shows it: a draft restarted after deleting the returned one does not.
+        var rejection = matrix is { Status: MatrixStatusCodes.Draft, Task.Status: MatrixTaskStatusCodes.NeedsRevision } ? lastHistory : null;
 
+        // Lesson/chapter names come from the loaded rows, so archived (INACTIVE) ones still show; null when not loaded.
         var details = matrix.Details
             .Select(detail => new MatrixDetailResponse(
                 detail.Id,
@@ -118,7 +121,12 @@ public static class MatrixMappingExtensions
                 detail.QuestionType,
                 detail.QuestionCount,
                 detail.Percentage,
-                matrix.TotalScore * detail.Percentage / 100m))
+                matrix.TotalScore * detail.Percentage / 100m,
+                detail.Lesson?.Title,
+                detail.Lesson?.Number,
+                detail.Lesson?.ChapterId,
+                detail.Lesson?.Chapter?.Title,
+                detail.Lesson?.Chapter?.Number))
             .ToArray();
 
         return new MatrixResponse(
@@ -163,12 +171,13 @@ public static class MatrixMappingExtensions
             // UI never shows a button the domain would reject with InvalidTotalScore.
             if (matrix.Details.Count > 0 && matrix.HasRequiredTotalPercentage)
             {
-                if (actor.Role == MatrixActorRole.Pht && matrix.TaskId is null)
+                // A direct matrix is confirmed by its author only; a task matrix is submitted to its reviewer.
+                if (matrix.TaskId is null && matrix.CanReview(actor))
                 {
                     actions.Add("Confirm");
                 }
 
-                if (actor.Role == MatrixActorRole.Pht || matrix.TaskId is not null)
+                if (matrix.TaskId is not null)
                 {
                     actions.Add("Submit");
                 }

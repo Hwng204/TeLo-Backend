@@ -38,6 +38,9 @@ public sealed class ExamMatrix
     // or edited in review.
     public const decimal RequiredTotalPercentage = 100m;
 
+    // matrix.name is varchar(255).
+    public const int MaxNameLength = 255;
+
     public bool CanEdit(MatrixActor actor)
     {
         return Status switch
@@ -151,8 +154,9 @@ public sealed class ExamMatrix
         Status = MatrixStatusCodes.Submitted;
     }
 
+    // Task matrix: the PHT who assigned the task; direct matrix: only its author (no reviewer column).
     public bool CanReview(MatrixActor actor) => actor.Role == MatrixActorRole.Pht &&
-        (TaskId is null || Task is { } task && task.CreatedByUserId == actor.UserId);
+        (TaskId is null ? CreatedByUserId == actor.UserId : Task is { } task && task.CreatedByUserId == actor.UserId);
 
     // The PHT sends a submitted matrix back to the Team Lead (Draft); the comment goes to task_history.
     public void Reject(MatrixActor actor)
@@ -205,6 +209,13 @@ public sealed class ExamMatrix
                 "Chỉ xác nhận trực tiếp được ma trận không thuộc nhiệm vụ nào.");
         }
 
+        if (!CanReview(actor))
+        {
+            throw new MatrixDomainException(
+                "Forbidden",
+                "Chỉ người lập ma trận mới được xác nhận ma trận này.");
+        }
+
         Submit(actor);
         Approve(actor);
     }
@@ -240,10 +251,15 @@ public sealed class ExamMatrix
             throw InvalidTransition("Chỉ sao chép được ma trận đã duyệt hoặc đã lưu trữ.");
         }
 
+        // The copy is told apart from its original by a suffix; a long name is cut so both fit the column.
+        const string copySuffix = " (bản sao)";
+        var keep = Math.Min(Name.Length, MaxNameLength - copySuffix.Length);
+        if (keep > 0 && char.IsHighSurrogate(Name[keep - 1])) keep--;
+
         var clone = new ExamMatrix
         {
             Id = 0,
-            Name = Name,
+            Name = Name[..keep].TrimEnd() + copySuffix,
             Status = MatrixStatusCodes.Draft,
             TaskId = null,
             BranchId = BranchId,

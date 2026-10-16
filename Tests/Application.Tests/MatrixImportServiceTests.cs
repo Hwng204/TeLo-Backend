@@ -108,8 +108,7 @@ public sealed class MatrixImportServiceTests
             Actor = actor;
             Reads++;
             if (Forbidden) throw new MatrixDomainException("Forbidden", "Ngoài chi nhánh");
-            return Task.FromResult(new MatrixReferenceModel([new(ScopeKey, "Toán 5", 30, 100, 40, 50)],
-                [new(20, 30, "HK I", null, null)], Lessons, []));
+            return Task.FromResult(new MatrixReferenceModel([new(ScopeKey, "Toán 5", 100, 40, 50)], Lessons, []));
         }
         public Task EnsureValidAsync(MatrixScope scope, IReadOnlyCollection<ulong> lessons, CancellationToken ct, ulong? branch = null) => throw new NotSupportedException();
         public Task<MatrixExportInfo> GetExportInfoAsync(MatrixScope scope, IReadOnlyCollection<ulong> lessons, CancellationToken ct) => throw new NotSupportedException();

@@ -9,19 +9,7 @@ public interface IMatrixTaskApplicationService
         CreateMatrixTaskRequest request,
         CancellationToken cancellationToken);
 
-    Task<MatrixTaskPage> ListAsync(
-        MatrixTaskQuery query,
-        CancellationToken cancellationToken);
-
-    Task<MatrixTaskPage> ListMineAsync(
-        MatrixTaskQuery query,
-        CancellationToken cancellationToken);
-
     Task<MatrixTaskResponse> GetAsync(
-        ulong taskId,
-        CancellationToken cancellationToken);
-
-    Task DeleteAsync(
         ulong taskId,
         CancellationToken cancellationToken);
 

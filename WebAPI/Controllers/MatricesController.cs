@@ -18,9 +18,7 @@ public sealed class MatricesController(
         [FromQuery] int pageSize = 20,
         [FromQuery] string? keyword = null,
         [FromQuery] ulong? academicContextId = null,
-        [FromQuery] ulong? semesterId = null,
         [FromQuery] string? status = null,
-        [FromQuery] ulong? academicYearId = null,
         [FromQuery] ulong? subjectId = null,
         [FromQuery] ulong? gradeLevelId = null,
         CancellationToken cancellationToken = default)
@@ -31,9 +29,7 @@ public sealed class MatricesController(
                 pageSize,
                 keyword,
                 academicContextId,
-                semesterId,
                 status,
-                AcademicYearId: academicYearId,
                 SubjectId: subjectId,
                 GradeLevelId: gradeLevelId),
             cancellationToken);

@@ -118,6 +118,9 @@ public sealed class MatrixApplicationService(
             matrix.TotalScore = request.TotalScore;
             ReplaceDetails(matrix, request.Details, actor);
             await uow.CompleteAsync(ct);
+            // A matrix has no updated_at (DB v2): its task's "Cập nhật" date shows the save.
+            if (matrix.Task is { } owner)
+                await uow.Matrices.SetTaskStatusAsync(owner.Id, owner.Status, ct);
             return await ToResponseAsync(matrix, actor, ct);
         }, cancellationToken);
     }
@@ -166,9 +169,21 @@ public sealed class MatrixApplicationService(
     {
         return TransitionAsync(
             matrixId,
-            (matrix, actor) => matrix.Submit(actor),
+            (matrix, actor) =>
+            {
+                // A direct matrix has no reviewer to send to: its author confirms it (ConfirmDirect).
+                if (matrix.TaskId is null)
+                {
+                    throw new MatrixDomainException(
+                        "InvalidTransition",
+                        "Chỉ nộp được ma trận của nhiệm vụ; ma trận tự tạo được người lập xác nhận trực tiếp.");
+                }
+
+                matrix.Submit(actor);
+            },
             MatrixTaskStatusCodes.PendingReview,
-            cancellationToken);
+            cancellationToken,
+            recheckLessons: true);
     }
 
     public Task<MatrixResponse> RejectAsync(
@@ -200,7 +215,8 @@ public sealed class MatrixApplicationService(
             matrixId,
             (matrix, actor) => matrix.Approve(actor),
             MatrixTaskStatusCodes.Completed,
-            cancellationToken);
+            cancellationToken,
+            recheckLessons: true);
     }
 
     public Task<MatrixResponse> ConfirmDirectAsync(
@@ -211,7 +227,8 @@ public sealed class MatrixApplicationService(
             matrixId,
             (matrix, actor) => matrix.ConfirmDirect(actor),
             null,
-            cancellationToken);
+            cancellationToken,
+            recheckLessons: true);
     }
 
     public Task<MatrixResponse> ArchiveAsync(
@@ -246,7 +263,8 @@ public sealed class MatrixApplicationService(
         Action<ExamMatrix, MatrixActor> transition,
         string? taskStatusAfter,
         CancellationToken cancellationToken,
-        string? historyContent = null)
+        string? historyContent = null,
+        bool recheckLessons = false)
     {
         var actor = currentUser.Actor;
 
@@ -261,6 +279,16 @@ public sealed class MatrixApplicationService(
             catch (MatrixDomainException exception)
             {
                 throw new MatrixApplicationException(exception.Code, exception.Message);
+            }
+
+            // A lesson or chapter archived since the last save would never get questions, so it blocks the step.
+            if (recheckLessons)
+            {
+                await uow.MatrixReferences.EnsureValidAsync(
+                    matrix.Scope,
+                    matrix.Details.Select(detail => detail.LessonId).ToArray(),
+                    ct,
+                    BranchScope(actor));
             }
 
             if (!await uow.Matrices.TryUpdateStatusAsync(matrix, expectedStatus, ct))
@@ -334,7 +362,7 @@ public sealed class MatrixApplicationService(
         CancellationToken cancellationToken)
     {
         var people = await peopleResolver.ResolveAsync(matrix.PeopleIds(), cancellationToken);
-        var lastHistory = matrix is { Status: MatrixStatusCodes.Draft, TaskId: { } taskId }
+        var lastHistory = matrix is { Status: MatrixStatusCodes.Draft, TaskId: { } taskId, Task.Status: MatrixTaskStatusCodes.NeedsRevision }
             ? await uow.Matrices.GetLatestTaskHistoryAsync(taskId, cancellationToken)
             : null;
         return matrix.ToResponse(actor, people, lastHistory);
@@ -403,6 +431,14 @@ public sealed class MatrixApplicationService(
 
             ReplaceDetails(directMatrix, request.Details, actor);
             return directMatrix;
+        }
+
+        // Only the assigned Team Lead drafts a task's matrix; the PHT who assigned it reviews it.
+        if (actor.Role != MatrixActorRole.TeamLead)
+        {
+            throw new MatrixApplicationException(
+                "Forbidden",
+                "Chỉ Tổ trưởng được giao mới được lập ma trận của nhiệm vụ.");
         }
 
         await uow.MatrixTasks.LockAsync(request.TaskId.Value, cancellationToken);
@@ -564,7 +600,7 @@ public sealed class MatrixApplicationService(
                 $"Tổng điểm ma trận phải là số nguyên dương, tối đa {MaxTotalScore}.");
         }
 
-        if (request.Name.Trim().Length > 255 ||
+        if (request.Name.Trim().Length > ExamMatrix.MaxNameLength ||
             request.Details.Any(detail =>
                 detail is null ||
                 detail.CognitiveLevel?.Trim().Length > 50 ||
@@ -574,6 +610,14 @@ public sealed class MatrixApplicationService(
             throw new MatrixApplicationException(
                 "InvalidRequest",
                 "Tên ma trận (tối đa 255 ký tự), mức nhận thức (tối đa 50 ký tự) hoặc tỷ lệ điểm (phải trong khoảng (0, 100]) vượt quá giới hạn cho phép.");
+        }
+
+        // matrix_detail.allocated_score is decimal(5,2): a third decimal would be rounded away after the 100% check.
+        if (request.Details.Any(detail => decimal.Round(detail.Percentage, 2) != detail.Percentage))
+        {
+            throw new MatrixApplicationException(
+                "InvalidRequest",
+                "Tỷ lệ điểm của mỗi dòng chỉ được có tối đa 2 chữ số thập phân.");
         }
 
         if (request.Details.Sum(detail => (long)detail.QuestionCount) > uint.MaxValue)

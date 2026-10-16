@@ -106,7 +106,7 @@ public sealed class TasksIntegrationTests
     }
 
     [IdentityMySqlFact]
-    public async Task ExamTask_VicePrincipalAssignsAnApprovedMatrixOfTheBranchWithAPaperCount()
+    public async Task ExamTask_BlankPapersAreNoLongerAssigned_ButAnExistingExamTaskIsStillEditable()
     {
         await using var f = await TaskFixture.CreateAsync();
         using var pht = await f.LoginAsync("pht");
@@ -124,21 +124,25 @@ public sealed class TasksIntegrationTests
             (Id(option), Text(option, "name"), Text(option, "subjectName"), Text(option, "gradeLevelName"), Text(option, "academicYearName")));
         Assert.Empty(options.GetProperty("teachers").EnumerateArray());
 
-        Assert.Equal("examMatrixId", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.DraftA.Id, f.Id("tl")))));
-        Assert.Equal("examMatrixId", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedB.Id, f.Id("tl")))));
-        Assert.Equal("assignedToUserId", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("gv1")))));
-        Assert.Equal("assignedToUserId", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tlB")))));
-        Assert.Equal("paperCount", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"), papers: 0))));
-        var tooMany = await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"), papers: 21));
-        Assert.Equal("paperCount", Invalid(tooMany));
-        Assert.Equal("Số đề cần tạo từ 1 đến 20.", tooMany.Body.GetProperty("error").GetProperty("details").GetProperty("paperCount")[0].GetString());
-        Assert.Equal("dueAt", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"), due: null))));
+        // PHT now generates a full package in Kho đề and assigns its review; this route never makes blank papers.
+        Assert.Equal("EXAM_TASK_FLOW_CHANGED", Code(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"))), HttpStatusCode.Conflict));
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl")))).Status);
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(gv1, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl")))).Status);
         Assert.False(await f.Db.WorkTasks.AnyAsync());
 
-        var created = Data(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl"))));
-        var id = Id(created);
+        // An exam task assigned before the new flow (blank papers Đề 1, Đề 2) is still edited through PUT.
+        var legacy = new WorkTask
+        {
+            TaskType = "EXAM", Status = "ASSIGNED", Name = "Tạo bộ đề Toán 5 · Cuối học kỳ I",
+            CreatedByUserId = f.Id("pht"), AssignedToUserId = f.Id("tl"), DueAt = DateTime.Today.AddDays(7), CreatedAt = DateTime.UtcNow
+        };
+        f.Db.WorkTasks.Add(legacy);
+        foreach (var name in new[] { "Đề 1", "Đề 2" })
+            f.Db.ExamSets.Add(new ExamSet { Task = legacy, Name = name, Status = ExamSetStatusCodes.Draft, ExamMatrixId = f.ApprovedA.Id, DurationMinutes = 40 });
+        await f.Db.SaveChangesAsync();
+        var id = legacy.Id;
+
+        var created = Data(await Send(pht, HttpMethod.Get, $"/api/tasks/{id}"));
         var exam = created.GetProperty("exam");
         Assert.Equal((f.ApprovedA.Id, "Toán 5 · Cuối học kỳ I", "Toán thử", "Khối thử", ""),
             (exam.GetProperty("matrixId").GetUInt64(), Text(exam, "matrixName"), Text(exam, "subjectName"), Text(exam, "gradeLevelName"), Text(exam, "academicYearName")));
@@ -168,11 +172,10 @@ public sealed class TasksIntegrationTests
         Assert.Contains(await ListAsync(tl2), item => Id(item) == id);
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl2, HttpMethod.Put, $"{ExamUrl}/{id}", ExamBody(f.ApprovedA.Id, f.Id("tl2")))).Status);
 
-        // Ma trận nguồn đã lưu trữ: giữ nguyên thì vẫn sửa được hạn, nhưng không giao nhiệm vụ mới từ nó.
+        // Ma trận nguồn đã lưu trữ: giữ nguyên thì vẫn sửa được hạn.
         await f.Db.ExamMatrices.Where(matrix => matrix.Id == f.ApprovedA.Id)
             .ExecuteUpdateAsync(set => set.SetProperty(matrix => matrix.Status, MatrixStatusCodes.Archived));
         Assert.Equal(id, Id(Data(await Send(pht, HttpMethod.Put, $"{ExamUrl}/{id}", ExamBody(f.ApprovedA.Id, f.Id("tl2"), 12, 3)))));
-        Assert.Equal("examMatrixId", Invalid(await Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl")))));
 
         // Đã bắt đầu: số đề bị khoá như nội dung chuyên môn khác, vẫn sửa được hạn.
         await f.SetStatusAsync(id, "IN_PROGRESS");
@@ -219,8 +222,7 @@ public sealed class TasksIntegrationTests
         Assert.Equal(("Ma trận Toán 5 - Giữa học kỳ I", "Đỗ Văn Tổ"), (Text(updated, "name"), Person(updated, "performer").Name));
         // Tasks have no year or semester any more (D10): the scope is the matrix's subject and grade.
         var scope = updated.GetProperty("scope");
-        Assert.Equal(("Toán thử", "Khối thử", "", JsonValueKind.Null),
-            (Text(scope, "subjectName"), Text(scope, "gradeLevelName"), Text(scope, "academicYearName"), scope.GetProperty("semesterName").ValueKind));
+        Assert.Equal(("Toán thử", "Khối thử"), (Text(scope, "subjectName"), Text(scope, "gradeLevelName")));
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl2, HttpMethod.Put, url, Matrix("tl2", f.ContextA, 4))).Status);
 
         // Tổ trưởng lưu nháp ma trận: không đổi được người nhận và phạm vi; bản nháp vẫn riêng của Tổ trưởng (GB-47).
@@ -297,7 +299,7 @@ public sealed class TasksIntegrationTests
     }
 
     [IdentityMySqlFact]
-    public async Task LegacyMatrixTasks_OnlyParticipantsReadAndOnlyTheCreatorDeletes()
+    public async Task LegacyMatrixTask_OnlyParticipantsRead()
     {
         await using var f = await TaskFixture.CreateAsync();
         using var pht = await f.LoginAsync("pht");
@@ -310,31 +312,10 @@ public sealed class TasksIntegrationTests
 
         foreach (var actor in new[] { pht2, principal })
         {
-            var unrelated = await Send(actor, HttpMethod.Get, "/api/matrix-tasks");
-            Assert.Equal(HttpStatusCode.OK, unrelated.Status);
-            Assert.Empty(unrelated.Body.GetProperty("items").EnumerateArray());
             Assert.Equal(HttpStatusCode.Forbidden, (await Send(actor, HttpMethod.Get, $"/api/matrix-tasks/{id}")).Status);
-            Assert.Equal(HttpStatusCode.Forbidden, (await Send(actor, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
             Assert.Empty(await ListAsync(actor));
         }
         Assert.Equal(HttpStatusCode.OK, (await Send(tl, HttpMethod.Get, $"/api/matrix-tasks/{id}")).Status);
-        Assert.Equal(id, Id(Assert.Single((await Send(pht, HttpMethod.Get, "/api/matrix-tasks")).Body.GetProperty("items").EnumerateArray())));
-        Assert.Equal(HttpStatusCode.NoContent, (await Send(pht, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
-        Assert.False(await f.Db.WorkTasks.AnyAsync(task => task.Id == id));
-    }
-
-    [IdentityMySqlFact]
-    public async Task LegacyMatrixTaskDelete_RejectsStartedStatusesEvenWithAnEmptyMatrix()
-    {
-        await using var f = await TaskFixture.CreateAsync();
-        using var pht = await f.LoginAsync("pht");
-        var id = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
-        foreach (var status in new[] { "IN_PROGRESS", "PENDING_REVIEW", "NEEDS_REVISION", "COMPLETED" })
-        {
-            await f.SetStatusAsync(id, status);
-            Assert.Equal(HttpStatusCode.Conflict, (await Send(pht, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
-            Assert.True(await f.Db.WorkTasks.AnyAsync(task => task.Id == id && task.Status == status));
-        }
     }
 
     [IdentityMySqlFact]
@@ -347,6 +328,102 @@ public sealed class TasksIntegrationTests
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(pht2, HttpMethod.Post, "/api/matrices", MatrixBody(f, id))).Status);
         // The task's matrix exists from creation and stays empty.
         Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == id && matrix.Details.Any()));
+    }
+
+    // Audit #1: the assigning PHT reviews the matrix; only the assigned Team Lead drafts it.
+    [IdentityMySqlFact]
+    public async Task TaskMatrix_AssigningVicePrincipalCannotDraftIt()
+    {
+        await using var f = await TaskFixture.CreateAsync();
+        using var pht = await f.LoginAsync("pht");
+        var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
+        Assert.Equal(HttpStatusCode.Forbidden, (await Send(pht, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId))).Status);
+        Assert.False(await f.Db.ExamMatrices.AnyAsync(matrix => matrix.TaskId == taskId && matrix.Details.Any()));
+        Assert.True(await f.Db.WorkTasks.AnyAsync(task => task.Id == taskId && task.Status == "ASSIGNED"));
+    }
+
+    // Audit #5: the save that loaded the rows before the other one committed gets 409, not 500; audit #17: a save touches the task.
+    [IdentityMySqlFact]
+    public async Task TaskMatrix_ConcurrentSavesGiveOneConflictAndTouchTheTask()
+    {
+        var barrier = new ReferenceReadBarrier("matrix");
+        await using var f = await TaskFixture.CreateAsync(barrier);
+        using var pht = await f.LoginAsync("pht");
+        using var tl = await f.LoginAsync("tl");
+        var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
+        var id = Id((await Send(tl, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId))).Body);
+        var old = new DateTime(2000, 1, 1);
+        await f.Db.WorkTasks.Where(task => task.Id == taskId).ExecuteUpdateAsync(set => set.SetProperty(task => task.UpdatedAt, old));
+        object Body(string level) => new
+        {
+            name = "Ma trận của nhiệm vụ", academicContextId = f.ContextA, taskId, totalScore = 10,
+            details = new[] { new { lessonId = f.LessonA1.Id, cognitiveLevel = level, questionCount = 2, percentage = 100 } }
+        };
+
+        barrier.Arm();
+        var late = Send(tl, HttpMethod.Put, $"/api/matrices/{id}", Body("VAN_DUNG"));
+        try
+        {
+            await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.Equal(HttpStatusCode.OK, (await Send(tl, HttpMethod.Put, $"/api/matrices/{id}", Body("THONG_HIEU"))).Status);
+        }
+        finally { barrier.Release.TrySetResult(); }
+
+        Assert.Equal(HttpStatusCode.Conflict, (await late.WaitAsync(TimeSpan.FromSeconds(10))).Status);
+        var levels = await f.Db.MatrixDetails.Where(detail => detail.ExamMatrixId == id).Select(detail => detail.CognitiveLevel).ToListAsync();
+        Assert.Equal("THONG_HIEU", Assert.Single(levels));
+        var stored = await f.Db.WorkTasks.AsNoTracking().SingleAsync(item => item.Id == taskId);
+        Assert.Equal("IN_PROGRESS", stored.Status);
+        Assert.True(stored.UpdatedAt > old);
+    }
+
+    // Audit #6: a draft restarted after deleting the returned one does not show the old rejection.
+    [IdentityMySqlFact]
+    public async Task TaskMatrix_RestartedDraftDoesNotShowTheOldRejection()
+    {
+        await using var f = await TaskFixture.CreateAsync();
+        using var pht = await f.LoginAsync("pht");
+        using var tl = await f.LoginAsync("tl");
+        var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
+        var id = Id((await Send(tl, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId))).Body);
+        Assert.Equal(HttpStatusCode.OK, (await Send(tl, HttpMethod.Post, $"/api/matrices/{id}/submit")).Status);
+        var rejected = await Send(pht, HttpMethod.Post, $"/api/matrices/{id}/reject", new { comment = "Sai tỷ lệ chương 2" });
+        Assert.Equal("Sai tỷ lệ chương 2", Text(rejected.Body, "rejectComment"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await Send(tl, HttpMethod.Delete, $"/api/matrices/{id}")).Status);
+        var restarted = await Send(tl, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId));
+        Assert.Equal(HttpStatusCode.Created, restarted.Status);
+        Assert.Equal(JsonValueKind.Null, restarted.Body.GetProperty("rejectComment").ValueKind);
+        Assert.Equal(JsonValueKind.Null, (await Send(tl, HttpMethod.Get, $"/api/matrices/{id}")).Body.GetProperty("rejectComment").ValueKind);
+        var matrix = Data(await Send(tl, HttpMethod.Get, $"/api/tasks/{taskId}")).GetProperty("matrix");
+        Assert.Equal(JsonValueKind.Null, matrix.GetProperty("rejectComment").ValueKind);
+    }
+
+    // Audit #12 (and #10): an archived lesson/chapter blocks submit and confirm, yet still shows its name.
+    [IdentityMySqlFact]
+    public async Task Matrix_ArchivedLessonsBlockSubmitAndConfirmButKeepTheirNames()
+    {
+        await using var f = await TaskFixture.CreateAsync();
+        using var pht = await f.LoginAsync("pht");
+        using var tl = await f.LoginAsync("tl");
+        var taskId = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
+        var taskMatrix = Id((await Send(tl, HttpMethod.Post, "/api/matrices", MatrixBody(f, taskId))).Body);
+        var direct = await Send(pht, HttpMethod.Post, "/api/matrices", new
+        {
+            name = "Ma trận tự tạo", academicContextId = f.ContextA, totalScore = 10,
+            details = new[] { new { lessonId = f.LessonA2.Id, cognitiveLevel = "NHAN_BIET", questionCount = 2, percentage = 100 } }
+        });
+        Assert.Equal(HttpStatusCode.Created, direct.Status);
+        var directId = Id(direct.Body);
+
+        await f.Db.Lessons.Where(lesson => lesson.Id == f.LessonA1.Id).ExecuteUpdateAsync(set => set.SetProperty(lesson => lesson.Status, "INACTIVE"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await Send(tl, HttpMethod.Post, $"/api/matrices/{taskMatrix}/submit")).Status);
+        var detail = (await Send(tl, HttpMethod.Get, $"/api/matrices/{taskMatrix}")).Body.GetProperty("details")[0];
+        Assert.Equal(("Phân số", "Số và phép tính"), (Text(detail, "lessonTitle"), Text(detail, "chapterTitle")));
+
+        await f.Db.Chapters.Where(chapter => chapter.Id == f.LessonA2.ChapterId).ExecuteUpdateAsync(set => set.SetProperty(chapter => chapter.Status, "INACTIVE"));
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, (await Send(pht, HttpMethod.Post, $"/api/matrices/{directId}/confirm")).Status);
+        Assert.Equal(2, await f.Db.ExamMatrices.CountAsync(matrix => (matrix.Id == taskMatrix || matrix.Id == directId) && matrix.Status == "DRAFT"));
     }
 
     [IdentityMySqlFact]
@@ -380,7 +457,6 @@ public sealed class TasksIntegrationTests
 
         var scope = Data(await Send(pht, HttpMethod.Get, $"/api/tasks/{taskId}")).GetProperty("scope");
         Assert.Equal(f.ContextA, scope.GetProperty("academicContextId").GetUInt64());
-        Assert.Equal(JsonValueKind.Null, scope.GetProperty("academicYearId").ValueKind);
         Assert.Equal(expected.SubjectId, scope.GetProperty("subjectId").GetUInt64());
         Assert.Equal(expected.GradeLevelId, scope.GetProperty("gradeLevelId").GetUInt64());
         var updated = Data(await Send(pht, HttpMethod.Put, $"/api/tasks/matrix/{taskId}", new
@@ -518,25 +594,6 @@ public sealed class TasksIntegrationTests
             Assert.Equal(JsonValueKind.Null, matrix.GetProperty("rejectComment").ValueKind);
             Assert.Equal(JsonValueKind.Null, matrix.GetProperty("rejectedAt").ValueKind);
         }
-    }
-
-    [IdentityMySqlFact]
-    public async Task ExamTask_CreationRechecksApprovalAfterAConcurrentMatrixArchive()
-    {
-        var barrier = new ReferenceReadBarrier("matrix");
-        await using var f = await TaskFixture.CreateAsync(barrier);
-        using var pht = await f.LoginAsync("pht");
-        barrier.Arm();
-        var creation = Send(pht, HttpMethod.Post, ExamUrl, ExamBody(f.ApprovedA.Id, f.Id("tl")));
-        try
-        {
-            await barrier.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(HttpStatusCode.OK, (await Send(pht, HttpMethod.Post, $"/api/matrices/{f.ApprovedA.Id}/archive")).Status);
-        }
-        finally { barrier.Release.TrySetResult(); }
-
-        Assert.Equal("VALIDATION_ERROR", Code(await creation.WaitAsync(TimeSpan.FromSeconds(10)), HttpStatusCode.UnprocessableEntity));
-        Assert.False(await f.Db.WorkTasks.AnyAsync());
     }
 
     // Clients may still send semesterId; it is accepted and ignored (D10).

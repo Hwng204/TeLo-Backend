@@ -93,43 +93,6 @@ public sealed class MatrixTaskApplicationService(
         }, cancellationToken);
     }
 
-    public async Task<MatrixTaskPage> ListAsync(
-        MatrixTaskQuery query,
-        CancellationToken cancellationToken)
-    {
-        var actor = currentUser.Actor;
-        var assignedToUserId = actor.Role == MatrixActorRole.TeamLead
-            ? actor.UserId
-            : query.AssignedToUserId;
-
-        var filter = (query with
-        {
-            AssignedToUserId = assignedToUserId,
-            BranchId = MatrixApplicationService.BranchScope(actor)
-        }).ToFilter() with { InvolvingUserId = actor.UserId };
-
-        var page = await uow.MatrixTasks.ListAsync(filter, cancellationToken);
-        return page.ToDto(await ResolveCreatorsAsync(page, cancellationToken));
-    }
-
-    public async Task<MatrixTaskPage> ListMineAsync(
-        MatrixTaskQuery query,
-        CancellationToken cancellationToken)
-    {
-        var actor = currentUser.Actor;
-        if (actor.Role != MatrixActorRole.TeamLead)
-        {
-            throw new MatrixApplicationException(
-                "Forbidden",
-                "Chỉ Tổ trưởng mới xem được nhiệm vụ ma trận được giao cho mình.");
-        }
-
-        var page = await uow.MatrixTasks.ListAsync(
-            (query with { AssignedToUserId = actor.UserId }).ToFilter(),
-            cancellationToken);
-        return page.ToDto(await ResolveCreatorsAsync(page, cancellationToken));
-    }
-
     public async Task<MatrixReferenceData> GetReferenceDataAsync(
         ulong? academicContextId,
         CancellationToken cancellationToken)
@@ -166,38 +129,6 @@ public sealed class MatrixTaskApplicationService(
         return task.ToResponse(matrix?.Scope.Key ?? 0, matrix is { Started: true } ? matrix.Id : null, people);
     }
 
-    /// <summary>
-    /// PHT xoá nhiệm vụ đã giao khi Tổ trưởng chưa bắt đầu. "Đã bắt đầu" = Tổ trưởng đã Lưu nháp
-    /// ma trận (có dòng chi tiết) hoặc đã nộp; lúc đó nhiệm vụ không xoá được nữa.
-    /// </summary>
-    public async Task DeleteAsync(
-        ulong taskId,
-        CancellationToken cancellationToken)
-    {
-        var actor = currentUser.Actor;
-        if (actor.Role != MatrixActorRole.Pht)
-        {
-            throw new MatrixApplicationException(
-                "Forbidden",
-                "Chỉ PHT mới được xóa nhiệm vụ ma trận.");
-        }
-
-        var task = await uow.MatrixTasks.GetMatrixTaskAsync(taskId, cancellationToken)
-            ?? throw new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
-        if (task.CreatedByUserId != actor.UserId)
-            throw new MatrixApplicationException("Forbidden", "Chỉ người giao nhiệm vụ mới được xóa.");
-        EnsureSameBranch(actor, await uow.MatrixTasks.GetTaskMatrixAsync(taskId, cancellationToken));
-
-        if (!await uow.MatrixTasks.DeleteIfNotStartedAsync(taskId, cancellationToken))
-        {
-            // Không xoá được: hoặc người khác vừa xoá, hoặc Tổ trưởng đã có ma trận cho nhiệm vụ này.
-            var stillExists = await uow.MatrixTasks.GetMatrixTaskAsync(taskId, cancellationToken) is not null;
-            throw stillExists
-                ? new MatrixApplicationException("TaskStarted", "Nhiệm vụ đã được thực hiện, không thể xóa.")
-                : new MatrixApplicationException("NotFound", "Không tìm thấy nhiệm vụ ma trận.");
-        }
-    }
-
     // The task's branch is its matrix's branch.
     private static void EnsureSameBranch(MatrixActor actor, Infrastructure.Models.TaskMatrixRow? matrix)
     {
@@ -208,14 +139,5 @@ public sealed class MatrixTaskApplicationService(
                 "Forbidden",
                 "Nhiệm vụ ma trận thuộc chi nhánh khác.");
         }
-    }
-
-    private Task<IReadOnlyDictionary<ulong, MatrixPerson>> ResolveCreatorsAsync(
-        Infrastructure.Models.PagedResult<Infrastructure.Models.MatrixTaskRow> page,
-        CancellationToken cancellationToken)
-    {
-        return peopleResolver.ResolveAsync(
-            page.Items.Select(row => (ulong?)row.CreatedByUserId),
-            cancellationToken);
     }
 }

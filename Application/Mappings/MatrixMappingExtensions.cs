@@ -1,3 +1,4 @@
+using Application.Common;
 using Application.DTOs;
 using Domain.Entities.QuestionBank;
 using Infrastructure.Exports;
@@ -32,13 +33,10 @@ public static class MatrixMappingExtensions
                 row.Status,
                 row.TaskId,
                 row.AcademicContextId,
-                null,
                 row.TotalQuestions,
                 row.TotalScore,
                 Person(people, row.CreatedByUserId),
-                null,
                 Person(people, row.ApprovedByUserId),
-                null,
                 row.SubjectName, row.GradeLevelName))
             .ToArray();
 
@@ -67,7 +65,6 @@ public static class MatrixMappingExtensions
             matrix.Status,
             matrix.TaskId,
             info.ContextLabel,
-            string.Empty,
             matrix.TotalQuestions,
             matrix.TotalScore,
             rows);
@@ -108,8 +105,10 @@ public static class MatrixMappingExtensions
         IReadOnlyDictionary<ulong, MatrixPerson>? people = null,
         TaskHistory? lastHistory = null)
     {
-        var rejection = matrix.Status == MatrixStatusCodes.Draft && matrix.TaskId is not null ? lastHistory : null;
+        // Only a draft sent back (task NEEDS_REVISION) shows it: a draft restarted after deleting the returned one does not.
+        var rejection = matrix is { Status: MatrixStatusCodes.Draft, Task.Status: MatrixTaskStatusCodes.NeedsRevision } ? lastHistory : null;
 
+        // Lesson/chapter names come from the loaded rows, so archived (INACTIVE) ones still show; null when not loaded.
         var details = matrix.Details
             .Select(detail => new MatrixDetailResponse(
                 detail.Id,
@@ -118,7 +117,12 @@ public static class MatrixMappingExtensions
                 detail.QuestionType,
                 detail.QuestionCount,
                 detail.Percentage,
-                matrix.TotalScore * detail.Percentage / 100m))
+                matrix.TotalScore * detail.Percentage / 100m,
+                detail.Lesson?.Title,
+                detail.Lesson?.Number,
+                detail.Lesson?.ChapterId,
+                detail.Lesson?.Chapter?.Title,
+                detail.Lesson?.Chapter?.Number))
             .ToArray();
 
         return new MatrixResponse(
@@ -127,7 +131,6 @@ public static class MatrixMappingExtensions
             matrix.Status,
             matrix.TaskId,
             matrix.Scope.Key,
-            null,
             details,
             matrix.TotalQuestions,
             matrix.TotalScore,
@@ -136,9 +139,7 @@ public static class MatrixMappingExtensions
             rejection?.CreateAt,
             rejection?.CreateBy,
             Person(people, matrix.CreatedByUserId),
-            null,
-            Person(people, matrix.ApprovedByUserId),
-            null);
+            Person(people, matrix.ApprovedByUserId));
     }
 
     private static IReadOnlyList<string> AllowedActions(
@@ -163,12 +164,13 @@ public static class MatrixMappingExtensions
             // UI never shows a button the domain would reject with InvalidTotalScore.
             if (matrix.Details.Count > 0 && matrix.HasRequiredTotalPercentage)
             {
-                if (actor.Role == MatrixActorRole.Pht && matrix.TaskId is null)
+                // A direct matrix is confirmed by its author only; a task matrix is submitted to its reviewer.
+                if (matrix.TaskId is null && matrix.CanReview(actor))
                 {
                     actions.Add("Confirm");
                 }
 
-                if (actor.Role == MatrixActorRole.Pht || matrix.TaskId is not null)
+                if (matrix.TaskId is not null)
                 {
                     actions.Add("Submit");
                 }
@@ -208,56 +210,12 @@ public static class MatrixMappingExtensions
 
 public static class MatrixTaskMappingExtensions
 {
-    public static MatrixTaskFilter ToFilter(this MatrixTaskQuery query)
-    {
-        return new MatrixTaskFilter(
-            query.Page,
-            query.PageSize,
-            query.Status,
-            query.AssignedToUserId,
-            query.DueBefore,
-            query.BranchId,
-            query.Keyword,
-            query.AcademicContextId,
-            query.SubjectId,
-            query.GradeLevelId);
-    }
-
-    public static MatrixTaskPage ToDto(
-        this PagedResult<MatrixTaskRow> page,
-        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
-    {
-        var items = page.Items
-            .Select(row => new MatrixTaskListItem(
-                row.Id,
-                row.CreatedByUserId,
-                row.AssignedToUserId,
-                row.DueAt,
-                row.Status,
-                row.TaskType,
-                row.Description,
-                row.AcademicContextId,
-                null,
-                row.MatrixId,
-                row.Name,
-                MatrixMappingExtensions.Person(people, row.CreatedByUserId)))
-            .ToArray();
-
-        return new MatrixTaskPage(items, page.Page, page.PageSize, page.TotalCount);
-    }
-
     public static MatrixReferenceData ToDto(this MatrixReferenceModel model)
     {
-        var cognitiveLevels = MatrixCognitiveLevels.All
-            .Select(level => new MatrixCognitiveLevelOption(level.Code, level.Label))
-            .ToArray();
-
         return new MatrixReferenceData(
             model.AcademicContexts,
-            model.Semesters,
             model.Lessons,
-            model.TeamLeads,
-            cognitiveLevels);
+            model.TeamLeads);
     }
 
     // academicContextId is the scope key of the task's matrix; matrixId only once the matrix is started.
@@ -271,7 +229,6 @@ public static class MatrixTaskMappingExtensions
             task.Id,
             task.AssignedToUserId,
             academicContextId,
-            null,
             task.DueAt,
             task.Status,
             task.TaskType,

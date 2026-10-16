@@ -24,7 +24,13 @@ public sealed record MatrixDetailResponse(
     uint QuestionCount,
     decimal Percentage,
     // Điểm ô suy ra = MatrixResponse.TotalScore * Percentage / 100, tính sẵn để frontend khỏi làm tròn lệch.
-    decimal CellScore);
+    decimal CellScore,
+    // Tên/số bài và chương của dòng, có cả khi đã lưu trữ (INACTIVE) để ma trận cũ vẫn đọc được.
+    string? LessonTitle = null,
+    uint? LessonNumber = null,
+    ulong? ChapterId = null,
+    string? ChapterTitle = null,
+    uint? ChapterNumber = null);
 
 /// <summary>A user shown next to a matrix or task, with the role label the school uses for them.</summary>
 public sealed record MatrixPerson(ulong UserId, string FullName, string? RoleLabel);
@@ -35,8 +41,6 @@ public sealed record MatrixResponse(
     string Status,
     ulong? TaskId,
     ulong AcademicContextId,
-    // Always null: matrices no longer have a semester.
-    ulong? SemesterId,
     IReadOnlyList<MatrixDetailResponse> Details,
     uint TotalQuestions,
     decimal TotalScore,
@@ -45,9 +49,7 @@ public sealed record MatrixResponse(
     DateTime? RejectedAt = null,
     ulong? RejectedByUserId = null,
     MatrixPerson? CreatedBy = null,
-    DateTime? CreatedAt = null,
-    MatrixPerson? ApprovedBy = null,
-    DateTime? ApprovedAt = null)
+    MatrixPerson? ApprovedBy = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

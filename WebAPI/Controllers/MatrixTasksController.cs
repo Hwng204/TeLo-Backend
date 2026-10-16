@@ -20,56 +20,6 @@ public sealed class MatrixTasksController(
         return CreatedAtAction(nameof(Get), new { taskId = response.Id }, response);
     }
 
-    [HttpGet]
-    public Task<MatrixTaskPage> List(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
-        [FromQuery] string? status = null,
-        [FromQuery] ulong? assignedToUserId = null,
-        [FromQuery] DateTime? dueBefore = null,
-        [FromQuery] string? keyword = null,
-        [FromQuery] ulong? academicContextId = null,
-        [FromQuery] ulong? academicYearId = null,
-        [FromQuery] ulong? subjectId = null,
-        [FromQuery] ulong? gradeLevelId = null,
-        [FromQuery] ulong? semesterId = null,
-        CancellationToken cancellationToken = default)
-    {
-        return service.ListAsync(
-            new MatrixTaskQuery(page, pageSize, status, assignedToUserId, dueBefore, null, keyword, academicContextId,
-                academicYearId, subjectId, gradeLevelId, semesterId),
-            cancellationToken);
-    }
-
-    [HttpGet("/api/my/matrix-tasks")]
-    public Task<MatrixTaskPage> ListMine(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
-        [FromQuery] string? status = null,
-        [FromQuery] DateTime? dueBefore = null,
-        [FromQuery] string? keyword = null,
-        [FromQuery] ulong? academicContextId = null,
-        [FromQuery] ulong? academicYearId = null,
-        [FromQuery] ulong? subjectId = null,
-        [FromQuery] ulong? gradeLevelId = null,
-        [FromQuery] ulong? semesterId = null,
-        CancellationToken cancellationToken = default)
-    {
-        return service.ListMineAsync(
-            new MatrixTaskQuery(page, pageSize, status, null, dueBefore, null, keyword, academicContextId,
-                academicYearId, subjectId, gradeLevelId, semesterId),
-            cancellationToken);
-    }
-
-    [HttpDelete("{taskId}")]
-    public async Task<IActionResult> Delete(
-        ulong taskId,
-        CancellationToken cancellationToken)
-    {
-        await service.DeleteAsync(taskId, cancellationToken);
-        return NoContent();
-    }
-
     [HttpGet("{taskId}")]
     public Task<MatrixTaskResponse> Get(
         ulong taskId,

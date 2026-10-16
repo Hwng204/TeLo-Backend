@@ -359,7 +359,7 @@ public sealed class TaskService(
         return matrix is null
             ? null
             : new TaskScope(new MatrixScope(matrix.BranchId, matrix.SubjectId, matrix.GradeLevelId).Key, matrix.Subject,
-                matrix.Grade, "", null, null, null, matrix.SubjectId, matrix.GradeLevelId);
+                matrix.Grade, matrix.SubjectId, matrix.GradeLevelId);
     }
 
     // GB-47: ma trận nháp chỉ Tổ trưởng được giao thấy; người khác chỉ biết là đang soạn.
@@ -374,8 +374,9 @@ public sealed class TaskService(
             (task.Status == MatrixTaskStatusCodes.Assigned && matrix.Status == MatrixStatusCodes.Draft && !matrix.HasDetails))
             return null;
 
-        // Bị trả về: lần từ chối gần nhất nằm ở task_history (nội dung rỗng = không có nhận xét).
-        var rejection = matrix.Status == MatrixStatusCodes.Draft
+        // Bị trả về (Cần chỉnh sửa): lần từ chối gần nhất nằm ở task_history (nội dung rỗng = không có nhận xét).
+        // Bản nháp lập lại sau khi xoá bản bị trả về thì không hiện nhận xét cũ.
+        var rejection = task.Status == MatrixTaskStatusCodes.NeedsRevision
             ? await db.TaskHistories.AsNoTracking()
                 .Where(history => history.TaskId == task.Id)
                 .OrderByDescending(history => history.Id)
@@ -471,12 +472,17 @@ public sealed class TaskService(
         }
 
         // A scope exists through its curriculum chapters (same rule as the matrix reference data).
-        if (scope != currentScope &&
-            (scope.BranchId != branchId ||
-             !await db.Chapters.AnyAsync(chapter => chapter.SchoolBranchId == scope.BranchId &&
-                 chapter.SubjectId == scope.SubjectId && chapter.GradeLevelId == scope.GradeLevelId, cancellationToken)))
+        if (scope != currentScope && scope.BranchId != branchId)
         {
             errors.TryAdd("academicContextId", ["Phạm vi ma trận không thuộc phân hiệu của bạn."]);
+            return null;
+        }
+
+        if (scope != currentScope &&
+            !await db.Chapters.AnyAsync(chapter => chapter.Status == "ACTIVE" && chapter.SchoolBranchId == scope.BranchId &&
+                chapter.SubjectId == scope.SubjectId && chapter.GradeLevelId == scope.GradeLevelId, cancellationToken))
+        {
+            errors.TryAdd("academicContextId", ["Môn học và khối lớp này chưa có chương nào đang dùng."]);
             return null;
         }
 

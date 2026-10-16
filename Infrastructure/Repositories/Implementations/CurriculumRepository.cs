@@ -29,7 +29,7 @@ public sealed class CurriculumRepository(ApplicationDbContext db) : ICurriculumR
             .Where(subject => subject.Status == ActiveStatus)
             .OrderBy(subject => subject.Name)
             .ThenBy(subject => subject.Id)
-            .Select(subject => new CurriculumFieldRow(subject.Id, subject.Name, subject.Id, subject.Name))
+            .Select(subject => new CurriculumFieldRow(subject.Id, subject.Name))
             .ToListAsync(cancellationToken);
 
     // ACTIVE chapters with their ACTIVE lessons, ordered by number (id breaks ties). A chapter is in use when any of

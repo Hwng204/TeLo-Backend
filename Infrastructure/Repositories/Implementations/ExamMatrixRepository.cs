@@ -141,7 +141,9 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
         if (matrix is not null)
         {
             matrix.Details = matrix.Details
-                .OrderBy(detail => detail.Lesson.ChapterId)
+                .OrderBy(detail => detail.Lesson.Chapter.Number)
+                .ThenBy(detail => detail.Lesson.ChapterId)
+                .ThenBy(detail => detail.Lesson.Number)
                 .ThenBy(detail => detail.LessonId)
                 .ThenBy(detail => detail.CognitiveLevel)
                 .ThenBy(detail => detail.QuestionType)
@@ -247,6 +249,21 @@ public sealed class ExamMatrixRepository(ApplicationDbContext db)
                     .SetProperty(task => task.Status, status)
                     .SetProperty(task => task.UpdatedAt, now),
                 cancellationToken);
+
+        // The row is already written; keep a loaded copy (matrix.Task) in step without EF writing it again.
+        var loaded = Db.WorkTasks.Local.FirstOrDefault(task => task.Id == taskId);
+        if (loaded is null)
+        {
+            return;
+        }
+
+        loaded.Status = status;
+        loaded.UpdatedAt = now;
+        var entry = Db.Entry(loaded);
+        entry.Property(task => task.Status).OriginalValue = status;
+        entry.Property(task => task.Status).IsModified = false;
+        entry.Property(task => task.UpdatedAt).OriginalValue = now;
+        entry.Property(task => task.UpdatedAt).IsModified = false;
     }
 
     public void AddTaskHistory(TaskHistory history) => Db.TaskHistories.Add(history);

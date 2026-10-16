@@ -41,35 +41,6 @@ public sealed record MatrixListRow(
 // A user as shown next to a matrix or task: name plus the role codes the school configured for them.
 public sealed record MatrixPersonRow(ulong UserId, string FullName, IReadOnlyList<string> RoleCodes);
 
-public sealed record MatrixTaskFilter(
-    int Page = 1,
-    int PageSize = 20,
-    string? Status = null,
-    ulong? AssignedToUserId = null,
-    DateTime? DueBefore = null,
-    ulong? BranchId = null,
-    // Tìm theo tên nhiệm vụ, yêu cầu công việc, hoặc id (gõ số thì khớp thẳng id).
-    string? Keyword = null,
-    // MatrixScope.Key of the task's matrix.
-    ulong? AcademicContextId = null,
-    // Lọc từng chiều độc lập (không cần chọn đủ 3 chiều để ra một academicContextId).
-    ulong? SubjectId = null,
-    ulong? GradeLevelId = null,
-    ulong? InvolvingUserId = null);
-
-public sealed record MatrixTaskRow(
-    ulong Id,
-    ulong CreatedByUserId,
-    ulong AssignedToUserId,
-    DateTime? DueAt,
-    string Status,
-    string TaskType,
-    string Name,
-    string? Description,
-    // Scope key of the task's matrix; MatrixId only once the team lead has started it.
-    ulong? AcademicContextId,
-    ulong? MatrixId);
-
 // The matrix created with a matrix task. Started = the task left ASSIGNED, or the matrix has details or left DRAFT.
 public sealed record TaskMatrixRow(ulong Id, MatrixScope Scope, bool Started);
 
@@ -80,22 +51,13 @@ public sealed record MatrixExportInfo(
 public sealed record MatrixAcademicContextOption(
     ulong Id,
     string Label,
-    ulong AcademicYearId,
     ulong SchoolBranchId,
     ulong SubjectId,
     ulong GradeLevelId,
     // Display names so a client can show each dimension in its own field
     // instead of parsing them back out of Label.
     string SubjectName = "",
-    string GradeLevelName = "",
-    string AcademicYearName = "");
-
-public sealed record MatrixSemesterOption(
-    ulong Id,
-    ulong AcademicYearId,
-    string Name,
-    DateOnly? StartDate,
-    DateOnly? EndDate);
+    string GradeLevelName = "");
 
 // Lesson titles repeat across chapters (several "Luyện tập chung"), so the client labels and matches a
 // lesson by its code and chapter too.
@@ -117,6 +79,5 @@ public sealed record MatrixTeamLeadOption(
 
 public sealed record MatrixReferenceModel(
     IReadOnlyList<MatrixAcademicContextOption> AcademicContexts,
-    IReadOnlyList<MatrixSemesterOption> Semesters,
     IReadOnlyList<MatrixLessonOption> Lessons,
     IReadOnlyList<MatrixTeamLeadOption> TeamLeads);

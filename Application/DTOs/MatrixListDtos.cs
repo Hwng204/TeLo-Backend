@@ -6,13 +6,10 @@ public sealed record MatrixListQuery(
     string? Keyword = null,
     // MatrixScope.Key.
     ulong? AcademicContextId = null,
-    // Ignored, as is AcademicYearId: matrices have no semester or year.
-    ulong? SemesterId = null,
     string? Status = null,
     ulong? AssignedToUserId = null,
     ulong? BranchId = null,
-    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
-    ulong? AcademicYearId = null,
+    // Lọc từng chiều độc lập (không cần chọn đủ 2 chiều để ra một academicContextId).
     ulong? SubjectId = null,
     ulong? GradeLevelId = null);
 
@@ -22,17 +19,12 @@ public sealed record MatrixListItem(
     string Status,
     ulong? TaskId,
     ulong AcademicContextId,
-    ulong? SemesterId,
     uint TotalQuestions,
     decimal TotalScore,
     MatrixPerson? CreatedBy = null,
-    DateTime? CreatedAt = null,
     MatrixPerson? ApprovedBy = null,
-    DateTime? ApprovedAt = null,
     string? SubjectName = null,
-    string? GradeLevelName = null,
-    string? AcademicYearName = null,
-    string? SemesterName = null)
+    string? GradeLevelName = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

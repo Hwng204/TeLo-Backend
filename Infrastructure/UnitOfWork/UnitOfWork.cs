@@ -25,6 +25,13 @@ public class UnitOfWork(
         {
             return await db.SaveChangesAsync(cancellationToken);
         }
+        // Another request already changed or removed the rows this save expected (e.g. two saves of one matrix).
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new MatrixDomainException(
+                "ConcurrencyConflict",
+                "Ma trận đã bị thay đổi bởi người khác. Vui lòng tải lại.");
+        }
         catch (DbUpdateException exception) when (IsDuplicateKey(exception))
         {
             throw new MatrixDomainException(

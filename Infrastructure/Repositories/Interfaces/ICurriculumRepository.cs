@@ -5,7 +5,7 @@ namespace Infrastructure.Repositories.Interface;
 public sealed record CurriculumGradeRow(ulong Id, string Name);
 
 // A "field" is a subject (the API keeps its old name): Id = SubjectId, Name = SubjectName.
-public sealed record CurriculumFieldRow(ulong Id, string Name, ulong SubjectId, string SubjectName);
+public sealed record CurriculumFieldRow(ulong Id, string Name);
 
 // Only ACTIVE chapters and lessons are rows. InUse: a matrix, a question task or a question references the
 // lesson; for a chapter, any of its lessons, archived ones included.

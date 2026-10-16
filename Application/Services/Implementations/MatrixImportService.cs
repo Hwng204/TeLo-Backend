@@ -17,7 +17,7 @@ public sealed class MatrixImportService(IMatrixReferenceRepository references, I
         try
         {
             return new MatrixExportFile($"mau-ma-tran-{context.AcademicContextId}.xlsx",
-                MatrixImportWorkbook.CreateTemplate(context.Name, context.TotalScore, option.Label, null, data.Lessons));
+                MatrixImportWorkbook.CreateTemplate(context.Name, context.TotalScore, option.Label, data.Lessons));
         }
         catch (MatrixImportFormatException error) { throw InvalidFile(error.Message); }
     }

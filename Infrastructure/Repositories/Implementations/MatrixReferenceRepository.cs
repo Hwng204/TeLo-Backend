@@ -79,9 +79,10 @@ public sealed class MatrixReferenceRepository(
             lessons.ToDictionary(lesson => lesson.Id, lesson => $"Bài {lesson.Title} — Chương {lesson.Chapter}"));
     }
 
-    // A scope exists through its chapters, the same rows the reference data lists.
+    // A scope exists through its ACTIVE chapters, the same rows the reference data lists.
     private Task<bool> ScopeExistsAsync(MatrixScope scope, CancellationToken cancellationToken) =>
         db.Chapters.AnyAsync(chapter =>
+                chapter.Status == "ACTIVE" &&
                 chapter.SchoolBranchId == scope.BranchId &&
                 chapter.SubjectId == scope.SubjectId &&
                 chapter.GradeLevelId == scope.GradeLevelId,
@@ -235,40 +236,16 @@ public sealed class MatrixReferenceRepository(
             .ThenBy(row => row.GradeLevelId)
             .ToListAsync(cancellationToken);
 
-        // Matrices have no year; pickers still show the ACTIVE one.
-        var activeYear = await db.AcademicYears
-            .AsNoTracking()
-            .Where(year => year.Status == "ACTIVE")
-            .OrderByDescending(year => year.Id)
-            .Select(year => new { year.Id, year.Name })
-            .FirstOrDefaultAsync(cancellationToken);
-
         var contextOptions = scopeRows
             .Select(row => new MatrixAcademicContextOption(
                 new MatrixScope(row.SchoolBranchId, row.SubjectId, row.GradeLevelId).Key,
                 ScopeLabel(row.SubjectName, row.GradeLevelName, row.SchoolName, row.BranchName),
-                activeYear?.Id ?? 0,
                 row.SchoolBranchId,
                 row.SubjectId,
                 row.GradeLevelId,
                 row.SubjectName,
-                row.GradeLevelName,
-                activeYear?.Name ?? ""))
+                row.GradeLevelName))
             .ToArray();
-
-        var semesters = activeYear is null
-            ? []
-            : await db.Semesters
-                .AsNoTracking()
-                .Where(semester => semester.AcademicYearId == activeYear.Id)
-                .OrderBy(semester => semester.Order)
-                .Select(semester => new MatrixSemesterOption(
-                    semester.Id,
-                    semester.AcademicYearId,
-                    semester.Name,
-                    null,
-                    null))
-                .ToListAsync(cancellationToken);
 
         // Bài học chỉ trả về khi đã chọn một phạm vi cụ thể.
         var selected = requested is null ? null : contextOptions.SingleOrDefault();
@@ -309,6 +286,6 @@ public sealed class MatrixReferenceRepository(
                 .ToListAsync(cancellationToken)
             : [];
 
-        return new MatrixReferenceModel(contextOptions, semesters, lessons, teamLeads);
+        return new MatrixReferenceModel(contextOptions, lessons, teamLeads);
     }
 }

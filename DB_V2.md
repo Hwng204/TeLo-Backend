@@ -4,12 +4,12 @@
 
 | Mục | Hiện tại |
 |---|---|
-| Nhánh | `feat/db-v2` (tách từ `vanh`) |
-| Nguồn schema | EF migrations như trước. Migration cũ đã xoá hết, chỉ còn `Infrastructure/Migrations/20261015020254_InitialCreate.cs` (52 bảng, không seed) |
+| Nhánh | `feat/db-v2` (tách từ `vanh`), đã merge |
+| Nguồn schema | EF migrations như trước. Migration cũ đã xoá hết, chỉ còn `Infrastructure/Migrations/20261015020254_InitialCreate.cs` (52 bảng, không seed) và `20261015114344_AddChapterLessonNumber` (cột `number` của chương, bài) |
 | Database | Đủ 51 bảng của ERD (Figma, section `167:6584`), đúng cột, khoá, quan hệ + bảng `user_roles` |
 | Ngoại lệ so với ERD (đã chốt) | Giữ bảng `user_roles` (một người nhiều vai trò) thay cho `user.role_id`, và cột `user.security_version` (thu hồi token khi đổi mật khẩu/khoá tài khoản). Bỏ mọi cột `version` |
-| Chức năng khoá tạm | Endpoint kỳ thi, quản lý email, import học sinh, danh mục tỉnh và Question: trả **501** (mục 4). Gửi thông báo và ghi audit bị vô hiệu hoá nội bộ. |
-| Frontend | Chưa đổi |
+| Chức năng khoá tạm | Endpoint kỳ thi, quản lý email, import học sinh, danh mục tỉnh: trả **501** (mục 4). Gửi thông báo và ghi audit bị vô hiệu hoá nội bộ. |
+| Frontend | Đã đổi cho ma trận, nhiệm vụ, chương & bài học; các màn khác xem ghi chú dưới bảng API |
 
 ## 2. Mỗi người chuyển sang DB mới trên máy mình
 
@@ -75,12 +75,12 @@ Nguyên tắc: request gửi trường đã bỏ vẫn được nhận và **b�
 | Danh sách giáo viên | academicYearId không lọc lịch sử ngày vào làm | — | Vẫn kiểm tra năm học có tồn tại; trả hồ sơ hiện tại vì DB v2 không có joinedOn và ngày năm học. |
 | `/api/classes*`, admin classes | code, homeroomTeacherId | homeroomTeacher* (null) | code ← name |
 | `/api/students*`, admin students | — | — | code/fullName/status ← user; tạo học sinh = tạo kèm `user` |
-| `/api/curriculum*` | code của chapter/lesson | — | fields[] ← subjects; fieldId ← subject_id; code ← ""; sortOrder ← vị trí theo id |
-| `/api/matrices*`, import | semesterId, academicYearId | semesterId, createdAt, approvedAt (null) | academicContextId ← mã phạm vi (phân hiệu, môn, khối); lý do từ chối ← `task_history` |
-| `/api/matrix-tasks*`, `/api/tasks*` | semesterId, academicYearId | năm học, học kỳ | phạm vi ← ma trận của nhiệm vụ; đề của gói ← `exam_set` (thời lượng mặc định 40 phút); không gửi email (khoá tạm) |
+| `/api/curriculum*` | code của chapter/lesson | — | fields[] ← subjects; fieldId ← subject_id; số chương/bài ← cột `number` (`AddChapterLessonNumber`) |
+| `/api/matrices*`, import | semesterId, academicYearId | semesterId, createdAt, approvedAt; reference data: semesters, cognitiveLevels, academicYearId/Name của phạm vi | academicContextId ← mã phạm vi (phân hiệu, môn, khối); lý do từ chối ← `task_history` |
+| `/api/matrix-tasks*`, `/api/tasks*` | semesterId, academicYearId | `scope.academicYearName/academicYearId/semesterId/semesterName` | phạm vi ← ma trận của nhiệm vụ; đề của gói ← `exam_set` (thời lượng mặc định 40 phút); không gửi email (khoá tạm) |
 
-**Frontend chưa đổi**: màn dùng trường đã bỏ sẽ hiện rỗng (mã và thứ tự chương/bài, năm học/học kỳ trên ma trận và
-nhiệm vụ, bộ môn/chức vụ/chủ nhiệm của giáo viên, mã lớp); màn của chức năng khoá tạm báo lỗi.
+**Frontend**: màn ma trận, nhiệm vụ, chương & bài học đã đổi theo DB v2. Màn khác dùng trường đã bỏ vẫn hiện rỗng
+(bộ môn/chức vụ/chủ nhiệm của giáo viên, mã lớp); màn của chức năng khoá tạm báo lỗi.
 
 ### Rủi ro cần biết
 
@@ -91,7 +91,7 @@ nhiệm vụ, bộ môn/chức vụ/chủ nhiệm của giáo viên, mã lớp);
 | R3 | Mỗi học sinh có một `user` (mật khẩu ngẫu nhiên, không vai trò) | Không đăng nhập được; ẩn khỏi danh sách user |
 | R4 | Bỏ giáo viên chủ nhiệm và mã lớp | Phạm vi chủ nhiệm lấy từ `teacher_assignment`, chưa có chức năng ghi → giáo viên chủ nhiệm chưa thấy lớp |
 | R5 | Vai trò toàn cục | Không theo trường/phân hiệu, không có mô tả |
-| R6 | Ma trận/nhiệm vụ mất năm học, học kỳ; chương/bài mất mã và thứ tự tay | Import chương bài khớp theo tiêu đề |
+| R6 | Ma trận/nhiệm vụ mất năm học, học kỳ; chương/bài mất mã (số chương/bài đã có lại qua cột `number`) | Import chương bài khớp theo tiêu đề |
 | R7 | `matrix_detail.allocated_score` | Đang lưu phần trăm như cũ, không phải điểm |
 | R8 | Không seed; không còn nhật ký audit | Picker khối/môn rỗng tới khi có dữ liệu; thao tác user/role/module không được ghi lại |
 
@@ -110,7 +110,7 @@ nguyên chỗ cũ nhưng bị loại khỏi biên dịch bằng `<Compile Remove
 | Định danh | Nhật ký audit (hàm `Audit` trong UserService/RoleService không làm gì) | ERD không có bảng audit, cần thêm vào ERD nếu muốn giữ |
 | Yêu cầu (`request_*`) | Chưa có chức năng | 6 bảng `request_*` đã có entity |
 | Phân công giáo viên | Chưa có chức năng ghi | `teacher_assignment` |
-| Question từ main | `/api/question-banks*`, `/api/tasks/{id}/question-package*`, `/api/tasks/{id}/questions*`, `/api/tasks/{id}/papers/{paperId}/questions*` trả 501; không chạy QuestionPracticeWorker | Giữ code qua Compile Remove. Chưa chuyển lịch sử gửi gói, version và lịch chuyển câu hỏi ôn tập sang DB v2. Không thêm bảng/cột ngoài 52 bảng. |
+| Question từ main | `/api/question-banks*`, `/api/tasks/{id}/question-package*`, `/api/tasks/{id}/questions*`, `/api/tasks/{id}/papers/{paperId}/questions*` đã chạy lại (không còn trong `LockedFeaturesController`); `QuestionPracticeWorker` chỉ chạy khi bật `QuestionPractice:Enabled` | Giữ code qua Compile Remove. Chưa chuyển lịch sử gửi gói, version và lịch chuyển câu hỏi ôn tập sang DB v2. Không thêm bảng/cột ngoài 52 bảng. |
 
 ### Kết hợp thay đổi từ main
 

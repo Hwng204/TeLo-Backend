@@ -11,8 +11,7 @@ Một danh sách chung cho ba loại nhiệm vụ, phân biệt bằng cột **L
 ## Quy tắc
 
 - **Người kiểm duyệt:** luôn là người giao việc; form không chọn người kiểm duyệt và không có hạn kiểm duyệt. `reviewer`
-  trong danh sách và chi tiết trả người giao. Nhiệm vụ câu hỏi cũ còn giáo viên kiểm duyệt (`reviewer_user_id`) được chuyển
-  về Tổ trưởng khi sửa; client cũ gửi `reviewerUserId`, `reviewDueAt` thì hai trường này bị bỏ qua.
+  trong danh sách và chi tiết trả người giao; client cũ gửi `reviewerUserId`, `reviewDueAt` thì hai trường này bị bỏ qua.
 - **Ai thấy (GB-54):** chỉ người giao, người thực hiện, người kiểm duyệt. Tài khoản phải thuộc một phân hiệu
   (Hiệu trưởng không có phân hiệu chỉ xem nhiệm vụ của mình).
 - **Trạng thái (GB-53):** `ASSIGNED` Đã giao, `IN_PROGRESS` Đang thực hiện, `PENDING_REVIEW` Chờ kiểm duyệt,
@@ -26,17 +25,17 @@ Một danh sách chung cho ba loại nhiệm vụ, phân biệt bằng cột **L
   Câu hỏi bắt buộc hạn biên soạn (`dueAt`); không có hạn kiểm duyệt.
 - **Sửa (GB-56):** chỉ người giao, khi chưa Hoàn thành. Người thực hiện đã bắt đầu (có ma trận, bộ đề hoặc câu hỏi
   gắn với nhiệm vụ, hoặc nhiệm vụ đã rời Đã giao) thì chỉ đổi được nội dung và hạn.
-  Người, ma trận, năm học không đổi thì không bị kiểm tra lại (giáo viên đã nghỉ, ma trận đã lưu trữ vẫn sửa được hạn).
+  Người, ma trận không đổi thì không bị kiểm tra lại (giáo viên đã nghỉ, ma trận đã lưu trữ vẫn sửa được hạn).
 - **Xoá (GB-55):** chỉ người giao, khi chưa bắt đầu. Kiểm tra và xoá trong một câu lệnh; bài học, số câu và đề cần tạo xoá theo.
 - **Đề thi (GB-57):** không gắn kỳ thi (khi tạo kỳ thi mới chọn các đề sẽ thi). Ma trận nguồn phải Đã duyệt và cùng phân
   hiệu với người giao; phạm vi nhiệm vụ lấy theo ma trận. PHT chọn số đề `paperCount` 1–20 (lỗi `paperCount`: "Số đề cần
   tạo từ 1 đến 20."), hệ thống đặt tên `Đề 1` … `Đề N`, không sửa tên. Sửa khi chưa bắt đầu mà đổi số đề thì dựng lại các
   dòng `exam_task_papers` cho đủ N; đã bắt đầu thì số đề bị khoá như nội dung chuyên môn khác (GB-56).
-- **Email (GB-58):** giao nhiệm vụ ma trận gửi sự kiện `MATRIX_ASSIGNED` như cũ; sửa mà đổi người nhận hoặc hạn thì gửi lại
+- **Email (GB-58):** đang khoá (`LockedEmailNotificationService`), giao hay sửa nhiệm vụ đều không gửi email. Khi mở lại: giao nhiệm vụ ma trận gửi sự kiện `MATRIX_ASSIGNED`; sửa mà đổi người nhận hoặc hạn thì gửi lại
   sự kiện đó. Nhiệm vụ đề thi và câu hỏi chưa có sự kiện email trong danh mục.
-- API ma trận cũ cũng chỉ cho người tham gia đọc nhiệm vụ; chỉ người giao được xoá khi còn `ASSIGNED` và chưa có ma trận.
+- `GET /api/matrix-tasks/{id}` cũng chỉ cho người tham gia đọc nhiệm vụ; xoá nhiệm vụ dùng `DELETE /api/tasks/{id}`.
 - Ma trận của nhiệm vụ chỉ người kiểm duyệt nhiệm vụ được duyệt/từ chối. Tạo ma trận và sửa người nhận được tuần tự hoá bằng khoá dòng nhiệm vụ.
-- Nhãn ma trận lịch sử giữ môn, khối, năm học và học kỳ kể cả khi năm học đã đóng. Sửa hạn/tên nhiệm vụ giữ phạm vi cũ nếu không chọn lại.
+- Phạm vi nhiệm vụ lấy theo ma trận (môn, khối); nhiệm vụ không có năm học, học kỳ. Sửa hạn/tên nhiệm vụ giữ phạm vi cũ nếu không chọn lại.
 - Chưa làm (thuộc chức năng khác): soạn và nộp từng đề, soạn, gửi và duyệt câu hỏi. Màn chi tiết hiện các nút này ở trạng thái "Sắp có".
 
 ## API
@@ -68,15 +67,7 @@ Tạo nhiệm vụ ma trận vẫn là `POST /api/matrix-tasks` (xem MATRIX.md),
 
 ## Migration và cấu hình
 
-- `AddTaskReviewersAndExamPapers`: `tasks` thêm `reviewer_user_id` (null = người giao kiểm duyệt; luồng ma trận còn đọc), `exam_matrix_id`
-  (không có `exam_id`: nhiệm vụ đề thi không gắn kỳ thi); bảng mới
-  `exam_task_papers`; `question_tasks` đổi unique `task_id` thành (`task_id`, `lesson_id`) để một nhiệm vụ có nhiều bài học.
-  Snapshot được bổ sung `users.avatar_url` (cột đã có từ `AddUserAvatarUrl`, trước đó snapshot thiếu). `Down` sẽ dừng nếu còn
-  nhiệm vụ câu hỏi nhiều bài.
-  Cuối `Up` chuẩn hoá trạng thái cũ: `SUBMITTED` → `PENDING_REVIEW`; nhiệm vụ `MATRIX` còn `ASSIGNED` mà đã có ma trận Nháp →
-  `IN_PROGRESS`, hoặc `NEEDS_REVISION` nếu bản nháp đó đã bị từ chối (`reject_comment`/`rejected_at` còn giá trị). `Down` đảo lại:
-  `PENDING_REVIEW` của `MATRIX`/`EXAM` → `SUBMITTED`, `IN_PROGRESS`/`NEEDS_REVISION` của `MATRIX` → `ASSIGNED`.
-  DB đã áp bản cũ của migration này (có `exam_id`) cần `database update 20261006045506_RemoveAdmissionDate` bằng code cũ rồi
-  `database update` lại.
+- Migration: sau khi chuyển DB v2 chỉ còn `InitialCreate` và `AddChapterLessonNumber` (xem DB_V2.md); các migration cũ,
+  kể cả `AddTaskReviewersAndExamPapers`, đã được gộp và xoá.
 - `TaskAuth:TeacherRoleCodes` (mặc định `GIAO_VIEN`, `TEACHER`): vai trò được giao nhiệm vụ câu hỏi.
   PHT, Hiệu trưởng, Tổ trưởng đọc từ `MatrixAuth:*`.

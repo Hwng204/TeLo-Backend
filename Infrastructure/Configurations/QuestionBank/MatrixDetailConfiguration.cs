@@ -20,7 +20,7 @@ public sealed class MatrixDetailConfiguration : IEntityTypeConfiguration<MatrixD
         builder.Property(x => x.CognitiveLevel).HasColumnName("cognitive_level").HasMaxLength(50).IsRequired();
         builder.Property(x => x.QuestionType).HasColumnName("question_type").HasMaxLength(50).IsRequired();
         builder.Property(x => x.QuestionCount).HasColumnName("question_count").HasColumnType("int unsigned").IsRequired();
-        // allocated_score giữ tỷ lệ % điểm của dòng (0, 100], không phải điểm tuyệt đối (CODE-PLAN R1).
+        // allocated_score giữ tỷ lệ % điểm của dòng (0, 100], không phải điểm tuyệt đối (DB_V2.md, rủi ro R7).
         builder.Property(x => x.Percentage).HasColumnName("allocated_score").HasPrecision(5, 2).IsRequired();
         builder.HasIndex(x => new { x.ExamMatrixId, x.LessonId, x.CognitiveLevel, x.QuestionType })
             .IsUnique().HasDatabaseName("uq_matrix_detail_matrix_id_lesson_id_cog_level_question_type");

@@ -39,7 +39,7 @@ public static class TaskRules
         var errors = new Dictionary<string, string[]>();
         Name(request.Name, "Nội dung nhiệm vụ", errors);
         if (request.AssignedToUserId == 0) Add(errors, "assignedToUserId", "Chọn Tổ trưởng nhận việc.");
-        if (request.AcademicContextId == 0) Add(errors, "academicContextId", "Chọn đủ Môn học, Khối lớp và Năm học.");
+        if (request.AcademicContextId == 0) Add(errors, "academicContextId", "Chọn đủ Môn học và Khối lớp.");
         Due(request.DueAt, current?.DueAt, today, "dueAt", "Hạn hoàn thành", required: false, errors);
         return errors;
     }

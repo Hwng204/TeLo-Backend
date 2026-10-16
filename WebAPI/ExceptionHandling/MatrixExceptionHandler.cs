@@ -73,7 +73,6 @@ public sealed class MatrixExceptionHandler : IExceptionHandler
             "NotFound" or "TaskNotFound" => 404,
             "ConcurrencyConflict" or
                 "TaskAlreadyHasMatrix" or
-                "PersistenceConflict" or
                 "InvalidTransition" or
                 "DirectMatrixRequired" or
                 "MatrixNotEditable" => 409,

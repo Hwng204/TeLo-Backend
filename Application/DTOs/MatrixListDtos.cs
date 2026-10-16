@@ -6,13 +6,10 @@ public sealed record MatrixListQuery(
     string? Keyword = null,
     // MatrixScope.Key.
     ulong? AcademicContextId = null,
-    // Ignored, as is AcademicYearId: matrices have no semester or year.
-    ulong? SemesterId = null,
     string? Status = null,
     ulong? AssignedToUserId = null,
     ulong? BranchId = null,
-    // Lọc từng chiều độc lập (không cần chọn đủ 4 chiều để ra một academicContextId).
-    ulong? AcademicYearId = null,
+    // Lọc từng chiều độc lập (không cần chọn đủ 2 chiều để ra một academicContextId).
     ulong? SubjectId = null,
     ulong? GradeLevelId = null);
 

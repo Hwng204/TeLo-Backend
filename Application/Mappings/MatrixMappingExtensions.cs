@@ -33,13 +33,10 @@ public static class MatrixMappingExtensions
                 row.Status,
                 row.TaskId,
                 row.AcademicContextId,
-                null,
                 row.TotalQuestions,
                 row.TotalScore,
                 Person(people, row.CreatedByUserId),
-                null,
                 Person(people, row.ApprovedByUserId),
-                null,
                 row.SubjectName, row.GradeLevelName))
             .ToArray();
 
@@ -68,7 +65,6 @@ public static class MatrixMappingExtensions
             matrix.Status,
             matrix.TaskId,
             info.ContextLabel,
-            string.Empty,
             matrix.TotalQuestions,
             matrix.TotalScore,
             rows);
@@ -135,7 +131,6 @@ public static class MatrixMappingExtensions
             matrix.Status,
             matrix.TaskId,
             matrix.Scope.Key,
-            null,
             details,
             matrix.TotalQuestions,
             matrix.TotalScore,
@@ -144,9 +139,7 @@ public static class MatrixMappingExtensions
             rejection?.CreateAt,
             rejection?.CreateBy,
             Person(people, matrix.CreatedByUserId),
-            null,
-            Person(people, matrix.ApprovedByUserId),
-            null);
+            Person(people, matrix.ApprovedByUserId));
     }
 
     private static IReadOnlyList<string> AllowedActions(
@@ -219,16 +212,10 @@ public static class MatrixTaskMappingExtensions
 {
     public static MatrixReferenceData ToDto(this MatrixReferenceModel model)
     {
-        var cognitiveLevels = MatrixCognitiveLevels.All
-            .Select(level => new MatrixCognitiveLevelOption(level.Code, level.Label))
-            .ToArray();
-
         return new MatrixReferenceData(
             model.AcademicContexts,
-            model.Semesters,
             model.Lessons,
-            model.TeamLeads,
-            cognitiveLevels);
+            model.TeamLeads);
     }
 
     // academicContextId is the scope key of the task's matrix; matrixId only once the matrix is started.
@@ -242,7 +229,6 @@ public static class MatrixTaskMappingExtensions
             task.Id,
             task.AssignedToUserId,
             academicContextId,
-            null,
             task.DueAt,
             task.Status,
             task.TaskType,

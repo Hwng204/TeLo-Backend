@@ -14,8 +14,6 @@ public sealed record MatrixTaskResponse(
     ulong Id,
     ulong AssignedToUserId,
     ulong AcademicContextId,
-    // Always null: tasks no longer have a semester.
-    ulong? SemesterId,
     DateTime? DueAt,
     string Status,
     string TaskType,

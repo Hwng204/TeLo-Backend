@@ -51,22 +51,13 @@ public sealed record MatrixExportInfo(
 public sealed record MatrixAcademicContextOption(
     ulong Id,
     string Label,
-    ulong AcademicYearId,
     ulong SchoolBranchId,
     ulong SubjectId,
     ulong GradeLevelId,
     // Display names so a client can show each dimension in its own field
     // instead of parsing them back out of Label.
     string SubjectName = "",
-    string GradeLevelName = "",
-    string AcademicYearName = "");
-
-public sealed record MatrixSemesterOption(
-    ulong Id,
-    ulong AcademicYearId,
-    string Name,
-    DateOnly? StartDate,
-    DateOnly? EndDate);
+    string GradeLevelName = "");
 
 // Lesson titles repeat across chapters (several "Luyện tập chung"), so the client labels and matches a
 // lesson by its code and chapter too.
@@ -88,6 +79,5 @@ public sealed record MatrixTeamLeadOption(
 
 public sealed record MatrixReferenceModel(
     IReadOnlyList<MatrixAcademicContextOption> AcademicContexts,
-    IReadOnlyList<MatrixSemesterOption> Semesters,
     IReadOnlyList<MatrixLessonOption> Lessons,
     IReadOnlyList<MatrixTeamLeadOption> TeamLeads);

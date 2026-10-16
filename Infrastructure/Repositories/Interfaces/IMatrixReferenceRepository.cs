@@ -3,7 +3,7 @@ using Infrastructure.Models;
 
 namespace Infrastructure.Repositories.Interface;
 
-// Reads the reference data (scopes, semesters, lessons, team leads) and validates matrix scope.
+// Reads the reference data (scopes, lessons, team leads) and validates matrix scope.
 public interface IMatrixReferenceRepository
 {
     Task EnsureValidAsync(

@@ -15,7 +15,6 @@ public sealed record MatrixWorkbookModel(
     string Status,
     ulong? TaskId,
     string ContextLabel,
-    string SemesterName,
     uint TotalQuestions,
     decimal TotalScore,
     IReadOnlyList<MatrixWorkbookRow> Rows);

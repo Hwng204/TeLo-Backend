@@ -359,7 +359,7 @@ public sealed class TaskService(
         return matrix is null
             ? null
             : new TaskScope(new MatrixScope(matrix.BranchId, matrix.SubjectId, matrix.GradeLevelId).Key, matrix.Subject,
-                matrix.Grade, "", null, null, null, matrix.SubjectId, matrix.GradeLevelId);
+                matrix.Grade, matrix.SubjectId, matrix.GradeLevelId);
     }
 
     // GB-47: ma trận nháp chỉ Tổ trưởng được giao thấy; người khác chỉ biết là đang soạn.

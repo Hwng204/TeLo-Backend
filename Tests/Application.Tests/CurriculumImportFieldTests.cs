@@ -16,9 +16,9 @@ public sealed class CurriculumImportFieldTests
     private static readonly CurriculumGradeRow[] Grades = [new(5, "Lớp 5")];
     private static readonly CurriculumFieldRow[] Fields =
     [
-        new(1, "Tiếng Việt", 1, "Tiếng Việt"),
-        new(2, "Tiếng Anh", 2, "Tiếng Anh"),
-        new(3, "Toán", 3, "Toán")
+        new(1, "Tiếng Việt"),
+        new(2, "Tiếng Anh"),
+        new(3, "Toán")
     ];
 
     [Theory]
@@ -49,7 +49,7 @@ public sealed class CurriculumImportFieldTests
     [Fact]
     public void SubjectNameSharedByTwoSubjects_IsRejectedAsAmbiguous()
     {
-        CurriculumFieldRow[] fields = [.. Fields, new(4, "toán", 4, "toán")];
+        CurriculumFieldRow[] fields = [.. Fields, new(4, "toán")];
 
         var result = CurriculumImportRules.Evaluate(Sheet(Row(8), Row(9, lesson: "Bài hai", lessonNumber: "2")),
             Grades, fields, []);

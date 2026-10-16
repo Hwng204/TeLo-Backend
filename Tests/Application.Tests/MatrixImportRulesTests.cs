@@ -134,7 +134,7 @@ public sealed class MatrixImportRulesTests
     public void ExportedWorkbook_RoundTripsToImport()
     {
         var bytes = new ClosedXmlMatrixWorkbookExporter().Create(new MatrixWorkbookModel("Toán", "APPROVED", null,
-            "Toán 5", "HK I", 2, 10, [new("Số và phép tính / Phân số", "NHAN_BIET", "MULTIPLE_CHOICE", 2, 100, 10)]));
+            "Toán 5", 2, 10, [new("Số và phép tính / Phân số", "NHAN_BIET", "MULTIPLE_CHOICE", 2, 100, 10)]));
         var result = MatrixImportRules.Evaluate(MatrixImportWorkbook.Read(bytes), Lessons, 10);
         Assert.True(result.CanImport);
         Assert.Equal(1UL, Assert.Single(result.Details).LessonId);

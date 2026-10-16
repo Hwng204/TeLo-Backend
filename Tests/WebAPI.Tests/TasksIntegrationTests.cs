@@ -222,8 +222,7 @@ public sealed class TasksIntegrationTests
         Assert.Equal(("Ma trận Toán 5 - Giữa học kỳ I", "Đỗ Văn Tổ"), (Text(updated, "name"), Person(updated, "performer").Name));
         // Tasks have no year or semester any more (D10): the scope is the matrix's subject and grade.
         var scope = updated.GetProperty("scope");
-        Assert.Equal(("Toán thử", "Khối thử", "", JsonValueKind.Null),
-            (Text(scope, "subjectName"), Text(scope, "gradeLevelName"), Text(scope, "academicYearName"), scope.GetProperty("semesterName").ValueKind));
+        Assert.Equal(("Toán thử", "Khối thử"), (Text(scope, "subjectName"), Text(scope, "gradeLevelName")));
         Assert.Equal(HttpStatusCode.Forbidden, (await Send(tl2, HttpMethod.Put, url, Matrix("tl2", f.ContextA, 4))).Status);
 
         // Tổ trưởng lưu nháp ma trận: không đổi được người nhận và phạm vi; bản nháp vẫn riêng của Tổ trưởng (GB-47).
@@ -458,7 +457,6 @@ public sealed class TasksIntegrationTests
 
         var scope = Data(await Send(pht, HttpMethod.Get, $"/api/tasks/{taskId}")).GetProperty("scope");
         Assert.Equal(f.ContextA, scope.GetProperty("academicContextId").GetUInt64());
-        Assert.Equal(JsonValueKind.Null, scope.GetProperty("academicYearId").ValueKind);
         Assert.Equal(expected.SubjectId, scope.GetProperty("subjectId").GetUInt64());
         Assert.Equal(expected.GradeLevelId, scope.GetProperty("gradeLevelId").GetUInt64());
         var updated = Data(await Send(pht, HttpMethod.Put, $"/api/tasks/matrix/{taskId}", new

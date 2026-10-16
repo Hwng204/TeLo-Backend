@@ -22,17 +22,12 @@ public sealed record MatrixListItem(
     string Status,
     ulong? TaskId,
     ulong AcademicContextId,
-    ulong? SemesterId,
     uint TotalQuestions,
     decimal TotalScore,
     MatrixPerson? CreatedBy = null,
-    DateTime? CreatedAt = null,
     MatrixPerson? ApprovedBy = null,
-    DateTime? ApprovedAt = null,
     string? SubjectName = null,
-    string? GradeLevelName = null,
-    string? AcademicYearName = null,
-    string? SemesterName = null)
+    string? GradeLevelName = null)
 {
     public string StatusLabel => Domain.Entities.QuestionBank.MatrixStatusCodes.Label(Status);
 }

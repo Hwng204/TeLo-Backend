@@ -20,7 +20,7 @@ public static class MatrixImportWorkbook
     public static string LessonLabel(MatrixLessonOption lesson) =>
         $"Bài {lesson.Title} — Chương {lesson.ChapterTitle}";
 
-    public static byte[] CreateTemplate(string? name, int totalScore, string contextLabel, string? semesterName,
+    public static byte[] CreateTemplate(string? name, int totalScore, string contextLabel,
         IReadOnlyList<MatrixLessonOption> lessons)
     {
         if (lessons.Count * 3 > MaxRows - 8)
@@ -31,13 +31,13 @@ public static class MatrixImportWorkbook
         sheet.Cell(1, 1).Value = "Ma trận đề thi";
         string[][] metadata =
         [
-            ["Tên ma trận", name ?? ""], ["Ngữ cảnh học thuật", contextLabel], ["Học kỳ", semesterName ?? ""],
+            ["Tên ma trận", name ?? ""], ["Ngữ cảnh học thuật", contextLabel],
             ["Tổng điểm", totalScore.ToString(CultureInfo.InvariantCulture)],
             ["Hướng dẫn", "Chỉ điền Số câu và Tỷ lệ %. Ô hoàn toàn trống được bỏ qua. Có lỗi thì không nhập bất kỳ dòng nào. Không dùng công thức."]
         ];
         for (var i = 0; i < metadata.Length; i++)
             for (var col = 0; col < 2; col++) sheet.Cell(i + 2, col + 1).Value = WorkbookText.Safe(metadata[i][col]);
-        sheet.Cell(5, 2).Value = totalScore;
+        sheet.Cell(4, 2).Value = totalScore;
         for (var col = 0; col < Headers.Length; col++) sheet.Cell(8, col + 1).Value = Headers[col];
         var row = 9;
         foreach (var lesson in lessons)

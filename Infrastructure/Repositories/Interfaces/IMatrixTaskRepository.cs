@@ -5,10 +5,6 @@ namespace Infrastructure.Repositories.Interface;
 
 public interface IMatrixTaskRepository : IGenericRepository<WorkTask>
 {
-    Task<PagedResult<MatrixTaskRow>> ListAsync(
-        MatrixTaskFilter filter,
-        CancellationToken cancellationToken);
-
     // Any task type; used when a matrix is created from a task.
     Task<WorkTask?> GetAsync(ulong taskId, CancellationToken cancellationToken);
 
@@ -20,7 +16,4 @@ public interface IMatrixTaskRepository : IGenericRepository<WorkTask>
 
     // The matrix created with the task (its scope and whether it is started); null when there is none.
     Task<TaskMatrixRow?> GetTaskMatrixAsync(ulong taskId, CancellationToken cancellationToken);
-
-    // Deletes a task only before anything was produced for it; false when nothing was deleted.
-    Task<bool> DeleteIfNotStartedAsync(ulong taskId, CancellationToken cancellationToken);
 }

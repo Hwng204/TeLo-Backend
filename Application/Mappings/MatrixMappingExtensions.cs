@@ -217,44 +217,6 @@ public static class MatrixMappingExtensions
 
 public static class MatrixTaskMappingExtensions
 {
-    public static MatrixTaskFilter ToFilter(this MatrixTaskQuery query)
-    {
-        return new MatrixTaskFilter(
-            query.Page,
-            query.PageSize,
-            query.Status,
-            query.AssignedToUserId,
-            query.DueBefore,
-            query.BranchId,
-            query.Keyword,
-            query.AcademicContextId,
-            query.SubjectId,
-            query.GradeLevelId);
-    }
-
-    public static MatrixTaskPage ToDto(
-        this PagedResult<MatrixTaskRow> page,
-        IReadOnlyDictionary<ulong, MatrixPerson>? people = null)
-    {
-        var items = page.Items
-            .Select(row => new MatrixTaskListItem(
-                row.Id,
-                row.CreatedByUserId,
-                row.AssignedToUserId,
-                row.DueAt,
-                row.Status,
-                row.TaskType,
-                row.Description,
-                row.AcademicContextId,
-                null,
-                row.MatrixId,
-                row.Name,
-                MatrixMappingExtensions.Person(people, row.CreatedByUserId)))
-            .ToArray();
-
-        return new MatrixTaskPage(items, page.Page, page.PageSize, page.TotalCount);
-    }
-
     public static MatrixReferenceData ToDto(this MatrixReferenceModel model)
     {
         var cognitiveLevels = MatrixCognitiveLevels.All

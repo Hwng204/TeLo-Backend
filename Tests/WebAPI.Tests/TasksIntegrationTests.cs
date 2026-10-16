@@ -300,7 +300,7 @@ public sealed class TasksIntegrationTests
     }
 
     [IdentityMySqlFact]
-    public async Task LegacyMatrixTasks_OnlyParticipantsReadAndOnlyTheCreatorDeletes()
+    public async Task LegacyMatrixTask_OnlyParticipantsRead()
     {
         await using var f = await TaskFixture.CreateAsync();
         using var pht = await f.LoginAsync("pht");
@@ -313,31 +313,10 @@ public sealed class TasksIntegrationTests
 
         foreach (var actor in new[] { pht2, principal })
         {
-            var unrelated = await Send(actor, HttpMethod.Get, "/api/matrix-tasks");
-            Assert.Equal(HttpStatusCode.OK, unrelated.Status);
-            Assert.Empty(unrelated.Body.GetProperty("items").EnumerateArray());
             Assert.Equal(HttpStatusCode.Forbidden, (await Send(actor, HttpMethod.Get, $"/api/matrix-tasks/{id}")).Status);
-            Assert.Equal(HttpStatusCode.Forbidden, (await Send(actor, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
             Assert.Empty(await ListAsync(actor));
         }
         Assert.Equal(HttpStatusCode.OK, (await Send(tl, HttpMethod.Get, $"/api/matrix-tasks/{id}")).Status);
-        Assert.Equal(id, Id(Assert.Single((await Send(pht, HttpMethod.Get, "/api/matrix-tasks")).Body.GetProperty("items").EnumerateArray())));
-        Assert.Equal(HttpStatusCode.NoContent, (await Send(pht, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
-        Assert.False(await f.Db.WorkTasks.AnyAsync(task => task.Id == id));
-    }
-
-    [IdentityMySqlFact]
-    public async Task LegacyMatrixTaskDelete_RejectsStartedStatusesEvenWithAnEmptyMatrix()
-    {
-        await using var f = await TaskFixture.CreateAsync();
-        using var pht = await f.LoginAsync("pht");
-        var id = Id((await Send(pht, HttpMethod.Post, "/api/matrix-tasks", MatrixTaskBody(f))).Body);
-        foreach (var status in new[] { "IN_PROGRESS", "PENDING_REVIEW", "NEEDS_REVISION", "COMPLETED" })
-        {
-            await f.SetStatusAsync(id, status);
-            Assert.Equal(HttpStatusCode.Conflict, (await Send(pht, HttpMethod.Delete, $"/api/matrix-tasks/{id}")).Status);
-            Assert.True(await f.Db.WorkTasks.AnyAsync(task => task.Id == id && task.Status == status));
-        }
     }
 
     [IdentityMySqlFact]
